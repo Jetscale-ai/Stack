@@ -1,0 +1,55 @@
+{
+  "name": "JetScale Stack (Booster-Powered)",
+  "image": "ghcr.io/jetscale-ai/booster-dev:latest",
+  "features": {
+    // 1. Docker Socket Binding (Critical for Kind/Tilt)
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "enableNonRootDocker": "true",
+      "moby": "false"
+    },
+    // 2. Infrastructure Tools (Injected via Features)
+    "ghcr.io/devcontainers/features/aws-cli:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/terraform:1": {
+      "version": "latest"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // --- ORCHESTRATION & INFRA ---
+        "tchoupinax.tilt",                         // Essential for Tiltfile syntax
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "ms-azuretools.vscode-docker",
+        "hashicorp.terraform",
+        "amazonwebservices.aws-toolkit-vscode",
+        "redhat.vscode-yaml",
+        "mikestead.dotenv",                        // .env file highlighting
+
+        // --- BACKEND (Go/Mage & Python) ---
+        "golang.go",
+        "ms-python.python",
+        "tamasfe.even-better-toml",                // For pyproject.toml
+
+        // --- FRONTEND (Nuxt/Vue) ---
+        "vue.volar",                               // The Vue 3 standard
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "editorconfig.editorconfig"
+      ]
+    }
+  },
+  // Port Forwarding Map:
+  // 10350: Tilt HUD
+  // 8000: Backend API (NodePort)
+  // 3000-5000: Frontend & Vite ranges
+  // 5433/6379: Local DBs (mapped via Tiltfile)
+  "forwardPorts": [10350, 8000, 3000, 5433, 6379],
+
+  // Run as root to ensure seamless access to the mounted docker socket
+  "remoteUser": "root",
+
+  "postStartCommand": "git config --global --add safe.directory '*'"
+}
