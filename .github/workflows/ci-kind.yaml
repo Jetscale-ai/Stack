@@ -1,0 +1,29 @@
+name: CI (Kind E2E)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  # Allow triggering from backend/frontend repos
+  repository_dispatch:
+    types: [trigger-ci]
+
+jobs:
+  e2e-kind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go (Mage)
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install Tools
+        run: |
+          go install github.com/magefile/mage@latest
+          # Install Skaffold, Helm, Kind (or use pre-installed on runner)
+
+      - name: Run E2E (Kind)
+        run: mage test:ci
+

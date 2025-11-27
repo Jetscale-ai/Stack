@@ -1,0 +1,63 @@
+# ==========================================================
+# LIVE ENVIRONMENT (EKS)
+# ==========================================================
+
+global:
+  env: "live"
+
+# 1. DATABASE
+# In live, you might switch `enabled: false` if using RDS,
+# but for the Self-Hosted Stack, we default to HA Bitnami.
+postgres:
+  enabled: true
+  architecture: replication # High Availability
+  auth:
+    # These should be injected via Secrets, not plain text
+    existingSecret: "jetscale-live-db-creds"
+  primary:
+    persistence:
+      size: 50Gi
+      storageClass: "gp3"
+
+redis:
+  enabled: true
+  architecture: replication # High Availability
+
+# 2. BACKEND
+backend-api:
+  enabled: true
+  replicaCount: 3 # High Availability
+  image:
+    repository: ghcr.io/jetscale-ai/backend # Alpine live image
+    tag: "latest" # Pinned by deployment pipeline
+  devMode:
+    enabled: false
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "2Gi"
+
+# 3. FRONTEND
+frontend-web:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: ghcr.io/jetscale-ai/frontend # Alpine live image
+
+# 4. INGRESS
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:..."
+  hosts:
+    - host: "app.jetscale.ai"
+      paths:
+        - path: /
+          pathType: Prefix
+

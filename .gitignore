@@ -1,0 +1,39 @@
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Golang (Mage)
+jetscale-stack
+go.sum
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# Tilt
+.tilt_dev/
+.tilt/
+
+# Kubernetes
+*.kubeconfig
+
+# Build artifacts
+*.tgz
+charts/*/charts/
+
+# Secrets & Local Overrides
+values.secret.yaml
+values.local-secrets.yaml
+*.secret.yaml
+.env
+.env.local
+
