@@ -1,18 +1,21 @@
 # ==========================================================
-# LOCAL DEVELOPMENT OVERRIDES (Replaces docker-compose.yml)
+# LOCAL DEVELOPMENT OVERRIDES
 # ==========================================================
 
 global:
   env: "local"
 
 # ----------------------------------------------------------
-# 1. DATABASE (Postgres 15 Alpine equivalent)
+# 1. DATABASE (Switched to Official Alpine Image)
 # ----------------------------------------------------------
-
 postgres:
   enabled: true
+  image:
+    registry: docker.io
+    repository: postgres
+    tag: 15-alpine
   auth:
-    username: "jetscale-user" # Mapped from JETSCALE_DB_USER
+    username: "jetscale-user"
     password: "jetscale-password"
     database: "jetscale"
   primary:
@@ -22,14 +25,17 @@ postgres:
     persistence:
       enabled: true
       size: 1Gi
-      storageClass: "standard" # Kind default
+      storageClass: "standard"
 
 # ----------------------------------------------------------
-# 2. REDIS
+# 2. REDIS (Switched to Official Alpine Image)
 # ----------------------------------------------------------
-
 redis:
   enabled: true
+  image:
+    registry: docker.io
+    repository: redis
+    tag: 7-bullseye
   architecture: standalone
   auth:
     enabled: false
@@ -37,21 +43,18 @@ redis:
 # ----------------------------------------------------------
 # 3. BACKEND API (Python / Uvicorn)
 # ----------------------------------------------------------
-
 backend-api:
   enabled: true
   replicaCount: 1
-  # Service Configuration
   service:
     type: NodePort
     port: 8000
-    nodePort: 30000 # Matches Kind config for localhost:8000 access
-  # Developer Experience (The Magic)
+    nodePort: 30000
   devMode:
     enabled: true
-    # Mount local source code
-    hostPath: "/app/backend" # Path inside the Kind Node (Tilt handles host->node)
-    mountPath: "/app"        # Path inside the Container
+    # Host mounts disabled in favor of Tilt Live Update
+    # hostPath: "/app/backend"
+    # mountPath: "/app"
     command:
       - "python3"
       - "-m"
@@ -61,40 +64,26 @@ backend-api:
       - "0.0.0.0"
       - "--port"
       - "8000"
-      - "--reload" # Hot Reload enabled!
-  # Environment Variables (From .env)
+      - "--reload"
   env:
-    # App Config
     JETSCALE_APP_NAME: "JetScale Backend (Local)"
     JETSCALE_DEBUG: "true"
-    JETSCALE_LOG_LEVEL: "DEBUG"
-    # Database (Wired to Helm dependency)
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale-user"
     JETSCALE_DB_PASSWORD: "jetscale-password"
-    # Note: Hostname is the K8s service name of the postgres chart
+    # Note: Hostname matches the helm release name + chart name
     JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-stack-postgres:5432/jetscale"
-    # Redis
     JETSCALE_REDIS_URL: "redis://jetscale-stack-redis-master:6379/0"
-    # AWS / External Services (Inject your real keys here or via Tilt secrets)
     JETSCALE_AWS_REGION: "us-east-1"
-    # Secrets should ideally be injected via K8s Secrets, not plain text here
-    # But for local dev parity, we map them:
-    # JETSCALE_ANTHROPIC_API_KEY: "..."
-    # Python Optimization
     PYTHONDONTWRITEBYTECODE: "1"
     PYTHONUNBUFFERED: "1"
-    # Paths (Mapped to container paths)
-    JETSCALE_DATA_DIR: "/app/data"
 
 # ----------------------------------------------------------
 # 4. FRONTEND WEB
 # ----------------------------------------------------------
-
 frontend-web:
   enabled: true
   devMode:
     enabled: true
   env:
-    VITE_API_BASE_URL: "http://localhost:8000" # Accessing via NodePort
-
+    VITE_API_BASE_URL: "http://localhost:8000"
