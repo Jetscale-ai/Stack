@@ -1,7 +1,7 @@
 global:
-  env: "local"
+  env: "local-dev"
 
-# 1. DATABASE (Official Alpine Image)
+# 1. DATABASE
 postgres:
   enabled: true
   image: "postgres:15-alpine"
@@ -12,18 +12,17 @@ postgres:
   persistence:
     size: 1Gi
 
-# 2. REDIS (Official Alpine Image)
+# 2. REDIS
 redis:
   enabled: true
   image: "redis:7-bullseye"
 
-# 3. BACKEND API
+# 3. BACKEND API (Dev Mode)
 backend-api:
   enabled: true
   replicaCount: 1
   image:
-    # Strictly local name - cannot be pulled from registry
-    repository: jetscale-backend-local
+    repository: ghcr.io/jetscale-ai/backend-dev
     pullPolicy: IfNotPresent
   service:
     type: NodePort
@@ -33,7 +32,7 @@ backend-api:
     enabled: true
     command: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
   env:
-    JETSCALE_APP_NAME: "JetScale Backend (Local)"
+    JETSCALE_APP_NAME: "JetScale Backend (Dev)"
     JETSCALE_DEBUG: "true"
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale-user"
@@ -44,12 +43,11 @@ backend-api:
     PYTHONDONTWRITEBYTECODE: "1"
     PYTHONUNBUFFERED: "1"
 
-# 4. FRONTEND WEB
+# 4. FRONTEND WEB (Dev Mode)
 frontend-web:
   enabled: true
   image:
-    # Strictly local name
-    repository: jetscale-frontend-local
+    repository: ghcr.io/jetscale-ai/frontend-dev
     pullPolicy: IfNotPresent
   devMode:
     enabled: true

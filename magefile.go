@@ -7,18 +7,17 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/magefile/mage/mg"
 )
 
-// Default target to run when 'mage' is called without arguments.
 var Default = Dev
 
 // -----------------------------------------------------------------------------
 // LOCAL DEVELOPMENT (The Inner Loop)
 // -----------------------------------------------------------------------------
 
-// Dev starts the high-fidelity local development environment via Tilt.
 func Dev() error {
 	fmt.Println("🚀 Starting Tilt (Inner Loop)...")
 	cmd := exec.Command("tilt", "up")
@@ -27,9 +26,9 @@ func Dev() error {
 	return cmd.Run()
 }
 
-// Clean tears down the local Kind cluster and removes artifacts.
 func Clean() error {
 	fmt.Println("🧹 Cleaning up...")
+	exec.Command("kubectl", "delete", "ns", "jetscale-test-local", "--ignore-not-found").Run()
 	cmd := exec.Command("tilt", "down")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -37,75 +36,62 @@ func Clean() error {
 }
 
 // -----------------------------------------------------------------------------
-// CI & INTEGRATION (The Outer Loop)
-// -----------------------------------------------------------------------------
-
-// CI runs the full CI pipeline locally using Skaffold + Kind.
-func CI() error {
-	fmt.Println("🤖 Running CI Pipeline (Skaffold profile: ci-kind)...")
-	fmt.Println("   - Building images...")
-	fmt.Println("   - Creating ephemeral Kind cluster...")
-	fmt.Println("   - Running E2E tests...")
-	return runSkaffold("ci-kind", "jetscale-ci", "http://localhost:8000")
-}
-
-// -----------------------------------------------------------------------------
 // TESTING NAMESPACE
 // -----------------------------------------------------------------------------
 
-// Test provides granular targets for each environment loop.
 type Test mg.Namespace
 
-// Local runs E2E tests in Kind using locally built images (no push).
-func (Test) Local() error {
-	fmt.Println("🧪 [E2E] Target: Kind Local (Local Images)")
-	fmt.Println("   - Strategy: Build -> Load into Kind -> Test")
-	return runSkaffold("local-kind", "jetscale-local", "http://localhost:8000")
+// LocalDev runs a quick smoke test against the running Tilt environment.
+func (Test) LocalDev() error {
+	fmt.Println("🧪 [E2E] Target: Local Dev (Tilt)")
+	return runTestRunner("http://localhost:8000")
+}
+
+// LocalE2E runs high-fidelity tests in Kind using locally built Alpine images.
+func (Test) LocalE2E() error {
+	fmt.Println("🧪 [E2E] Target: Kind Local (Alpine E2E)")
+	
+	if err := runSkaffoldDeploy("local-kind", "jetscale-test-local"); err != nil {
+		return err
+	}
+
+	stopPF, localPort, err := startPortForward("jetscale-test-local", "svc/jetscale-stack-test-backend-api", 8000)
+	if err != nil {
+		return fmt.Errorf("failed to port-forward: %w", err)
+	}
+	defer stopPF()
+
+	return runTestRunner(fmt.Sprintf("http://localhost:%d", localPort))
 }
 
 // CI runs E2E tests in Kind using CI-built artifacts.
 func (Test) CI() error {
 	fmt.Println("🧪 [E2E] Target: Kind CI (Artifacts)")
-	fmt.Println("   - Strategy: Build -> Push -> Deploy -> Test")
-	return runSkaffold("ci-kind", "jetscale-ci", "http://localhost:8000")
+	
+	if err := runSkaffoldDeploy("ci-kind", "jetscale-ci"); err != nil {
+		return err
+	}
+
+	stopPF, localPort, err := startPortForward("jetscale-ci", "svc/jetscale-stack-ci-backend-api", 8000)
+	if err != nil {
+		return fmt.Errorf("failed to port-forward: %w", err)
+	}
+	defer stopPF()
+
+	return runTestRunner(fmt.Sprintf("http://localhost:%d", localPort))
 }
 
-// Preview runs E2E tests against an ephemeral EKS namespace (Pre-Merge).
-func (Test) Preview() error {
-	fmt.Println("🧪 [E2E] Target: EKS Preview (Ephemeral)")
-	namespace, host := getPreviewTarget()
-	fmt.Printf("   - Namespace: %s\n", namespace)
-	fmt.Printf("   - Host: %s\n", host)
-	setHost := fmt.Sprintf("--set=ingress.host=%s", host)
-	return runSkaffold("preview", namespace, fmt.Sprintf("https://%s", host), setHost)
-}
-
-// Live runs smoke tests against the live environment.
 func (Test) Live() error {
 	fmt.Println("🔥 [E2E] Target: EKS Live (Verification)")
-	fmt.Println("   ⚠️  running in VERIFICATION mode (No Deploy)")
 	host := "app.jetscale.ai"
 	return runTestRunner(fmt.Sprintf("https://%s", host))
-}
-
-// -----------------------------------------------------------------------------
-// LIVE & RELEASE
-// -----------------------------------------------------------------------------
-
-// Deploy triggers a deployment to a specified environment.
-// Args: env (preview|live)
-func Deploy(env string) error {
-	fmt.Printf("🚢 Deploying Stack to environment: [%s]\n", env)
-	fmt.Printf("   - Profile: %s\n", env)
-	fmt.Println("⚠️  (Not yet implemented: will wrap Helm/Skaffold)")
-	return nil
 }
 
 // -----------------------------------------------------------------------------
 // HELPERS
 // -----------------------------------------------------------------------------
 
-func runSkaffold(profile, namespace, baseURL string, extraArgs ...string) error {
+func runSkaffoldDeploy(profile, namespace string, extraArgs ...string) error {
 	args := []string{"run", "-p", profile}
 	if namespace != "" {
 		args = append(args, "--namespace", namespace)
@@ -117,32 +103,44 @@ func runSkaffold(profile, namespace, baseURL string, extraArgs ...string) error 
 	deploy := exec.Command("skaffold", args...)
 	deploy.Stdout = os.Stdout
 	deploy.Stderr = os.Stderr
-	if err := deploy.Run(); err != nil {
-		return fmt.Errorf("deployment failed: %w", err)
-	}
-
-	return runTestRunner(baseURL)
+	return deploy.Run()
 }
 
 func runTestRunner(url string) error {
 	fmt.Printf("   > Running Go E2E Suite against %s\n", url)
 	os.Setenv("BASE_URL", url)
-	// We use 'go test -v' to see the logs
-	cmd := exec.Command("go", "test", "-v", "./tests/e2e")
+	cmd := exec.Command("go", "test", "-v", ".")
+	cmd.Dir = "tests/e2e"
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
-func getPreviewTarget() (string, string) {
-	if pr := os.Getenv("PR_NUMBER"); pr != "" {
-		return fmt.Sprintf("jetscale-pr-%s", pr), fmt.Sprintf("pr-%s.app.jetscale.ai", pr)
+func startPortForward(ns, resource string, targetPort int) (func(), int, error) {
+	localPort := 9090 
+	fmt.Printf("   > Port-forwarding %s %s -> localhost:%d\n", ns, resource, localPort)
+	
+	cmd := exec.Command("kubectl", "port-forward", "-n", ns, resource, fmt.Sprintf("%d:%d", localPort, targetPort))
+	
+	// Capture stderr to help debug crashes
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return nil, 0, err
+	}
+	
+	// Wait for connection to establish
+	time.Sleep(3 * time.Second)
+
+	// Check if process died during sleep
+	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		return nil, 0, fmt.Errorf("kubectl port-forward exited unexpectedly (check target port %d existence)", targetPort)
 	}
 
-	user := os.Getenv("USER")
-	if user == "" {
-		user = "local-dev"
+	cleanup := func() {
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
 	}
-
-	return fmt.Sprintf("jetscale-preview-%s", user), fmt.Sprintf("preview-%s.app.jetscale.ai", user)
+	return cleanup, localPort, nil
 }

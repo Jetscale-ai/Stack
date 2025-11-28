@@ -4,103 +4,135 @@ The central infrastructure, deployment, and orchestration repository for the Jet
 
 ## 🚀 The Vision
 
-We are moving to a **"Platform-First"** development model. Instead of maintaining disparate `docker-compose` files that drift from live deployments, we use this repository to spin up a **Live-Like** environment on your laptop using **Tilt** and **Kind**.
+We run JetScale on a **"Platform-First"** model.  
+Instead of a drifting `docker-compose`, this repo enables **Live-like environments locally** via:
+
+- **Tilt** → Local Dev (hot reload, dev images)
+- **Skaffold + Kind** → Local E2E (Alpine runtime parity)
+- **Helm** → Single unified deployment surface for all environments
+
+This produces a consistent experience across Dev → CI → Preview → Live.
 
 ## 🛠️ Quick Start (Local Dev)
 
 ### 1. Prerequisites
 
-- **Docker** (Desktop or Engine)
+- **Docker**
 - **Kind**: `go install sigs.k8s.io/kind@latest`
-- **Tilt**: `curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash`
+- **Tilt**:  
+  `curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash`
 - **Helm**: `brew install helm`
 
-### 2. Boot the Platform
+### 2. Boot the Local Dev Platform (Inner Loop)
 
 Run these commands from the `stack/` directory:
 
 ```bash
-# 1. Provision Infrastructure (Custom Ports for localhost access)
+# 1. Create the local cluster
 kind create cluster --config kind/kind-config.yaml --name kind
 
-# 2. Vendor Dependencies (First Run Only)
+# 2. Vendor chart dependencies
 (cd charts/app && helm dependency build)
 
-# 3. Ignite
+# 3. Start Dev Loop (Fat images + Hot Reload)
 tilt up
 ```
 
-_Hit `Space` to open the HUD. You will see your Backend and Frontend services spinning up, connected to a real Postgres/Redis._
-
-### 3. Access
+Tilt exposes everything automatically:
 
 - **Tilt HUD:** [http://localhost:10350](http://localhost:10350)
-- **Frontend:** [http://localhost:3000](http://localhost:3000) (No manual port-forward needed)
-- **Backend API:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Backend:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Frontend:** [http://localhost:3000](http://localhost:3000)
+
+**Tilt uses:**
+`charts/app/values.local.dev.yaml` → dev images, NodePorts, hot reload.
 
 ## 🔄 Development Workflow
 
-- **Backend:** Edit files in `../backend`. Tilt syncs them instantly. `uvicorn` auto-reloads.
-- **Frontend:** Edit files in `../frontend`. Tilt rebuilds the image and redeploys (approx 10-20s).
+- **Backend:** Edit `../backend`, auto-reload via `uvicorn --reload`
+- **Frontend:** Edit `../frontend`, Tilt rebuilds + redeploys
+- **DB/Redis:** Managed via Helm dependencies in the umbrella chart
+
+The dev loop stays fast and isolated. No Skaffold or Alpine images here.
 
 ## 📂 Repository Layout
 
-- `Tiltfile`: The orchestrator that replaces `docker-compose.yml`.
-- `charts/app`: The Umbrella Helm Chart (The "Installer").
-- `kind/`: Local cluster configuration.
-- `charts/app/values.*.yaml`: Environment-specific configurations:
-  - `values.local.yaml`: Local development (Kind)
-  - `values.preview.yaml`: Preview environments (Ephemeral EKS)
-  - `values.live.yaml`: Live environment (EKS)
+- `Tiltfile` — Local Dev Orchestrator (inner loop)
+- `skaffold.yaml` — E2E/CI orchestrator (outer loop)
+- `charts/app` — Umbrella Helm chart
+- `kind/` — Cluster config
+- `charts/app/values.*.yaml` — Environment configs:
 
-## 🔄 Three-Loop Architecture
+  | File | Purpose |
+  | -- | |
+  | `values.local.dev.yaml` | Tilt dev mode (dev images + hot reload) |
+  | `values.local.e2e.yaml` | Local E2E Alpine images (ClusterIP) |
+  | `values.preview.yaml` | Preview (EKS ephemeral namespaces) |
+  | `values.live.yaml` | Live environment (EKS) |
 
-We follow a **Three-Loop** development model:
+## 🔄 Two-Loop Local Architecture
 
-| Loop           | Environment | Cluster | Purpose                                 |
-| :------------- | :---------- | :------ | :-------------------------------------- |
-| **Inner Loop** | Local Dev   | Kind    | Developer workstation with hot-reload   |
-| **Outer Loop** | CI          | Kind    | Automated testing in ephemeral clusters |
-| **Preview**    | Preview     | EKS     | PR-based ephemeral namespaces           |
-| **Live**       | Live        | EKS     | High-availability deployment             |
+JetScale now uses **two distinct local loops**, each backed by Helm values:
 
-## ⚡️ Preview Environments = Runtime State
+| Loop | Tooling | Values File | Images Used | Purpose |
+| - | | -- | | - |
+| **Inner Loop** | Tilt | `values.local.dev.yaml` | `*-dev` fat images | Hot reload, live-like local dev |
+| **Outer Loop (Local)** | Skaffold + Kind | `values.local.e2e.yaml` | Alpine runtime images | Live-parity smoke/E2E tests |
 
-Preview environments are **not** folders checked into this repo—they are runtime slices of the already-provisioned EKS cluster.
+**Tilt does not run Skaffold**, and **Skaffold does not touch dev-mode images**.
+This prevents config drift and avoids NodePort collisions.
 
-1. **Base config** — `charts/app/values.preview.yaml` describes the lightweight shape (single replica, no persistence).
-2. **Runtime inputs** — CI passes dynamic values such as `PR_NUMBER` and `GIT_SHA`.
-3. **Isolation** — Unique Kubernetes namespaces (`jetscale-pr-123`) keep work sandboxed.
+## 🧙‍♂️ Mage Tasks
 
-## 🧙‍♂️ Developer Tasks (Mage)
+We use Mage for all developer commands.
 
-We use [Mage](https://magefile.org/) for task orchestration.
+### Install Mage
 
-1. **Install Mage**: `go install github.com/magefile/mage@latest`
+```bash
+go install github.com/magefile/mage@latest
+```
 
-2. **Available Tasks:**
+### Available Dev/Test Tasks
 
-   ```bash
-   # Start local development environment (Wraps 'tilt up')
-   mage dev
+```bash
+mage dev               # tilt up (inner loop)
+mage clean             # tear down tilt + local resources
 
-   # Clean up local environment
-   mage clean
+mage test:localdev    # smoke test against running Tilt env
+mage test:locale2e     # full Alpine E2E via skaffold + kind (outer loop)
 
-   # Run CI pipeline locally
-   mage ci
+mage test:ci           # CI-kind test using CI-built artifacts
+mage test:live         # hit live for verification only
+```
 
-   # Run tests
-   mage test:local     # Kind + local images
-   mage test:ci        # Kind + CI artifacts
-   mage test:live      # Live verification (no deploy)
-   ```
+## 🧪 E2E Target Matrix (Updated)
 
-## 🧪 E2E Target Matrix
+| Mage Command | Skaffold Profile | Cluster | Purpose | Behavior |
+| | - | - | - | -- |
+| `mage test:local-dev` | _(none)_ | Kind | Quick smoke test against Tilt env | Hits `localhost:8000` directly |
+| `mage test:locale2e` | `local-kind` | Kind | Live-parity E2E with local Alpine images | Builds local images, loads into Kind, ClusterIP + port-forward |
+| `mage test:ci` | `ci-kind` | Kind | CI-gating tests using CI images | No local builds |
+| `mage test:preview` | `preview` | EKS | PR ephemeral namespace testing | Deploy isolated namespace |
+| `mage test:live` | _(verification)_ | EKS | Smoke tests against `app.jetscale.ai` | **No deploy** |
 
-| Mage Command        | Skaffold Profile | Cluster | Purpose                                   | Behavior |
-| :------------------ | :--------------- | :------ | :---------------------------------------- | :------- |
-| `mage test:local`   | `local-kind`     | Kind    | Contract tests with laptop-built images   | Builds locally and loads into Kind |
-| `mage test:ci`      | `ci-kind`        | Kind    | CI gating before previews                 | Uses CI-tagged artifacts, ClusterIP services |
-| `mage test:preview` | `preview`        | EKS     | Pre-merge fidelity with ephemeral ingress | Deploys to PR namespace, tears down afterward |
-| `mage test:live`    | _(verification)_ | EKS     | Post-deploy smoke verification            | No deploys; hits `app.jetscale.ai` in smoke mode |
+## ⚡ Preview Environments
+
+Preview environments are **runtime slices of EKS**, not folders.
+
+- `values.preview.yaml` defines the template
+- CI passes runtime inputs (`PR_NUMBER`, `GIT_SHA`)
+- Helm deploys into isolated namespaces like:
+
+```txt
+jetscale-pr-123
+```
+
+They are cleaned up automatically when the PR closes.
+
+## ✅ Current Guarantees
+
+- **Local Dev = Tilt + dev images** (fast, reload)
+- **Local E2E = Skaffold + Kind + Alpine images** (live-parity)
+- **Docker images auto-start uvicorn** by default
+- **Charts remain clean** and environment-specific
+- **Tests run exactly as they will in CI**

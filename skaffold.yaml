@@ -3,30 +3,25 @@ kind: Config
 metadata:
   name: jetscale-stack
 
+# ------------------------------------------------------------------------------
+# GLOBAL BUILD: Local-Only Artifacts for E2E
+# ------------------------------------------------------------------------------
 build:
+  local:
+    push: false
+    useDockerCLI: true
+    tryImportMissing: true
   artifacts:
-    # Dev Images (Ubuntu-based, hot reload friendly)
-    - image: ghcr.io/jetscale-ai/backend-dev
+    - image: jetscale-backend-local
       context: ../backend
       docker:
         dockerfile: Dockerfile
-        target: dev
-    - image: ghcr.io/jetscale-ai/frontend-dev
+        target: backend
+    - image: jetscale-frontend-local
       context: ../frontend
       docker:
         dockerfile: Dockerfile
-        target: dev
-    # Live Images (Alpine, pinned for releases)
-    - image: ghcr.io/jetscale-ai/backend
-      context: ../backend
-      docker:
-        dockerfile: Dockerfile
-        target: live
-    - image: ghcr.io/jetscale-ai/frontend
-      context: ../frontend
-      docker:
-        dockerfile: Dockerfile
-        target: live
+        target: frontend
 
 profiles:
   # --------------------------------------------------------
@@ -34,31 +29,34 @@ profiles:
   # --------------------------------------------------------
   - name: local-kind
     deploy:
+      kubeContext: kind-kind
       helm:
         releases:
-          - name: jetscale-stack-local
+          - name: jetscale-stack-test
             chartPath: charts/app
+            namespace: jetscale-test-local
+            createNamespace: true
             valuesFiles:
-              - charts/app/values.local.yaml
+              - charts/app/values.local.e2e.yaml
 
   # --------------------------------------------------------
-  # CI PROFILE (Ephemeral Kind)
+  # CI PROFILE
   # --------------------------------------------------------
   - name: ci-kind
     deploy:
+      kubeContext: kind-kind
       helm:
         releases:
           - name: jetscale-stack-ci
             chartPath: charts/app
+            createNamespace: true
             valuesFiles:
-              - charts/app/values.local.yaml # Reuse local dev values as base
+              - charts/app/values.local.e2e.yaml
             setValues:
-              backend-api.devMode.enabled: "false" # STRICTLY disable mounts in CI
               backend-api.service.type: "ClusterIP"
-              backend-api.service.nodePort: ""
 
   # --------------------------------------------------------
-  # PREVIEW PROFILE (Ephemeral EKS Namespaces)
+  # PREVIEW & LIVE
   # --------------------------------------------------------
   - name: preview
     deploy:
@@ -66,19 +64,16 @@ profiles:
         releases:
           - name: jetscale-stack-preview
             chartPath: charts/app
+            createNamespace: true
             valuesFiles:
               - charts/app/values.preview.yaml
-            # Dynamic overrides usually passed via CLI flags in CI:
-            # --set ingress.host=pr-123.app.jetscale.ai
 
-  # --------------------------------------------------------
-  # LIVE PROFILE (Live EKS)
-  # --------------------------------------------------------
   - name: live
     deploy:
       helm:
         releases:
           - name: jetscale-stack
             chartPath: charts/app
+            createNamespace: true
             valuesFiles:
               - charts/app/values.live.yaml
