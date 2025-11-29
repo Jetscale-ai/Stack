@@ -47,44 +47,26 @@ Tilt exposes everything automatically:
 **Tilt uses:**
 `charts/app/values.local.dev.yaml` → dev images, NodePorts, hot reload.
 
-## 🔄 Development Workflow
+## 🔄 The 5-Stage Lifecycle (4 Loops + 1 Verify)
 
-- **Backend:** Edit `../backend`, auto-reload via `uvicorn --reload`
-- **Frontend:** Edit `../frontend`, Tilt rebuilds + redeploys
-- **DB/Redis:** Managed via Helm dependencies in the umbrella chart
+JetScale operates on **four distinct feedback loops** and one final verification stage. Each stage increases in fidelity and reduces speed.
 
-The dev loop stays fast and isolated. No Skaffold or Alpine images here.
+| Stage | Loop Name | Tooling | Environment | Purpose |
+| :-- | :-- | :-- | :-- | :-- |
+| **1** | **Inner Loop** | Tilt | Kind (Local) | **Speed.** Hot reload, fat images, debuggers attached. |
+| **2** | **Outer Loop** | Skaffold | Kind (Local) | **Parity.** Builds real Alpine images locally. Tests "prod-like" runtime. |
+| **3** | **CI Loop** | Skaffold | Kind (CI Runner) | **Gating.** Uses official CI artifacts. Ensures clean build context. |
+| **4** | **Preview Loop** | Skaffold | EKS (Ephemeral) | **Integration.** Deploys to `pr-123.app.jetscale.ai`. Tests AWS dependencies. |
+| **5** | **Live Verify** | Mage | EKS (Prod) | **Trust.** Non-destructive smoke tests against the live endpoint. |
 
-## 📂 Repository Layout
-
-- `Tiltfile` — Local Dev Orchestrator (inner loop)
-- `skaffold.yaml` — E2E/CI orchestrator (outer loop)
-- `charts/app` — Umbrella Helm chart
-- `kind/` — Cluster config
-- `charts/app/values.*.yaml` — Environment configs:
-
-  | File | Purpose |
-  | -- | |
-  | `values.local.dev.yaml` | Tilt dev mode (dev images + hot reload) |
-  | `values.local.e2e.yaml` | Local E2E Alpine images (ClusterIP) |
-  | `values.preview.yaml` | Preview (EKS ephemeral namespaces) |
-  | `values.live.yaml` | Live environment (EKS) |
-
-## 🔄 Two-Loop Local Architecture
-
-JetScale now uses **two distinct local loops**, each backed by Helm values:
-
-| Loop | Tooling | Values File | Images Used | Purpose |
-| - | | -- | | - |
-| **Inner Loop** | Tilt | `values.local.dev.yaml` | `*-dev` fat images | Hot reload, live-like local dev |
-| **Outer Loop (Local)** | Skaffold + Kind | `values.local.e2e.yaml` | Alpine runtime images | Live-parity smoke/E2E tests |
-
-**Tilt does not run Skaffold**, and **Skaffold does not touch dev-mode images**.
-This prevents config drift and avoids NodePort collisions.
+**Key Architecture Note:**
+- **Tilt** never runs Skaffold.
+- **Skaffold** never touches dev-mode images.
+This separation prevents config drift and ensures Stage 2 and Stage 3 are mathematically identical.
 
 ## 🧙‍♂️ Mage Tasks
 
-We use Mage for all developer commands.
+We use Mage to orchestrate these loops.
 
 ### Install Mage
 
@@ -92,42 +74,54 @@ We use Mage for all developer commands.
 go install github.com/magefile/mage@latest
 ```
 
-### Available Dev/Test Tasks
+### Lifecycle Commands
 
 ```bash
-mage dev               # tilt up (inner loop)
-mage clean             # tear down tilt + local resources
+# STAGE 1: Inner Loop
+mage dev               # tilt up
 
-mage test:localdev    # smoke test against running Tilt env
-mage test:locale2e     # full Alpine E2E via skaffold + kind (outer loop)
+# STAGE 2: Outer Loop (Local Parity)
+mage test:locale2e     # Builds local Alpine images -> Kind
 
-mage test:ci           # CI-kind test using CI-built artifacts
-mage test:live         # hit live for verification only
+# STAGE 3: CI Loop (Gating)
+mage test:ci           # Deploys CI artifacts -> Kind
+
+# STAGE 4: Preview Loop (Integration)
+mage test:preview      # Deploys to EKS Namespace
+
+# STAGE 5: Live Verify (Trust)
+mage test:live         # Smoke tests app.jetscale.ai
 ```
 
-## 🧪 E2E Target Matrix (Updated)
+### Utilities
 
-| Mage Command | Skaffold Profile | Cluster | Purpose | Behavior |
-| | - | - | - | -- |
-| `mage test:local-dev` | _(none)_ | Kind | Quick smoke test against Tilt env | Hits `localhost:8000` directly |
-| `mage test:locale2e` | `local-kind` | Kind | Live-parity E2E with local Alpine images | Builds local images, loads into Kind, ClusterIP + port-forward |
-| `mage test:ci` | `ci-kind` | Kind | CI-gating tests using CI images | No local builds |
-| `mage test:preview` | `preview` | EKS | PR ephemeral namespace testing | Deploy isolated namespace |
-| `mage test:live` | _(verification)_ | EKS | Smoke tests against `app.jetscale.ai` | **No deploy** |
+```bash
+mage clean             # tear down tilt + local resources
+```
+
+## 📂 Repository Layout
+
+- `Tiltfile` — Stage 1 Orchestrator
+- `skaffold.yaml` — Stage 2-5 Orchestrator
+- `charts/app` — Umbrella Helm chart
+- `kind/` — Cluster config
+- `charts/app/values.*.yaml` — Environment configs:
+
+  | File | Stage | Purpose |
+  | -- | -- | -- |
+  | `values.local.dev.yaml` | 1 | Tilt dev mode (dev images + hot reload) |
+  | `values.local.e2e.yaml` | 2, 3 | Alpine images (ClusterIP) |
+  | `values.preview.yaml` | 4 | Preview (EKS ephemeral namespaces) |
+  | `values.live.yaml` | 5 | Live environment (EKS) |
 
 ## ⚡ Preview Environments
 
 Preview environments are **runtime slices of EKS**, not folders.
 
-- `values.preview.yaml` defines the template
-- CI passes runtime inputs (`PR_NUMBER`, `GIT_SHA`)
-- Helm deploys into isolated namespaces like:
-
-```txt
-jetscale-pr-123
-```
-
-They are cleaned up automatically when the PR closes.
+- `values.preview.yaml` defines the template.
+- CI passes runtime inputs (`PR_NUMBER`, `GIT_SHA`).
+- Helm deploys into isolated namespaces like `jetscale-pr-123`.
+- They are cleaned up automatically when the PR closes.
 
 ## ✅ Current Guarantees
 

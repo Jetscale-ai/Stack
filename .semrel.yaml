@@ -1,0 +1,8 @@
+files: {}
+hooks: {}
+plugins:
+  - commit-analyzer
+  - commit-types
+  - changelog-generator
+  - git
+  - github
