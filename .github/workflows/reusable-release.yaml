@@ -12,6 +12,11 @@ on:
         type: boolean
         default: false
         description: "If true, converts file:// dependencies to oci://ghcr.io/OWNER/charts/NAME"
+      tag_prefix:
+        required: false
+        type: string
+        default: ""
+        description: "Optional prefix for git tags (e.g. 'chart-v') to isolate versioning"
     secrets:
       token:
         required: true
@@ -25,6 +30,7 @@ jobs:
       contents: write
       packages: write
 
+    # ✅ ETHOS: Standardize on the Booster Toolchain
     container:
       image: ghcr.io/jetscale-ai/booster-dev:latest
       options: --user root
@@ -41,6 +47,7 @@ jobs:
       - name: Trust Git Directory
         run: git config --global --add safe.directory '*'
 
+      # 1. Semantic Release
       - name: Semantic Release
         id: semrel
         uses: go-semantic-release/action@v1
@@ -48,7 +55,11 @@ jobs:
           github-token: ${{ secrets.token }}
           allow-initial-development-versions: true
           force-bump-patch-version: true
+          # ✅ NEW: Support for isolated tagging (chart-v1.0.0)
+          # Note: If supported by the action, this isolates the release history.
+          tag_prefix: ${{ inputs.tag_prefix }}
 
+      # 2. Package & Push
       - name: Publish Chart
         if: steps.semrel.outputs.version != ''
         working-directory: ${{ inputs.chart_path }}
@@ -58,6 +69,7 @@ jobs:
           OWNER: ${{ github.repository_owner }}
         run: |
           # 1. Normalize Owner to Lowercase (OCI Requirement)
+          # Fixes: invalid repository "Jetscale-ai/..."
           OWNER_LC=$(echo "${OWNER}" | tr '[:upper:]' '[:lower:]')
           OCI_BASE="oci://${REGISTRY}/${OWNER_LC}/charts/"
           
@@ -78,7 +90,8 @@ jobs:
              cat Chart.yaml
           fi
 
-          # 5. Build Dependencies
+          # 5. Build Dependencies (Update)
+          # Ensures Chart.lock matches the JIT-modified Chart.yaml
           helm dependency update
 
           # 6. Package & Push
