@@ -55,32 +55,32 @@ jobs:
         env:
           VERSION: ${{ steps.semrel.outputs.version }}
           REGISTRY: ghcr.io
-          REPO_OWNER: ${{ github.repository_owner }}
-          OCI_BASE: "oci://ghcr.io/${{ github.repository_owner }}/charts/"
+          OWNER: ${{ github.repository_owner }}
         run: |
+          # 1. Normalize Owner to Lowercase (OCI Requirement)
+          OWNER_LC=$(echo "${OWNER}" | tr '[:upper:]' '[:lower:]')
+          OCI_BASE="oci://${REGISTRY}/${OWNER_LC}/charts/"
+          
           echo "🚀 Publishing Version: $VERSION"
+          echo "📦 OCI Registry: $OCI_BASE"
 
-          # A. Login to GHCR
+          # 2. Login
           echo "${{ secrets.token }}" | helm registry login ${REGISTRY} --username ${{ github.actor }} --password-stdin
 
-          # B. Version Injection
+          # 3. Version Injection
           yq -i ".version = \"${VERSION}\"" Chart.yaml
           yq -i ".appVersion = \"${VERSION}\"" Chart.yaml
 
-          # C. JIT Dependency Transformation
+          # 4. JIT Dependency Transformation
           if [ "${{ inputs.convert_local_deps }}" = "true" ]; then
              echo "🔄 Converting file:// dependencies to OCI..."
-             yq -i '(.dependencies[] | select(.repository | test("^file://"))) |= .repository = env(OCI_BASE) + .name' Chart.yaml
-             
-             echo "✅ Transformed Chart.yaml:"
+             yq -i "(.dependencies[] | select(.repository | test(\"^file://\"))) |= .repository = \"${OCI_BASE}\" + .name" Chart.yaml
              cat Chart.yaml
           fi
 
-          # D. Build Dependencies (Update)
-          # We use 'update' because we invalidated the committed Chart.lock by changing the repo URLs above.
-          # This will download the OCI charts and generate a fresh lock for packaging.
+          # 5. Build Dependencies
           helm dependency update
 
-          # E. Package & Push
+          # 6. Package & Push
           helm package .
-          helm push *.tgz oci://${REGISTRY}/${REPO_OWNER}/charts
+          helm push *.tgz "${OCI_BASE}"
