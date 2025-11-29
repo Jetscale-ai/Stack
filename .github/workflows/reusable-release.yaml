@@ -11,7 +11,7 @@ on:
         required: false
         type: boolean
         default: false
-        description: "If true, converts file:// dependencies to oci://ghcr.io/OWNER/charts"
+        description: "If true, converts file:// dependencies to oci://ghcr.io/OWNER/charts/NAME"
     secrets:
       token:
         required: true
@@ -25,7 +25,6 @@ jobs:
       contents: write
       packages: write
 
-    # ✅ ETHOS: Standardize on the Booster Toolchain
     container:
       image: ghcr.io/jetscale-ai/booster-dev:latest
       options: --user root
@@ -42,7 +41,6 @@ jobs:
       - name: Trust Git Directory
         run: git config --global --add safe.directory '*'
 
-      # 1. Semantic Release
       - name: Semantic Release
         id: semrel
         uses: go-semantic-release/action@v1
@@ -51,7 +49,6 @@ jobs:
           allow-initial-development-versions: true
           force-bump-patch-version: true
 
-      # 2. Package & Push
       - name: Publish Chart
         if: steps.semrel.outputs.version != ''
         working-directory: ${{ inputs.chart_path }}
@@ -59,6 +56,8 @@ jobs:
           VERSION: ${{ steps.semrel.outputs.version }}
           REGISTRY: ghcr.io
           REPO_OWNER: ${{ github.repository_owner }}
+          # Pass the OCI base URL to yq via env var for cleaner syntax
+          OCI_BASE: "oci://ghcr.io/${{ github.repository_owner }}/charts/"
         run: |
           echo "🚀 Publishing Version: $VERSION"
 
@@ -69,22 +68,22 @@ jobs:
           yq -i ".version = \"${VERSION}\"" Chart.yaml
           yq -i ".appVersion = \"${VERSION}\"" Chart.yaml
 
-          # C. JIT Dependency Transformation (Local -> OCI)
-          # This allows Tilt to use file:// locally, while we publish oci:// globally.
-          if [ "${{ inputs.convert_local_deps }}" == "true" ]; then
+          # C. JIT Dependency Transformation
+          # Fix: Use single '=' for POSIX compliance
+          if [ "${{ inputs.convert_local_deps }}" = "true" ]; then
              echo "🔄 Converting file:// dependencies to OCI..."
-             # Logic: Find deps starting with file://, replace repository with oci://...
-             # We assume the subchart name matches the repo name convention.
-             # Note: This regex assumes the standard JetScale OCI path.
-             yq -i "(.dependencies[] | select(.repository | test(\"^file://\"))).repository |= sub(\"^file://.*\", \"oci://${REGISTRY}/${REPO_OWNER}/charts\")" Chart.yaml
              
-             # Verify the change
+             # Logic: Select dependencies starting with file://
+             # Replace .repository with $OCI_BASE + .name
+             # Example: file://../backend -> oci://ghcr.io/jetscale-ai/charts/backend-api
+             yq -i '(.dependencies[] | select(.repository | test("^file://"))) |= .repository = env(OCI_BASE) + .name' Chart.yaml
+             
+             echo "✅ Transformed Chart.yaml:"
              cat Chart.yaml
           fi
 
-          # D. Build Dependencies
-          # Now that they point to OCI, 'helm dep build' will pull them from the registry
-          # instead of looking for local files that don't exist in CI.
+          # D. Build Dependencies (Vendor)
+          # This pulls the OCI artifacts defined above
           helm dependency build
 
           # E. Package & Push
