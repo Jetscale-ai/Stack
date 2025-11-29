@@ -7,21 +7,28 @@ on:
         required: true
         type: string
         description: "Path to the chart directory (e.g. charts/backend-api)"
-      image_name:
+      convert_local_deps:
         required: false
-        type: string
-        description: "Optional override for artifacts (usually derived from Chart.yaml)"
+        type: boolean
+        default: false
+        description: "If true, converts file:// dependencies to oci://ghcr.io/OWNER/charts"
     secrets:
       token:
         required: true
-        description: "GitHub Token with packages:write permissions"
+        description: "GitHub Token with contents:write and packages:write permissions"
 
 jobs:
   release:
+    name: "Release Chart"
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
     # ✅ ETHOS: Standardize on the Booster Toolchain
     container:
       image: ghcr.io/jetscale-ai/booster-dev:latest
+      options: --user root
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.token }}
@@ -32,8 +39,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Trust Git Directory
+        run: git config --global --add safe.directory '*'
+
       # 1. Semantic Release
-      # Calculates version based on the CALLER's git history
       - name: Semantic Release
         id: semrel
         uses: go-semantic-release/action@v1
@@ -53,22 +62,31 @@ jobs:
         run: |
           echo "🚀 Publishing Version: $VERSION"
 
-          # A. Login to GHCR (Helm OCI)
+          # A. Login to GHCR
           echo "${{ secrets.token }}" | helm registry login ${REGISTRY} --username ${{ github.actor }} --password-stdin
 
-          # B. Inject Version into Chart.yaml
-          # We use yq (pre-installed in booster-dev)
+          # B. Version Injection
           yq -i ".version = \"${VERSION}\"" Chart.yaml
           yq -i ".appVersion = \"${VERSION}\"" Chart.yaml
 
-          # C. Build Dependencies
-          # Safe to run even if no dependencies exist.
-          # Note: If this chart depends on others, they must be accessible via OCI or public repo.
+          # C. JIT Dependency Transformation (Local -> OCI)
+          # This allows Tilt to use file:// locally, while we publish oci:// globally.
+          if [ "${{ inputs.convert_local_deps }}" == "true" ]; then
+             echo "🔄 Converting file:// dependencies to OCI..."
+             # Logic: Find deps starting with file://, replace repository with oci://...
+             # We assume the subchart name matches the repo name convention.
+             # Note: This regex assumes the standard JetScale OCI path.
+             yq -i "(.dependencies[] | select(.repository | test(\"^file://\"))).repository |= sub(\"^file://.*\", \"oci://${REGISTRY}/${REPO_OWNER}/charts\")" Chart.yaml
+             
+             # Verify the change
+             cat Chart.yaml
+          fi
+
+          # D. Build Dependencies
+          # Now that they point to OCI, 'helm dep build' will pull them from the registry
+          # instead of looking for local files that don't exist in CI.
           helm dependency build
 
-          # D. Package
+          # E. Package & Push
           helm package .
-
-          # E. Push to OCI
-          # helm push output is like: "Pushed: ghcr.io/owner/charts/my-chart:1.2.3"
           helm push *.tgz oci://${REGISTRY}/${REPO_OWNER}/charts

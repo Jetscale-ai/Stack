@@ -1,0 +1,24 @@
+name: Release Stack
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'charts/app/**'
+      - '.github/workflows/reusable-release.yaml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  call-release:
+    name: "Pipeline"
+    uses: ./.github/workflows/reusable-release.yaml
+    with:
+      chart_path: "charts/app"
+      # ✅ TRANSFORM: Switch file:// to oci:// for the release artifact
+      convert_local_deps: true
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
