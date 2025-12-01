@@ -1,0 +1,19 @@
+repos:
+  - repo: local
+    hooks:
+      # 1. Structural Integrity Check
+      # Runs 'helm template' via Mage to verify envs/ and charts/ syntax.
+      - id: mage-validate-envs
+        name: Validate Helm Environments
+        entry: mage validate:envs
+        language: system
+        files: ^(charts/|envs/)
+        pass_filenames: false
+
+      # 2. Terraform Formatting (Optional, but recommended)
+      - id: terraform-fmt
+        name: Terraform Format
+        entry: terraform fmt -recursive envs/
+        language: system
+        files: \.tf$
+        pass_filenames: false

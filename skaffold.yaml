@@ -3,9 +3,6 @@ kind: Config
 metadata:
   name: jetscale-stack
 
-# ------------------------------------------------------------------------------
-# GLOBAL BUILD: Local-Only Artifacts for E2E
-# ------------------------------------------------------------------------------
 build:
   local:
     push: false
@@ -25,7 +22,7 @@ build:
 
 profiles:
   # --------------------------------------------------------
-  # LOCAL PROFILE (Kind on laptop)
+  # LOCAL PROFILE (Kind on laptop) - Keeps local values in chart
   # --------------------------------------------------------
   - name: local-kind
     deploy:
@@ -40,23 +37,7 @@ profiles:
               - charts/app/values.local.e2e.yaml
 
   # --------------------------------------------------------
-  # CI PROFILE
-  # --------------------------------------------------------
-  - name: ci-kind
-    deploy:
-      kubeContext: kind-kind
-      helm:
-        releases:
-          - name: jetscale-stack-ci
-            chartPath: charts/app
-            createNamespace: true
-            valuesFiles:
-              - charts/app/values.local.e2e.yaml
-            setValues:
-              backend-api.service.type: "ClusterIP"
-
-  # --------------------------------------------------------
-  # PREVIEW & LIVE
+  # PREVIEW (Updated Path)
   # --------------------------------------------------------
   - name: preview
     deploy:
@@ -65,9 +46,13 @@ profiles:
           - name: jetscale-stack-preview
             chartPath: charts/app
             createNamespace: true
+            # ✅ Point to new location
             valuesFiles:
-              - charts/app/values.preview.yaml
+              - envs/preview/values.yaml
 
+  # --------------------------------------------------------
+  # LIVE (Updated Path)
+  # --------------------------------------------------------
   - name: live
     deploy:
       helm:
@@ -75,5 +60,6 @@ profiles:
           - name: jetscale-stack
             chartPath: charts/app
             createNamespace: true
+            # ✅ Point to new location
             valuesFiles:
-              - charts/app/values.live.yaml
+              - envs/live/values.yaml

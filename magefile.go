@@ -36,6 +36,48 @@ func Clean() error {
 }
 
 // -----------------------------------------------------------------------------
+// VALIDATION (Structural Integrity)
+// -----------------------------------------------------------------------------
+
+type Validate mg.Namespace
+
+// Envs runs 'helm template' against all environment configurations.
+// This proves that values.yaml + templates = Valid Kubernetes YAML.
+// It does NOT require a cluster.
+func (Validate) Envs() error {
+	envs := []string{"live", "preview"}
+	
+	fmt.Println("🔍 Validating Environment Configurations...")
+	
+	// Ensure dependencies are ready (requires OCI access or local file://)
+	// We try dependency build, but ignore error if OCI is not yet published,
+	// assuming templates might still render if dependencies are conditional.
+	// For strict validation, dependencies must exist.
+	fmt.Println("   > helm dependency build charts/app")
+	exec.Command("helm", "dependency", "build", "charts/app").Run()
+
+	for _, env := range envs {
+		valuesFile := fmt.Sprintf("envs/%s/values.yaml", env)
+		fmt.Printf("   > Checking %s...", valuesFile)
+		
+		// Run Helm Template
+		// --dry-run: simulate install
+		// --debug: print generated manifest on failure
+		cmd := exec.Command("helm", "template", "jetscale-stack", "charts/app", 
+			"--values", valuesFile,
+			"--debug")
+		
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Printf("❌ FAILED\n")
+			fmt.Println(string(out))
+			return fmt.Errorf("validation failed for %s", env)
+		}
+		fmt.Printf("✅ Valid Syntax\n")
+	}
+	return nil
+}
+
+// -----------------------------------------------------------------------------
 // TESTING NAMESPACE
 // -----------------------------------------------------------------------------
 

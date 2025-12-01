@@ -1,0 +1,92 @@
+# ==========================================================
+# JETSCALE STACK - DEFAULT INTERFACE
+# ==========================================================
+# This file defines the default configuration for the Umbrella Chart.
+#
+# STRATEGY:
+# - Defaults are "Generic Production" (ClusterIP, Secure).
+# - Environment specifics (HA, Ingress, DevMode) belong in `envs/`
+#   or `values.local.*.yaml`.
+# ==========================================================
+
+global:
+  # Used by subcharts to toggle debug logging or specific behaviors
+  env: "production"
+
+# ----------------------------------------------------------
+# 1. CORE SERVICES (Subcharts)
+# ----------------------------------------------------------
+
+backend-api:
+  enabled: true
+  replicaCount: 1
+  image:
+    # Default to the OCI artifacts defined in the subchart
+    # Can be overridden here if the umbrella wants to pin versions
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+frontend-web:
+  enabled: true
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# ----------------------------------------------------------
+# 2. INFRASTRUCTURE (Dependency Subcharts)
+# ----------------------------------------------------------
+
+postgres:
+  enabled: true
+  # Default to standalone for cost/simplicity.
+  # Use 'replication' in envs/live/values.yaml for HA.
+  architecture: standalone
+  auth:
+    username: "jetscale"
+    database: "jetscale"
+    # ⚠️ OVERRIDE THIS IN PRODUCTION via Secrets or --set
+    password: "change-me"
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+
+redis:
+  enabled: true
+  # Default to standalone. Use 'replication' in envs/live.
+  architecture: standalone
+  auth:
+    enabled: false # simplistic default, enable in live
+
+# ----------------------------------------------------------
+# 3. ROUTING (Umbrella Level)
+# ----------------------------------------------------------
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  #  kubernetes.io/ingress.class: nginx
+  #  cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local

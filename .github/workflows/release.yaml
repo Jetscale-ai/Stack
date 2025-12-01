@@ -18,7 +18,6 @@ jobs:
     uses: ./.github/workflows/reusable-release.yaml
     with:
       chart_path: "charts/app"
-      # ✅ TRANSFORM: Switch file:// to oci:// for the release artifact
-      convert_local_deps: true
+      tag_prefix: "chart-v"
     secrets:
-      token: ${{ secrets.GITHUB_TOKEN }}
+      token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}

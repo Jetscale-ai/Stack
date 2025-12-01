@@ -2,18 +2,18 @@ apiVersion: v2
 name: jetscale-stack
 description: The JetScale Platform Umbrella Chart
 type: application
-version: 0.1.0
+version: 0.1.3
 appVersion: "1.0.0"
 
 dependencies:
-  # Backend Service
+  # Backend Service (Proprietary OCI)
   - name: backend-api
-    version: 0.1.0
-    repository: "file://../../../backend/charts/backend-api"
+    version: "0.1.0"
+    repository: "oci://ghcr.io/jetscale-ai/charts/backend-api"
     condition: backend-api.enabled
 
-  # Frontend Service
+  # Frontend Service (Proprietary OCI)
   - name: frontend-web
-    version: 0.1.0
-    repository: "file://../../../frontend/charts/frontend-web"
+    version: "0.1.0"
+    repository: "oci://ghcr.io/jetscale-ai/charts/frontend-web"
     condition: frontend-web.enabled
