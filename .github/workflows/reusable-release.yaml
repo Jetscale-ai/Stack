@@ -10,8 +10,8 @@ on:
       tag_prefix:
         required: false
         type: string
-        default: ""
-        description: "Optional prefix for git tags (e.g. 'chart-v')"
+        default: "chart-v"
+        description: "Prefix for git tags (default: 'chart-v')"
     secrets:
       token:
         required: true
