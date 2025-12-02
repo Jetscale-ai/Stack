@@ -4,30 +4,33 @@ metadata:
   name: jetscale-stack
 
 # ------------------------------------------------------------------------------
-# GLOBAL BUILD: Default to "Developer Mode" (Build from Source)
+# GLOBAL BUILD: Options Only (No Artifacts)
 # ------------------------------------------------------------------------------
 build:
   local:
     push: false
     useDockerCLI: true
     tryImportMissing: true
-  artifacts:
-    - image: jetscale-backend-local
-      context: ../backend
-      docker:
-        dockerfile: Dockerfile
-        target: backend
-    - image: jetscale-frontend-local
-      context: ../frontend
-      docker:
-        dockerfile: Dockerfile
-        target: frontend
+  # ⚠️ CRITICAL: Do not define artifacts here. 
+  # They require relative paths (../backend) which do not exist in CI.
 
 profiles:
   # --------------------------------------------------------
   # LOCAL PROFILE (Kind on laptop)
   # --------------------------------------------------------
   - name: local-kind
+    build:
+      artifacts:
+        - image: jetscale-backend-local
+          context: ../backend
+          docker:
+            dockerfile: Dockerfile
+            target: backend
+        - image: jetscale-frontend-local
+          context: ../frontend
+          docker:
+            dockerfile: Dockerfile
+            target: frontend
     deploy:
       kubeContext: kind-kind
       helm:
@@ -43,11 +46,8 @@ profiles:
   # CI PROFILE (Kind on Runner)
   # --------------------------------------------------------
   - name: ci-kind
-    # 1. DISABLE BUILD: We have no source code in CI
-    build:
-      artifacts: []
-    
-    # 2. DEPLOY: Use Preview config (points to GHCR images)
+    # No build section needed. 
+    # Skaffold will simply deploy the remote images defined in values.yaml.
     deploy:
       kubeContext: kind-kind
       helm:
