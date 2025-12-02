@@ -18,6 +18,7 @@ jobs:
     uses: ./.github/workflows/reusable-release.yaml
     with:
       chart_path: "charts/app"
+      # ⚠️ CRITICAL: This input drives the prefix logic
       tag_prefix: "chart-v"
     secrets:
       token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
