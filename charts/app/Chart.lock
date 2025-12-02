@@ -1,9 +1,9 @@
 dependencies:
 - name: backend-api
-  repository: file://../../../backend/charts/backend-api
-  version: 0.1.0
+  repository: oci://ghcr.io/jetscale-ai/charts
+  version: 1.1.4
 - name: frontend-web
-  repository: file://../../../frontend/charts/frontend-web
-  version: 0.1.0
-digest: sha256:1e1b67ecbd97cb6e35e71630684ce97911b23807b3c3871451f2f1c41ae2e2f3
-generated: "2025-11-28T12:51:08.967808852-05:00"
+  repository: oci://ghcr.io/jetscale-ai/charts
+  version: 1.0.7
+digest: sha256:5ddd05adef7d72985e807384bf42c89ea9a951ce997c6457ddc1c657d5eec388
+generated: "2025-12-01T20:49:46.61004182-05:00"
