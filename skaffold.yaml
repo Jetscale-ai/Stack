@@ -22,7 +22,7 @@ build:
 
 profiles:
   # --------------------------------------------------------
-  # LOCAL PROFILE (Kind on laptop) - Keeps local values in chart
+  # LOCAL PROFILE (Kind on laptop)
   # --------------------------------------------------------
   - name: local-kind
     deploy:
@@ -37,7 +37,24 @@ profiles:
               - charts/app/values.local.e2e.yaml
 
   # --------------------------------------------------------
-  # PREVIEW (Updated Path)
+  # CI PROFILE (Restored)
+  # --------------------------------------------------------
+  - name: ci-kind
+    deploy:
+      kubeContext: kind-kind
+      helm:
+        releases:
+          # Note: Name must match what Magefile expects for Port-Forwarding
+          - name: jetscale-stack-ci
+            chartPath: charts/app
+            # Namespace is overridden by CLI flag in Mage, but good to have default
+            namespace: jetscale-ci
+            createNamespace: true
+            valuesFiles:
+              - charts/app/values.local.e2e.yaml
+
+  # --------------------------------------------------------
+  # PREVIEW
   # --------------------------------------------------------
   - name: preview
     deploy:
@@ -46,12 +63,11 @@ profiles:
           - name: jetscale-stack-preview
             chartPath: charts/app
             createNamespace: true
-            # ✅ Point to new location
             valuesFiles:
               - envs/preview/values.yaml
 
   # --------------------------------------------------------
-  # LIVE (Updated Path)
+  # LIVE
   # --------------------------------------------------------
   - name: live
     deploy:
@@ -60,6 +76,5 @@ profiles:
           - name: jetscale-stack
             chartPath: charts/app
             createNamespace: true
-            # ✅ Point to new location
             valuesFiles:
               - envs/live/values.yaml
