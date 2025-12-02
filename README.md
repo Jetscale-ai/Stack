@@ -9,7 +9,7 @@ Instead of a drifting `docker-compose`, this repo enables **Live-like environmen
 
 - **Tilt** → Local Dev (hot reload, dev images)
 - **Skaffold + Kind** → Local E2E (Alpine runtime parity)
-- **Helm** → Single unified deployment surface for all environments
+- **Helm + OCI** → Immutable, versioned deployment artifacts
 
 This produces a consistent experience across Dev → CI → Preview → Live.
 
@@ -19,9 +19,9 @@ This produces a consistent experience across Dev → CI → Preview → Live.
 
 - **Docker**
 - **Kind**: `go install sigs.k8s.io/kind@latest`
-- **Tilt**:  
-  `curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash`
+- **Tilt**: `curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash`
 - **Helm**: `brew install helm`
+- **Mage**: `go install github.com/magefile/mage@latest`
 
 ### 2. Boot the Local Dev Platform (Inner Loop)
 
@@ -31,10 +31,14 @@ Run these commands from the `stack/` directory:
 # 1. Create the local cluster
 kind create cluster --config kind/kind-config.yaml --name kind
 
-# 2. Vendor chart dependencies
+# 2. Authenticate (Required for OCI Charts)
+gh auth login --scopes read:packages
+gh auth token | helm registry login ghcr.io --username $(gh api user -q .login) --password-stdin
+
+# 3. Vendor chart dependencies (From OCI)
 (cd charts/app && helm dependency build)
 
-# 3. Start Dev Loop (Fat images + Hot Reload)
+# 4. Start Dev Loop (Fat images + Hot Reload)
 tilt up
 ```
 
@@ -44,89 +48,45 @@ Tilt exposes everything automatically:
 - **Backend:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Frontend:** [http://localhost:3000](http://localhost:3000)
 
-**Tilt uses:**
-`charts/app/values.local.dev.yaml` → dev images, NodePorts, hot reload.
+## 📂 Repository Layout
 
-## 🔄 The 5-Stage Lifecycle (4 Loops + 1 Verify)
+We adhere to a strict **Definition vs. Instantiation** split:
 
-JetScale operates on **four distinct feedback loops** and one final verification stage. Each stage increases in fidelity and reduces speed.
+- `charts/app` — **The Definition.** The generic "Umbrella Chart". Dependencies are pinned to immutable OCI versions.
+- `envs/` — **The Instantiation.** Environment-specific configurations.
+  - `envs/live/values.yaml` → Production (HA, replication).
+  - `envs/preview/values.yaml` → CI/Preview (Ephemeral).
+- `values.local.*.yaml` — Local overrides (kept near chart for Tilt/Skaffold convenience).
+
+## 🔗 Modifying Subcharts ("Link Mode")
+
+By default, the Stack uses immutable OCI charts (`oci://ghcr.io/...`). To modify the underlying `backend` or `frontend` templates:
+
+1.  **Edit `charts/app/Chart.yaml`**:
+    ```yaml
+    dependencies:
+      - name: backend-api
+        # repository: "oci://ghcr.io/jetscale-ai/charts"  <-- Comment this
+        repository: "file://../../../backend/charts"        <-- Uncomment this
+    ```
+2.  **Update Dependencies**: `helm dependency update charts/app`
+3.  **Dev Loop**: `tilt up` (Changes to templates now take effect).
+4.  **Revert**: Do not commit `file://` paths to main.
+
+## 🔄 The 5-Stage Lifecycle
 
 | Stage | Loop Name | Tooling | Environment | Purpose |
 | :-- | :-- | :-- | :-- | :-- |
-| **1** | **Inner Loop** | Tilt | Kind (Local) | **Speed.** Hot reload, fat images, debuggers attached. |
-| **2** | **Outer Loop** | Skaffold | Kind (Local) | **Parity.** Builds real Alpine images locally. Tests "prod-like" runtime. |
-| **3** | **CI Loop** | Skaffold | Kind (CI Runner) | **Gating.** Uses official CI artifacts. Ensures clean build context. |
-| **4** | **Preview Loop** | Skaffold | EKS (Ephemeral) | **Integration.** Deploys to `pr-123.app.jetscale.ai`. Tests AWS dependencies. |
-| **5** | **Live Verify** | Mage | EKS (Prod) | **Trust.** Non-destructive smoke tests against the live endpoint. |
-
-**Key Architecture Note:**
-- **Tilt** never runs Skaffold.
-- **Skaffold** never touches dev-mode images.
-This separation prevents config drift and ensures Stage 2 and Stage 3 are mathematically identical.
+| **1** | **Inner Loop** | Tilt | Kind (Local) | **Speed.** Hot reload, fat images. |
+| **2** | **Outer Loop** | Skaffold | Kind (Local) | **Parity.** Builds local code -> Alpine images. |
+| **3** | **CI Loop** | Skaffold | Kind (CI Runner) | **Gating.** Deploys remote OCI artifacts. |
+| **4** | **Preview Loop** | Skaffold | EKS (Ephemeral) | **Integration.** `pr-123.app.jetscale.ai`. |
+| **5** | **Live Verify** | Mage | EKS (Prod) | **Trust.** Non-destructive smoke tests. |
 
 ## 🧙‍♂️ Mage Tasks
 
-We use Mage to orchestrate these loops.
-
-### Install Mage
-
 ```bash
-go install github.com/magefile/mage@latest
+mage validate:envs     # Check structural integrity of all envs/
+mage test:locale2e     # Run Stage 2 (Local Parity)
+mage test:ci           # Run Stage 3 (CI Mode)
 ```
-
-### Lifecycle Commands
-
-```bash
-# STAGE 1: Inner Loop
-mage dev               # tilt up
-
-# STAGE 2: Outer Loop (Local Parity)
-mage test:locale2e     # Builds local Alpine images -> Kind
-
-# STAGE 3: CI Loop (Gating)
-mage test:ci           # Deploys CI artifacts -> Kind
-
-# STAGE 4: Preview Loop (Integration)
-mage test:preview      # Deploys to EKS Namespace
-
-# STAGE 5: Live Verify (Trust)
-mage test:live         # Smoke tests app.jetscale.ai
-```
-
-### Utilities
-
-```bash
-mage clean             # tear down tilt + local resources
-```
-
-## 📂 Repository Layout
-
-- `Tiltfile` — Stage 1 Orchestrator
-- `skaffold.yaml` — Stage 2-5 Orchestrator
-- `charts/app` — Umbrella Helm chart
-- `kind/` — Cluster config
-- `charts/app/values.*.yaml` — Environment configs:
-
-  | File | Stage | Purpose |
-  | -- | -- | -- |
-  | `values.local.dev.yaml` | 1 | Tilt dev mode (dev images + hot reload) |
-  | `values.local.e2e.yaml` | 2, 3 | Alpine images (ClusterIP) |
-  | `values.preview.yaml` | 4 | Preview (EKS ephemeral namespaces) |
-  | `values.live.yaml` | 5 | Live environment (EKS) |
-
-## ⚡ Preview Environments
-
-Preview environments are **runtime slices of EKS**, not folders.
-
-- `values.preview.yaml` defines the template.
-- CI passes runtime inputs (`PR_NUMBER`, `GIT_SHA`).
-- Helm deploys into isolated namespaces like `jetscale-pr-123`.
-- They are cleaned up automatically when the PR closes.
-
-## ✅ Current Guarantees
-
-- **Local Dev = Tilt + dev images** (fast, reload)
-- **Local E2E = Skaffold + Kind + Alpine images** (live-parity)
-- **Docker images auto-start uvicorn** by default
-- **Charts remain clean** and environment-specific
-- **Tests run exactly as they will in CI**
