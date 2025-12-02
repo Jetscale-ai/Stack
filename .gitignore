@@ -11,13 +11,11 @@ Thumbs.db
 
 # Golang (Mage)
 jetscale-stack
-go.sum
 
 # Terraform
 .terraform/
 *.tfstate
 *.tfstate.backup
-.terraform.lock.hcl
 
 # Tilt
 .tilt_dev/
