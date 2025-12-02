@@ -3,6 +3,9 @@ kind: Config
 metadata:
   name: jetscale-stack
 
+# ------------------------------------------------------------------------------
+# GLOBAL BUILD: Default to "Developer Mode" (Build from Source)
+# ------------------------------------------------------------------------------
 build:
   local:
     push: false
@@ -37,21 +40,25 @@ profiles:
               - charts/app/values.local.e2e.yaml
 
   # --------------------------------------------------------
-  # CI PROFILE (Restored)
+  # CI PROFILE (Kind on Runner)
   # --------------------------------------------------------
   - name: ci-kind
+    # 1. DISABLE BUILD: We have no source code in CI
+    build:
+      artifacts: []
+    
+    # 2. DEPLOY: Use Preview config (points to GHCR images)
     deploy:
       kubeContext: kind-kind
       helm:
         releases:
-          # Note: Name must match what Magefile expects for Port-Forwarding
           - name: jetscale-stack-ci
             chartPath: charts/app
-            # Namespace is overridden by CLI flag in Mage, but good to have default
             namespace: jetscale-ci
             createNamespace: true
             valuesFiles:
-              - charts/app/values.local.e2e.yaml
+              # Uses ghcr.io/jetscale-ai/backend-dev:latest
+              - envs/preview/values.yaml
 
   # --------------------------------------------------------
   # PREVIEW
