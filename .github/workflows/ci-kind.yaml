@@ -3,7 +3,14 @@ name: CI (Kind E2E)
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   # Allow triggering from backend/frontend repos
   repository_dispatch:
     types: [trigger-ci]
@@ -12,18 +19,44 @@ jobs:
   e2e-kind:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Source
+        uses: actions/checkout@v4
 
-      - name: Setup Go (Mage)
+      - name: Setup Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.21'
 
-      - name: Install Tools
+      # 1. Install Orchestration Tools
+      - name: Install Tools (Mage & Skaffold)
         run: |
+          # Install Mage
           go install github.com/magefile/mage@latest
-          # Install Skaffold, Helm, Kind (or use pre-installed on runner)
+          
+          # Install Skaffold
+          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
+          chmod +x skaffold
+          sudo mv skaffold /usr/local/bin
 
+      # 2. Provision Cluster (using your config)
+      - name: Create Kind Cluster
+        uses: helm/kind-action@v1
+        with:
+          version: v0.20.0
+          config: kind/kind-config.yaml
+          cluster_name: kind
+
+      # 3. Authenticate for OCI Charts
+      - name: Login to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+        run: |
+          echo "$GH_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
+
+      # 4. Execute the Test Suite
       - name: Run E2E (Kind)
+        # Mage will: 
+        # 1. Skaffold Build (Docker)
+        # 2. Skaffold Deploy (Helm -> Kind)
+        # 3. Go Test (Port-forward -> Endpoint)
         run: mage test:ci
-
