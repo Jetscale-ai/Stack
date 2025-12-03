@@ -1,16 +1,11 @@
 name: "PR Pipeline (Validate > E2E > Preview)"
 
 on:
-  # Run on PRs (The standard path)
   pull_request:
     branches: [ main ]
     paths-ignore: [ '**.md', 'docs/**' ]
-  
-  # Run on triggers from Backend/Frontend repos
   repository_dispatch:
     types: [trigger-ci, deploy-preview]
-  
-  # Optional: Also run Validate/E2E on main (but skip Preview) to ensure main is always green
   push:
     branches: [ main ]
     paths-ignore: [ '**.md', 'docs/**' ]
@@ -21,7 +16,7 @@ concurrency:
 
 jobs:
   # ============================================================================
-  # STAGE 0: INTEGRITY (Fail Fast)
+  # STAGE 0: INTEGRITY
   # ============================================================================
   validate:
     name: "0. Validate (Syntax)"
@@ -37,7 +32,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
         run: echo "$GH_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
-      
       - name: Mage Validate
         run: mage validate:envs
 
@@ -68,11 +62,27 @@ jobs:
           config: kind/kind-config.yaml
           cluster_name: kind
       
-      - name: Login to GHCR
+      - name: Login to GHCR (Helm CLI)
         env:
           GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
         run: echo "$GH_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
-      
+
+      # 🛑 CRITICAL FIX: Inject Credentials into the Cluster
+      - name: Pre-provision Cluster Secrets
+        env:
+          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+        run: |
+          # 1. Create the namespace used by the 'ci-kind' Skaffold profile
+          kubectl create ns jetscale-ci --dry-run=client -o yaml | kubectl apply -f -
+          
+          # 2. Inject the GHCR credentials so Kubelet can pull images
+          kubectl create secret docker-registry regcred \
+            --docker-server=ghcr.io \
+            --docker-username=jetscalebot \
+            --docker-password=$GH_TOKEN \
+            --namespace=jetscale-ci \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Run E2E
         run: mage test:ci
 
@@ -82,13 +92,8 @@ jobs:
   preview:
     name: "4. Preview (Manual)"
     needs: [e2e-kind]
-    # 🛑 Skip this on 'push to main' - Main uses release.yaml instead
     if: github.event_name == 'pull_request' || github.event_name == 'repository_dispatch'
     runs-on: ubuntu-latest
-
-    # 🛑 THE MANUAL GATE
-    # This environment MUST be configured in GitHub Settings -> Environments -> "preview"
-    # Enable "Required Reviewers" to make this pause for approval.
     environment: 
       name: preview
       url: https://pr-${{ github.event.client_payload.pr_number || github.event.number }}.app.jetscale.ai
