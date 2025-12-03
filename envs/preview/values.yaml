@@ -9,11 +9,11 @@ postgres:
   enabled: true
   primary:
     persistence:
-      enabled: false # Ephemeral
+      enabled: false 
   auth:
     username: "jetscale"
     database: "jetscale"
-    password: "ci-password" # Explicit password for CI
+    password: "ci-password" 
 
 redis:
   enabled: true
@@ -23,7 +23,6 @@ redis:
 backend-api:
   enabled: true
   replicaCount: 1
-  # Bind secrets for private image pull
   imagePullSecrets:
     - name: regcred
   image:
@@ -39,15 +38,28 @@ backend-api:
       cpu: "250m"
       memory: "512Mi"
   
-  # ✅ FIX: Wire Backend to the CI Database/Redis Services
-  # The hostnames assume the release name is 'jetscale-stack-ci' (set in skaffold.yaml)
+  # ✅ FIX: Add Readiness Probe to wait for entrypoint.sh to finish
+  probes:
+    readiness:
+      enabled: true
+      tcpSocket:
+        port: 8000
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 30 # Wait up to 2.5 mins for DB init
+    liveness:
+      enabled: true
+      path: "/health" # Assuming FastAPI has this, or use tcpSocket
+      port: 8000
+      initialDelaySeconds: 10
+      periodSeconds: 10
+
+  # Wire Backend to the CI Database/Redis Services
   env:
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale"
     JETSCALE_DB_PASSWORD: "ci-password"
-    # Format: postgresql+asyncpg://user:pass@host:5432/dbname
     JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale:ci-password@jetscale-stack-ci-postgres:5432/jetscale"
-    # Format: redis://host:6379/0
     JETSCALE_REDIS_URL: "redis://jetscale-stack-ci-redis-master:6379/0"
 
 # 3. FRONTEND
@@ -58,7 +70,6 @@ frontend-web:
   image:
     repository: ghcr.io/jetscale-ai/frontend
     tag: "latest"
-  # Point Frontend to the Backend (Internal Cluster DNS)
   env:
     VITE_API_BASE_URL: "http://jetscale-stack-ci-backend-api:8000"
 
