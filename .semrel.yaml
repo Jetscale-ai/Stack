@@ -6,3 +6,5 @@ plugins:
   - changelog-generator
   - git
   - github
+# ✅ FORCE THE PREFIX HERE
+tagPrefix: "chart-v"
