@@ -7,7 +7,7 @@ global:
 # 1. DATABASE
 postgres:
   enabled: true
-  # ✅ FIX: Use Public ECR Mirror to avoid Docker Hub Rate Limits (HTTP 429)
+  # Use Public ECR Mirror (No Rate Limits)
   image: "public.ecr.aws/docker/library/postgres:15-alpine"
   primary:
     persistence:
@@ -19,7 +19,6 @@ postgres:
 
 redis:
   enabled: true
-  # ✅ FIX: Use Public ECR Mirror to avoid Docker Hub Rate Limits
   image: "public.ecr.aws/docker/library/redis:7-bullseye"
   architecture: standalone
 
@@ -42,19 +41,21 @@ backend-api:
       cpu: "250m"
       memory: "512Mi"
   
+  # ✅ FIX: Relax probes to prevent premature killing during DB wait
   probes:
     readiness:
       enabled: true
       tcpSocket:
         port: 8000
-      initialDelaySeconds: 5
+      initialDelaySeconds: 15
       periodSeconds: 5
       failureThreshold: 30
     liveness:
       enabled: true
       path: "/health"
       port: 8000
-      initialDelaySeconds: 10
+      # Give entrypoint.sh 60s to connect to DB before killing the pod
+      initialDelaySeconds: 60 
       periodSeconds: 10
 
   env:
