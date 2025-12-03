@@ -3,12 +3,24 @@ name: Verify Live
 on:
   push:
     branches: [ main ]
+    # Optional: Add filters if you only want this to run when code changes
+    # paths-ignore:
+    #   - '**.md'
 
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
+    # ✅ FIX: Run inside the standard Booster container (has Mage + Go pre-installed)
+    container:
+      image: ghcr.io/jetscale-ai/booster-dev:latest
+      options: --user root
+
     steps:
       - uses: actions/checkout@v4
-      - name: Run Smoke Tests
-        run: mage test:live
 
+      - name: Trust Git Directory
+        run: git config --global --add safe.directory '*'
+
+      - name: Run Smoke Tests
+        # Runs 'go test' against app.jetscale.ai
+        run: mage test:live
