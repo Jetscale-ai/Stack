@@ -9,7 +9,11 @@ postgres:
   enabled: true
   primary:
     persistence:
-      enabled: false
+      enabled: false # Ephemeral
+  auth:
+    username: "jetscale"
+    database: "jetscale"
+    password: "ci-password" # Explicit password for CI
 
 redis:
   enabled: true
@@ -19,7 +23,7 @@ redis:
 backend-api:
   enabled: true
   replicaCount: 1
-  # ✅ FIX: Explicitly bind the secret to this subchart
+  # Bind secrets for private image pull
   imagePullSecrets:
     - name: regcred
   image:
@@ -34,16 +38,29 @@ backend-api:
     requests:
       cpu: "250m"
       memory: "512Mi"
+  
+  # ✅ FIX: Wire Backend to the CI Database/Redis Services
+  # The hostnames assume the release name is 'jetscale-stack-ci' (set in skaffold.yaml)
+  env:
+    JETSCALE_DB_NAME: "jetscale"
+    JETSCALE_DB_USER: "jetscale"
+    JETSCALE_DB_PASSWORD: "ci-password"
+    # Format: postgresql+asyncpg://user:pass@host:5432/dbname
+    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale:ci-password@jetscale-stack-ci-postgres:5432/jetscale"
+    # Format: redis://host:6379/0
+    JETSCALE_REDIS_URL: "redis://jetscale-stack-ci-redis-master:6379/0"
 
 # 3. FRONTEND
 frontend-web:
   enabled: true
-  # ✅ FIX: Explicitly bind the secret to this subchart
   imagePullSecrets:
     - name: regcred
   image:
     repository: ghcr.io/jetscale-ai/frontend
     tag: "latest"
+  # Point Frontend to the Backend (Internal Cluster DNS)
+  env:
+    VITE_API_BASE_URL: "http://jetscale-stack-ci-backend-api:8000"
 
 # 4. INGRESS
 ingress:
