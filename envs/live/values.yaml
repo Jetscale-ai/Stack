@@ -1,35 +1,38 @@
 # ==========================================================
 # LIVE ENVIRONMENT (EKS)
 # ==========================================================
-
 global:
   env: "live"
 
 # 1. DATABASE
-# In live, you might switch `enabled: false` if using RDS,
-# but for the Self-Hosted Stack, we default to HA Bitnami.
 postgres:
   enabled: true
-  architecture: replication # High Availability
+  # Note: The current custom infrastructure.yaml only supports 
+  # single-replica. 'replication' is ignored until we switch 
+  # to the full Bitnami subchart.
+  architecture: standalone 
   auth:
-    # These should be injected via Secrets, not plain text
-    existingSecret: "jetscale-live-db-creds"
-  primary:
-    persistence:
-      size: 50Gi
-      storageClass: "gp3"
+    # In real live, use Secrets store driver or sealed secrets
+    username: "jetscale" 
+    database: "jetscale"
+    password: "live-password-placeholder" 
+  persistence:
+    size: 50Gi
+    storageClass: "gp3"
 
 redis:
   enabled: true
-  architecture: replication # High Availability
+  persistence:
+    enabled: true
+    size: 5Gi
 
 # 2. BACKEND
 backend-api:
   enabled: true
-  replicaCount: 3 # High Availability
+  replicaCount: 3
   image:
-    repository: ghcr.io/jetscale-ai/backend # Alpine live image
-    tag: "latest" # Pinned by deployment pipeline
+    repository: ghcr.io/jetscale-ai/backend
+    tag: "latest"
   devMode:
     enabled: false
   resources:
@@ -45,7 +48,7 @@ frontend-web:
   enabled: true
   replicaCount: 3
   image:
-    repository: ghcr.io/jetscale-ai/frontend # Alpine live image
+    repository: ghcr.io/jetscale-ai/frontend
 
 # 4. INGRESS
 ingress:
@@ -54,7 +57,6 @@ ingress:
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:..."
   hosts:
     - host: "app.jetscale.ai"
       paths:
