@@ -1,0 +1,16 @@
+# JetScale Stack Release Configuration
+# Reference: https://nightapes.github.io/go-semantic-release/
+
+commitFormat: angular
+
+# Branch Configuration
+branch:
+  main: release
+
+# Provider Configuration
+release: github
+github:
+  user: "Jetscale-ai"
+  repo: "Stack"
+  # ✅ The Critical Setting: This forces the prefix
+  tagPrefix: "chart-v"
