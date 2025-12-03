@@ -1,23 +1,117 @@
-name: Release Stack
+name: "Stage 6: Release & Promote"
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'charts/app/**'
-      - '.github/workflows/reusable-release.yaml'
+      - 'charts/**'
       - '.release.yml'
-  workflow_dispatch: {}
 
 permissions:
   contents: write
   packages: write
+  id-token: write # Required for AWS OIDC
 
 jobs:
-  call-release:
-    name: "Pipeline"
-    uses: ./.github/workflows/reusable-release.yaml
-    with:
-      chart_path: "charts/app"
-    secrets:
-      token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+  # ============================================================================
+  # STEP 1: PUBLISH IMMUTABLE ARTIFACT
+  # ============================================================================
+  publish:
+    name: "Publish OCI Chart"
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semrel.outputs.version }}
+    container:
+      image: ghcr.io/jetscale-ai/booster-dev:latest
+      options: --user root
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Trust Git Directory
+        run: git config --global --add safe.directory '*'
+
+      - name: Semantic Release (Calculate & Tag)
+        id: semrel
+        uses: go-semantic-release/action@v1
+        with:
+          github-token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+          allow-initial-development-versions: true
+          force-bump-patch-version: true
+
+      - name: Publish to GHCR
+        if: steps.semrel.outputs.version != ''
+        env:
+          VERSION: ${{ steps.semrel.outputs.version }}
+          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+        run: |
+          echo "🚀 Publishing Version: $VERSION"
+          
+          # Login to OCI Registry
+          echo "$GH_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
+          
+          cd charts/app
+          
+          # 1. Inject Version into Chart.yaml
+          yq -i ".version = \"${VERSION}\"" Chart.yaml
+          yq -i ".appVersion = \"${VERSION}\"" Chart.yaml
+          
+          # 2. Update Dependencies (Lockfile Sync)
+          helm dependency build
+          
+          # 3. Package & Push
+          helm package .
+          helm push "jetscale-stack-${VERSION}.tgz" oci://ghcr.io/jetscale-ai/charts
+
+  # ============================================================================
+  # STEP 2: DEPLOY TO LIVE (GATED)
+  # ============================================================================
+  deploy-live:
+    name: "Promote to Live"
+    needs: [publish]
+    if: needs.publish.outputs.version != ''
+    runs-on: ubuntu-latest
+
+    # 🛑 THE PRODUCTION GATE
+    environment: 
+      name: live
+      url: https://app.jetscale.ai
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install Mage & Helm
+        run: |
+          go install github.com/magefile/mage@latest
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          ./get_helm.sh
+
+      - name: Login to GHCR (for Helm Pull)
+        env:
+          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
+
+      - name: Deploy Live
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          echo "🔥 Promoting Version $VERSION to Live..."
+          # Mage task must support --version flag or env var
+          # For now, we simulate the helm upgrade command
+          
+          helm upgrade --install jetscale-stack oci://ghcr.io/jetscale-ai/charts/jetscale-stack \
+            --version "$VERSION" \
+            --namespace jetscale-live \
+            --create-namespace \
+            --values envs/live/values.yaml \
+            --wait
