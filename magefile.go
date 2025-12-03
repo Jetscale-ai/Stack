@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -170,19 +171,33 @@ func startPortForward(ns, resource string, targetPort int) (func(), int, error) 
 	if err := cmd.Start(); err != nil {
 		return nil, 0, err
 	}
-	
-	// Wait for connection to establish
-	time.Sleep(3 * time.Second)
-
-	// Check if process died during sleep
-	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
-		return nil, 0, fmt.Errorf("kubectl port-forward exited unexpectedly (check target port %d existence)", targetPort)
-	}
 
 	cleanup := func() {
 		if cmd.Process != nil {
 			cmd.Process.Kill()
 		}
 	}
-	return cleanup, localPort, nil
+
+	// ✅ VIGOR: Active verification loop instead of blind sleep
+	fmt.Printf("   > Waiting for connection to localhost:%d...\n", localPort)
+	maxRetries := 30 // 15 seconds total
+	for i := 0; i < maxRetries; i++ {
+		timeout := 500 * time.Millisecond
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", localPort), timeout)
+		if err == nil {
+			conn.Close()
+			fmt.Println("   > Connection established.")
+			return cleanup, localPort, nil
+		}
+		
+		// If kubectl exited, stop immediately
+		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+			return nil, 0, fmt.Errorf("kubectl port-forward exited unexpectedly")
+		}
+		
+		time.Sleep(500 * time.Millisecond)
+	}
+	
+	cleanup()
+	return nil, 0, fmt.Errorf("timed out waiting for port-forward to open")
 }
