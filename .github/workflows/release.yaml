@@ -10,60 +10,18 @@ on:
 permissions:
   contents: write
   packages: write
-  id-token: write # Required for AWS OIDC
+  id-token: write
 
 jobs:
   # ============================================================================
-  # STEP 1: PUBLISH IMMUTABLE ARTIFACT
+  # STEP 1: PUBLISH IMMUTABLE ARTIFACT (Shared Logic)
   # ============================================================================
   publish:
-    name: "Publish OCI Chart"
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.semrel.outputs.version }}
-    container:
-      image: ghcr.io/jetscale-ai/booster-dev:latest
-      options: --user root
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Trust Git Directory
-        run: git config --global --add safe.directory '*'
-
-      - name: Semantic Release (Calculate & Tag)
-        id: semrel
-        uses: go-semantic-release/action@v1
-        with:
-          github-token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
-          allow-initial-development-versions: true
-          force-bump-patch-version: true
-
-      - name: Publish to GHCR
-        if: steps.semrel.outputs.version != ''
-        env:
-          VERSION: ${{ steps.semrel.outputs.version }}
-          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
-        run: |
-          echo "🚀 Publishing Version: $VERSION"
-          
-          # Login to OCI Registry
-          echo "$GH_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
-          
-          cd charts/app
-          
-          # 1. Inject Version into Chart.yaml
-          yq -i ".version = \"${VERSION}\"" Chart.yaml
-          yq -i ".appVersion = \"${VERSION}\"" Chart.yaml
-          
-          # 2. Update Dependencies (Lockfile Sync)
-          helm dependency build
-          
-          # 3. Package & Push
-          helm package .
-          helm push "jetscale-stack-${VERSION}.tgz" oci://ghcr.io/jetscale-ai/charts
+    uses: ./.github/workflows/reusable-release.yaml
+    with:
+      chart_path: "charts/app"
+    secrets:
+      token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
 
   # ============================================================================
   # STEP 2: DEPLOY TO LIVE (GATED)
@@ -71,6 +29,7 @@ jobs:
   deploy-live:
     name: "Promote to Live"
     needs: [publish]
+    # Only run if a new version was actually released
     if: needs.publish.outputs.version != ''
     runs-on: ubuntu-latest
 
@@ -106,9 +65,6 @@ jobs:
           VERSION: ${{ needs.publish.outputs.version }}
         run: |
           echo "🔥 Promoting Version $VERSION to Live..."
-          # Mage task must support --version flag or env var
-          # For now, we simulate the helm upgrade command
-          
           helm upgrade --install jetscale-stack oci://ghcr.io/jetscale-ai/charts/jetscale-stack \
             --version "$VERSION" \
             --namespace jetscale-live \

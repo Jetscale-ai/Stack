@@ -11,6 +11,11 @@ on:
       token:
         required: true
         description: "GitHub Token with packages:write permissions"
+    # ✅ NEW: Export the version to the caller
+    outputs:
+      version:
+        description: "The semantic version that was released"
+        value: ${{ jobs.release.outputs.version }}
 
 jobs:
   release:
@@ -19,6 +24,9 @@ jobs:
     permissions:
       contents: write
       packages: write
+
+    outputs:
+      version: ${{ steps.semrel.outputs.version }}
 
     container:
       image: ghcr.io/jetscale-ai/booster-dev:latest
@@ -43,7 +51,6 @@ jobs:
           github-token: ${{ secrets.token }}
           allow-initial-development-versions: true
           force-bump-patch-version: true
-          # ✅ Logic is now driven entirely by .release.yml
 
       - name: Publish Chart
         if: steps.semrel.outputs.version != ''
@@ -66,7 +73,7 @@ jobs:
           yq -i ".version = \"${VERSION}\"" Chart.yaml
           yq -i ".appVersion = \"${VERSION}\"" Chart.yaml
 
-          # Build Dependencies (Standard OCI pull)
+          # Build Dependencies
           helm dependency update
 
           # Package & Push
