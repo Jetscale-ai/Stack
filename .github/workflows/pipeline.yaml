@@ -30,8 +30,8 @@ jobs:
         run: git config --global --add safe.directory '*'
       - name: Login to GHCR
         env:
-          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
-        run: echo "$GH_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
+          BOT_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+        run: echo "$BOT_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
       - name: Mage Validate
         run: mage validate:envs
 
@@ -64,13 +64,13 @@ jobs:
       
       - name: Login to GHCR (Helm CLI)
         env:
-          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
-        run: echo "$GH_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
+          BOT_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+        run: echo "$BOT_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
 
-      # 🛑 CRITICAL FIX: Inject Credentials into the Cluster
+      # 🛑 CRITICAL FIX: Inject Credentials & Bind to ServiceAccount
       - name: Pre-provision Cluster Secrets
         env:
-          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+          BOT_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
         run: |
           # 1. Create the namespace used by the 'ci-kind' Skaffold profile
           kubectl create ns jetscale-ci --dry-run=client -o yaml | kubectl apply -f -
@@ -79,9 +79,15 @@ jobs:
           kubectl create secret docker-registry regcred \
             --docker-server=ghcr.io \
             --docker-username=jetscalebot \
-            --docker-password=$GH_TOKEN \
+            --docker-password=$BOT_TOKEN \
             --namespace=jetscale-ci \
             --dry-run=client -o yaml | kubectl apply -f -
+            
+          # 3. Omni-Bind: Patch default ServiceAccount to use regcred
+          # This ensures ALL pods in this namespace use the secret, regardless of chart config
+          kubectl patch serviceaccount default \
+            -n jetscale-ci \
+            -p '{"imagePullSecrets":[{"name":"regcred"}]}'
 
       - name: Run E2E
         run: mage test:ci
