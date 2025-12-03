@@ -63,8 +63,11 @@ backend-api:
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale"
     JETSCALE_DB_PASSWORD: "ci-password"
+    # ✅ FIX: Restore missing DB URL that caused crash
+    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale:ci-password@jetscale-stack-ci-postgres:5432/jetscale"
     JETSCALE_REDIS_URL: "redis://jetscale-stack-ci-redis-master:6379/0"
-    # ✅ FIX: Prevent startup crash by supplying required admin config
+    
+    # Admin Config
     JETSCALE_DEFAULT_ADMIN_EMAIL: "admin@jetscale.ai"
     JETSCALE_DEFAULT_ADMIN_USERNAME: "admin"
     JETSCALE_DEFAULT_ADMIN_PASSWORD: "ci-password-admin"
