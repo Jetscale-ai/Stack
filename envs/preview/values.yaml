@@ -7,6 +7,8 @@ global:
 # 1. DATABASE
 postgres:
   enabled: true
+  # ✅ FIX: Use Public ECR Mirror to avoid Docker Hub Rate Limits (HTTP 429)
+  image: "public.ecr.aws/docker/library/postgres:15-alpine"
   primary:
     persistence:
       enabled: false 
@@ -17,6 +19,8 @@ postgres:
 
 redis:
   enabled: true
+  # ✅ FIX: Use Public ECR Mirror to avoid Docker Hub Rate Limits
+  image: "public.ecr.aws/docker/library/redis:7-bullseye"
   architecture: standalone
 
 # 2. BACKEND
@@ -54,10 +58,8 @@ backend-api:
       periodSeconds: 10
 
   env:
-    # ✅ FIX: Granular variables required by entrypoint.sh
     JETSCALE_DB_HOST: "jetscale-stack-ci-postgres"
     JETSCALE_DB_PORT: "5432"
-    
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale"
     JETSCALE_DB_PASSWORD: "ci-password"
