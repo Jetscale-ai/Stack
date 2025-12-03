@@ -12,5 +12,5 @@ release: github
 github:
   user: "Jetscale-ai"
   repo: "Stack"
-  # ✅ The Critical Setting: This forces the prefix
+  # ✅ Critical: This forces the chart-v tag prefix
   tagPrefix: "chart-v"

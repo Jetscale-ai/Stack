@@ -90,4 +90,4 @@ ingress:
   #  - secretName: chart-example-tls
   #    hosts:
   #      - chart-example.local
-# trigger release #5
+# trigger release #6
