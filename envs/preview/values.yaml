@@ -38,7 +38,6 @@ backend-api:
       cpu: "250m"
       memory: "512Mi"
   
-  # ✅ FIX: Add Readiness Probe to wait for entrypoint.sh to finish
   probes:
     readiness:
       enabled: true
@@ -46,16 +45,19 @@ backend-api:
         port: 8000
       initialDelaySeconds: 5
       periodSeconds: 5
-      failureThreshold: 30 # Wait up to 2.5 mins for DB init
+      failureThreshold: 30
     liveness:
       enabled: true
-      path: "/health" # Assuming FastAPI has this, or use tcpSocket
+      path: "/health"
       port: 8000
       initialDelaySeconds: 10
       periodSeconds: 10
 
-  # Wire Backend to the CI Database/Redis Services
   env:
+    # ✅ FIX: Granular variables required by entrypoint.sh
+    JETSCALE_DB_HOST: "jetscale-stack-ci-postgres"
+    JETSCALE_DB_PORT: "5432"
+    
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale"
     JETSCALE_DB_PASSWORD: "ci-password"
