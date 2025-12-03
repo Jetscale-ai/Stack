@@ -1,56 +1,58 @@
 # ==========================================================
-# PREVIEW ENVIRONMENT (Ephemeral EKS)
+# PREVIEW ENVIRONMENT (Ephemeral EKS + CI)
 # ==========================================================
-
 global:
   env: "preview"
+  # Authentication for Private GHCR Images
+  imagePullSecrets:
+    - name: regcred
 
-# 1. DATABASE (Ephemeral per PR)
-# We keep using the chart dependency for cheap isolation
+# 1. DATABASE
 postgres:
   enabled: true
   primary:
     persistence:
-      enabled: false # Ephemeral! Speed up provisioning, no EBS cost.
+      enabled: false # Ephemeral
 
 redis:
   enabled: true
   architecture: standalone
 
-# 2. BACKEND
+# 2. BACKEND (Production Parity)
 backend-api:
   enabled: true
   replicaCount: 1
   image:
-    # CI will override this with the PR-specific tag
-    repository: ghcr.io/jetscale-ai/backend-dev
+    # ✅ FIX: Use Alpine 'latest' (Production Build), not 'dev'
+    repository: ghcr.io/jetscale-ai/backend
     tag: "latest"
     pullPolicy: Always
   devMode:
-    enabled: false # No hot reload in preview
+    enabled: false
   service:
-    type: ClusterIP # Ingress handles traffic
+    type: ClusterIP
   resources:
     requests:
       cpu: "250m"
       memory: "512Mi"
 
-# 3. FRONTEND
+# 3. FRONTEND (Production Parity)
 frontend-web:
   enabled: true
   image:
-    repository: ghcr.io/jetscale-ai/frontend-dev
+    # ✅ FIX: Use Alpine 'latest' (Production Build), not 'dev'
+    repository: ghcr.io/jetscale-ai/frontend
     tag: "latest"
 
-# 4. INGRESS (The Key for Previews)
+# 4. INGRESS
 ingress:
   enabled: true
-  className: "alb" # Assuming AWS Load Balancer Controller
+  className: "alb"
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
   hosts:
-    - host: "preview-placeholder.app.jetscale.ai" # Overridden by CI
+    - host: "preview-placeholder.app.jetscale.ai"
       paths:
         - path: /
           pathType: Prefix
