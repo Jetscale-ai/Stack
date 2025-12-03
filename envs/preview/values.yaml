@@ -3,27 +3,26 @@
 # ==========================================================
 global:
   env: "preview"
-  # Authentication for Private GHCR Images
-  imagePullSecrets:
-    - name: regcred
 
 # 1. DATABASE
 postgres:
   enabled: true
   primary:
     persistence:
-      enabled: false # Ephemeral
+      enabled: false
 
 redis:
   enabled: true
   architecture: standalone
 
-# 2. BACKEND (Production Parity)
+# 2. BACKEND
 backend-api:
   enabled: true
   replicaCount: 1
+  # ✅ FIX: Explicitly bind the secret to this subchart
+  imagePullSecrets:
+    - name: regcred
   image:
-    # ✅ FIX: Use Alpine 'latest' (Production Build), not 'dev'
     repository: ghcr.io/jetscale-ai/backend
     tag: "latest"
     pullPolicy: Always
@@ -36,11 +35,13 @@ backend-api:
       cpu: "250m"
       memory: "512Mi"
 
-# 3. FRONTEND (Production Parity)
+# 3. FRONTEND
 frontend-web:
   enabled: true
+  # ✅ FIX: Explicitly bind the secret to this subchart
+  imagePullSecrets:
+    - name: regcred
   image:
-    # ✅ FIX: Use Alpine 'latest' (Production Build), not 'dev'
     repository: ghcr.io/jetscale-ai/frontend
     tag: "latest"
 
