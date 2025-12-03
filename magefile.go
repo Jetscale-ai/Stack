@@ -115,6 +115,20 @@ func (Test) CI() error {
 		return err
 	}
 
+	// ✅ VIGOR: Explicitly wait for the deployment to be available before port-forwarding.
+	// This prevents kubectl port-forward from connecting to a crashing pod.
+	fmt.Println("⏳ Waiting for Backend Deployment to be Available...")
+	waitCmd := exec.Command("kubectl", "wait", 
+		"--namespace", "jetscale-ci",
+		"--for=condition=available", 
+		"deployment/jetscale-stack-ci-backend-api",
+		"--timeout=120s")
+	waitCmd.Stdout = os.Stdout
+	waitCmd.Stderr = os.Stderr
+	if err := waitCmd.Run(); err != nil {
+		return fmt.Errorf("backend deployment failed to become available: %w", err)
+	}
+
 	stopPF, localPort, err := startPortForward("jetscale-ci", "svc/jetscale-stack-ci-backend-api", 8000)
 	if err != nil {
 		return fmt.Errorf("failed to port-forward: %w", err)
@@ -178,7 +192,7 @@ func startPortForward(ns, resource string, targetPort int) (func(), int, error) 
 		}
 	}
 
-	// ✅ VIGOR: Active verification loop instead of blind sleep
+	// Active verification loop
 	fmt.Printf("   > Waiting for connection to localhost:%d...\n", localPort)
 	maxRetries := 30 // 15 seconds total
 	for i := 0; i < maxRetries; i++ {

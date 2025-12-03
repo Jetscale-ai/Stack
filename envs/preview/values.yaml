@@ -41,7 +41,7 @@ backend-api:
       cpu: "250m"
       memory: "512Mi"
   
-  # ✅ FIX: Relax probes to prevent premature killing during DB wait
+  # Relax probes to prevent premature killing during DB wait
   probes:
     readiness:
       enabled: true
@@ -54,7 +54,6 @@ backend-api:
       enabled: true
       path: "/health"
       port: 8000
-      # Give entrypoint.sh 60s to connect to DB before killing the pod
       initialDelaySeconds: 60 
       periodSeconds: 10
 
@@ -64,8 +63,11 @@ backend-api:
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale"
     JETSCALE_DB_PASSWORD: "ci-password"
-    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale:ci-password@jetscale-stack-ci-postgres:5432/jetscale"
     JETSCALE_REDIS_URL: "redis://jetscale-stack-ci-redis-master:6379/0"
+    # ✅ FIX: Prevent startup crash by supplying required admin config
+    JETSCALE_DEFAULT_ADMIN_EMAIL: "admin@jetscale.ai"
+    JETSCALE_DEFAULT_ADMIN_USERNAME: "admin"
+    JETSCALE_DEFAULT_ADMIN_PASSWORD: "ci-password-admin"
 
 # 3. FRONTEND
 frontend-web:
