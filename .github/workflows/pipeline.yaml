@@ -67,30 +67,43 @@ jobs:
           BOT_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
         run: echo "$BOT_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
 
-      # 🛑 CRITICAL FIX: Inject Credentials & Bind to ServiceAccount
       - name: Pre-provision Cluster Secrets
         env:
           BOT_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
         run: |
-          # 1. Create the namespace used by the 'ci-kind' Skaffold profile
+          # 1. Namespace
           kubectl create ns jetscale-ci --dry-run=client -o yaml | kubectl apply -f -
-          
-          # 2. Inject the GHCR credentials so Kubelet can pull images
+          # 2. Secret
           kubectl create secret docker-registry regcred \
             --docker-server=ghcr.io \
             --docker-username=jetscalebot \
             --docker-password=$BOT_TOKEN \
             --namespace=jetscale-ci \
             --dry-run=client -o yaml | kubectl apply -f -
-            
-          # 3. Omni-Bind: Patch default ServiceAccount to use regcred
-          # This ensures ALL pods in this namespace use the secret, regardless of chart config
+          # 3. ServiceAccount Bind
           kubectl patch serviceaccount default \
             -n jetscale-ci \
             -p '{"imagePullSecrets":[{"name":"regcred"}]}'
 
       - name: Run E2E
         run: mage test:ci
+
+      # ✅ NEW: Debugging Step - Only runs if the previous steps failed
+      - name: Debug Failure (Logs & Events)
+        if: failure()
+        run: |
+          echo "🔍 ================= DEBUG DIAGNOSTICS ================= 🔍"
+          echo "1. Cluster Events:"
+          kubectl get events -n jetscale-ci --sort-by='.lastTimestamp'
+          
+          echo -e "\n2. Pod Status:"
+          kubectl get pods -n jetscale-ci -o wide
+          
+          echo -e "\n3. Backend Logs:"
+          kubectl logs -n jetscale-ci -l app.kubernetes.io/name=backend-api --tail=100
+          
+          echo -e "\n4. Describe Backend Pod:"
+          kubectl describe pods -n jetscale-ci -l app.kubernetes.io/name=backend-api
 
   # ============================================================================
   # STAGE 4: PREVIEW (Cloud)
