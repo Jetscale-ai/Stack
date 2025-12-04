@@ -19,6 +19,7 @@
 - [x] **OCI Artifacts:** Migrated Chart dependencies to `oci://ghcr.io`.
 - [x] **Validation Layer:** Implemented `mage validate:envs` and pre-commit hooks.
 - [x] **Dependency Locking:** Enforced `Chart.lock` and `go.sum` integrity.
+- [x] **Pipeline Resilience:** Implemented Liveness Probes and strict `kubectl wait` logic to eliminate CI flakes.
 - [ ] **Secret Management:** Replace `values.secret.example.yaml` with External Secrets Operator (ESO).
 
 ## Phase 5: Observability & Day 2 Ops (Next)
