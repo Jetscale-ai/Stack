@@ -4,14 +4,33 @@ The central infrastructure, deployment, and orchestration repository for the Jet
 
 ## 🚀 The Vision
 
-We run JetScale on a **"Platform-First"** model.  
+We run JetScale on a **"Platform-First"** model.
 Instead of a drifting `docker-compose`, this repo enables **Live-like environments locally** via:
 
 - **Tilt** → Local Dev (hot reload, dev images)
 - **Skaffold + Kind** → Local E2E (Alpine runtime parity)
 - **Helm + OCI** → Immutable, versioned deployment artifacts
 
-This produces a consistent experience across Dev → CI → Preview → Live.
+## 3. The Sovereign Boundary (Architecture)
+
+To ensure our Helm chart remains **Cloud Agnostic** (deployable on AWS, Azure, or On-Prem), we adhere to a strict separation of concerns:
+
+| Layer | Owner | Responsibilities |
+| :--- | :--- | :--- |
+| **Infrastructure** | **Terraform** | **The "Hardware" & "Drivers":** VPC, EKS, RDS, Redis, **AWS LB Controller**, **ExternalDNS**, **External Secrets Operator**. |
+| **Application** | **Helm** | **The "Intent":** `Ingress` resources, `ExternalSecret` mappings, Deployments, Services. |
+
+**The Contract:** Terraform provides the "Pipe" (SecretStore, Ingress Class, DNS automation); Helm turns on the "Tap" (ExternalSecret, Ingress Resource).
+
+## 4. The 5-Stage Lifecycle
+
+| Stage | Loop Name | Tooling | Environment | Strategy |
+| :-- | :-- | :-- | :-- | :-- |
+| **1** | **Inner Loop** | Tilt | Kind (Local) | **Speed.** Hot reload, fat images. |
+| **2** | **Outer Loop** | Skaffold | Kind (Local) | **Parity.** Builds local code -> Alpine images. |
+| **3** | **CI Loop** | Skaffold | Kind (CI Runner) | **Gating.** Deploys remote OCI artifacts. |
+| **4** | **Preview Loop** | TF + Helm | **Ephemeral EKS** | **Isolation.** "Cluster-per-PR". Fresh infra, fresh data, destroy on close. |
+| **5** | **Live Verify** | TF + Helm | **Live EKS** | **Availability.** Persistent infra, rolling updates, schema migrations. |
 
 ## 🛠️ Quick Start (Local Dev)
 
@@ -42,46 +61,14 @@ gh auth token | helm registry login ghcr.io --username $(gh api user -q .login) 
 tilt up
 ```
 
-Tilt exposes everything automatically:
-
-- **Tilt HUD:** [http://localhost:10350](http://localhost:10350)
-- **Backend:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Frontend:** [http://localhost:3000](http://localhost:3000)
-
 ## 📂 Repository Layout
 
-We adhere to a strict **Definition vs. Instantiation** split:
-
-- `charts/app` — **The Definition.** The generic "Umbrella Chart". Dependencies are pinned to immutable OCI versions.
-- `envs/` — **The Instantiation.** Environment-specific configurations.
+- `charts/app` — **The Definition (Sovereign).** The generic "Umbrella Chart". Dependencies are pinned to immutable OCI versions.
+- `envs/` — **The Instantiation.**
   - `envs/live/values.yaml` → Production (HA, replication).
-  - `envs/preview/values.yaml` → CI/Preview (Ephemeral).
-- `values.local.*.yaml` — Local overrides (kept near chart for Tilt/Skaffold convenience).
-
-## 🔗 Modifying Subcharts ("Link Mode")
-
-By default, the Stack uses immutable OCI charts (`oci://ghcr.io/...`). To modify the underlying `backend` or `frontend` templates:
-
-1.  **Edit `charts/app/Chart.yaml`**:
-    ```yaml
-    dependencies:
-      - name: backend-api
-        # repository: "oci://ghcr.io/jetscale-ai/charts"  <-- Comment this
-        repository: "file://../../../backend/charts"        <-- Uncomment this
-    ```
-2.  **Update Dependencies**: `helm dependency update charts/app`
-3.  **Dev Loop**: `tilt up` (Changes to templates now take effect).
-4.  **Revert**: Do not commit `file://` paths to main.
-
-## 🔄 The 5-Stage Lifecycle
-
-| Stage | Loop Name | Tooling | Environment | Purpose |
-| :-- | :-- | :-- | :-- | :-- |
-| **1** | **Inner Loop** | Tilt | Kind (Local) | **Speed.** Hot reload, fat images. |
-| **2** | **Outer Loop** | Skaffold | Kind (Local) | **Parity.** Builds local code -> Alpine images. |
-| **3** | **CI Loop** | Skaffold | Kind (CI Runner) | **Gating.** Deploys remote OCI artifacts. |
-| **4** | **Preview Loop** | Skaffold | EKS (Ephemeral) | **Integration.** `pr-123.app.jetscale.ai`. |
-| **5** | **Live Verify** | Mage | EKS (Prod) | **Trust.** Non-destructive smoke tests. |
+  - `envs/preview/values.yaml` → Ephemeral (Cluster-per-PR settings).
+- `clients/` — **The Infrastructure (Terraform).**
+  - Defines the AWS resources for both Live and Ephemeral tenants.
 
 ## 🧙‍♂️ Mage Tasks
 
