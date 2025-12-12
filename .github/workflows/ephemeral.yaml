@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   manage-env:
-    name: "${{ inputs.action | upcase }} Ephemeral Env"
+    name: "${{ inputs.action }} Ephemeral Env"
     runs-on: ubuntu-latest
     environment: 
       name: preview
