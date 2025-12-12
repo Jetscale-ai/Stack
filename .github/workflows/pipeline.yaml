@@ -1,17 +1,15 @@
-name: "PR Pipeline (Validate > E2E > Preview)"
+name: "PR Pipeline (Validate > E2E)"
 
 on:
   pull_request:
     branches: [ main ]
     paths-ignore: [ '**.md', 'docs/**' ]
-  repository_dispatch:
-    types: [trigger-ci, deploy-preview]
   push:
     branches: [ main ]
     paths-ignore: [ '**.md', 'docs/**' ]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.client_payload.pr_number || 'stack' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -88,7 +86,7 @@ jobs:
       - name: Run E2E
         run: mage test:ci
 
-      # ✅ NEW: Enhanced Debugging
+      # ✅ Enhanced Debugging (Preserved)
       - name: Debug Failure (Logs & Events)
         if: failure()
         run: |
@@ -107,40 +105,3 @@ jobs:
           
           echo -e "\n5. Describe Backend Pod:"
           kubectl describe pods -n jetscale-ci -l app.kubernetes.io/name=backend-api
-
-  # ============================================================================
-  # STAGE 4: PREVIEW (Cloud)
-  # ============================================================================
-  preview:
-    name: "4. Preview (Manual)"
-    needs: [e2e-kind]
-    if: github.event_name == 'pull_request' || github.event_name == 'repository_dispatch'
-    runs-on: ubuntu-latest
-    environment: 
-      name: preview
-      url: https://pr-${{ github.event.client_payload.pr_number || github.event.number }}.app.jetscale.ai
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with: { go-version: '1.21' }
-      - run: go install github.com/magefile/mage@latest
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Deploy Preview
-        env:
-          PR_NUMBER: ${{ github.event.client_payload.pr_number || github.event.number }}
-        run: |
-          if [ -z "$PR_NUMBER" ]; then
-            echo "❌ Error: Could not determine PR_NUMBER from context."
-            exit 1
-          fi
-          echo "🚀 Deploying Preview for PR #$PR_NUMBER"
-          mage deploy preview

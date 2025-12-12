@@ -1,97 +1,65 @@
 # ==========================================================
-# PREVIEW ENVIRONMENT (Ephemeral EKS + CI)
+# PREVIEW ENVIRONMENT (Ephemeral EKS + AWS Infra)
 # ==========================================================
 global:
-  env: "preview"
+  env: "preview" # Overridden by CI (e.g., "pr-123")
+  tenant_id: "preview" # Overridden by CI
 
-# 1. DATABASE
+# 1. INFRASTRUCTURE (Managed by Terraform)
+# Disable in-cluster stateful sets; we use AWS RDS/Redis.
 postgres:
-  enabled: true
-  # Use Public ECR Mirror (No Rate Limits)
-  image: "public.ecr.aws/docker/library/postgres:15-alpine"
-  primary:
-    persistence:
-      enabled: false 
-  auth:
-    username: "jetscale"
-    database: "jetscale"
-    password: "ci-password" 
+  enabled: false
 
 redis:
-  enabled: true
-  image: "public.ecr.aws/docker/library/redis:7-bullseye"
-  architecture: standalone
+  enabled: false
 
 # 2. BACKEND
 backend-api:
   enabled: true
   replicaCount: 1
-  imagePullSecrets:
-    - name: regcred
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "latest"
+    tag: "latest" # Overridden by CI
     pullPolicy: Always
-  devMode:
-    enabled: false
+  
+  # Connect via External Secrets (The "Tap")
+  externalSecrets:
+    enabled: true
+    # Maps to the Secret created by Terraform in AWS Secrets Manager
+    # Naming convention: "${tenant_id}-${env}/database/postgres"
+    secretName: "{{ .Values.global.tenant_id }}-{{ .Values.global.env }}/database/postgres"
+  
   service:
     type: ClusterIP
+
   resources:
     requests:
       cpu: "250m"
       memory: "512Mi"
-  
-  # Relax probes to prevent premature killing during DB wait
-  probes:
-    readiness:
-      enabled: true
-      tcpSocket:
-        port: 8000
-      initialDelaySeconds: 30
-      periodSeconds: 5
-      failureThreshold: 30
-    liveness:
-      enabled: true
-      path: "/health"
-      port: 8000
-      initialDelaySeconds: 60 
-      periodSeconds: 10
 
   env:
-    JETSCALE_DB_HOST: "jetscale-stack-ci-postgres"
-    JETSCALE_DB_PORT: "5432"
-    JETSCALE_DB_NAME: "jetscale"
-    JETSCALE_DB_USER: "jetscale"
-    JETSCALE_DB_PASSWORD: "ci-password"
-    # ✅ FIX: Restore missing DB URL that caused crash
-    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale:ci-password@jetscale-stack-ci-postgres:5432/jetscale"
-    JETSCALE_REDIS_URL: "redis://jetscale-stack-ci-redis-master:6379/0"
-    
-    # Admin Config
-    JETSCALE_DEFAULT_ADMIN_EMAIL: "admin@jetscale.ai"
-    JETSCALE_DEFAULT_ADMIN_USERNAME: "admin"
-    JETSCALE_DEFAULT_ADMIN_PASSWORD: "ci-password-admin"
+    JETSCALE_AWS_REGION: "us-east-1"
+    # App code must construct DB_URL from the individual secret keys (host, user, pass)
 
 # 3. FRONTEND
 frontend-web:
   enabled: true
-  imagePullSecrets:
-    - name: regcred
   image:
     repository: ghcr.io/jetscale-ai/frontend
-    tag: "latest"
+    tag: "latest" # Overridden by CI
   env:
-    VITE_API_BASE_URL: "http://jetscale-stack-ci-backend-api:8000"
+    # Points to the dynamic Ingress Hostname
+    VITE_API_BASE_URL: "https://{{ .Values.global.tenant_id }}.jetscale.ai"
 
 # 4. INGRESS
 ingress:
   enabled: true
-  className: "alb"
+  className: "alb" # Fulfilled by AWS LB Controller
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
   hosts:
-    - host: "preview-placeholder.app.jetscale.ai"
+    - host: "{{ .Values.global.tenant_id }}.jetscale.ai"
       paths:
         - path: /
           pathType: Prefix

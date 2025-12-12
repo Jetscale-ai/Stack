@@ -1,0 +1,53 @@
+name: "Auto-Cleanup Ephemeral"
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Calculate Env ID
+        run: echo "ENV_ID=pr-${{ github.event.number }}" >> $GITHUB_ENV
+
+      - name: Checkout Jetscale-IaC
+        uses: actions/checkout@v4
+        with:
+          repository: Jetscale-ai/Jetscale-IaC
+          path: iac
+          token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with: { terraform_wrapper: false }
+
+      - name: Terraform Destroy
+        working-directory: iac/clients
+        run: |
+          terraform init \
+            -backend-config="bucket=jetscale-terraform-state" \
+            -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
+            -backend-config="region=us-east-1"
+
+          # We blindly destroy. If it doesn't exist (user never deployed), this fails gracefully or we can add a check.
+          # To be safe, we allow failure if state is missing.
+          terraform destroy -auto-approve \
+            -var="client_name=${{ env.ENV_ID }}" \
+            -var="environment=preview" \
+            -var="tenant_id=${{ env.ENV_ID }}" \
+            -var="aws_region=us-east-1" \
+            -var="create_dns_records=true" || echo "Cluster likely did not exist."

@@ -20,7 +20,7 @@ To ensure our Helm chart remains **Cloud Agnostic** (deployable on AWS, Azure, o
 | **Infrastructure** | **Terraform** | **The "Hardware" & "Drivers":** VPC, EKS, RDS, Redis, **AWS LB Controller**, **ExternalDNS**, **External Secrets Operator**. |
 | **Application** | **Helm** | **The "Intent":** `Ingress` resources, `ExternalSecret` mappings, Deployments, Services. |
 
-**The Contract:** Terraform provides the "Pipe" (SecretStore, Ingress Class, DNS automation); Helm turns on the "Tap" (ExternalSecret, Ingress Resource).
+**The Contract:** Terraform provides the "Pipe" (SecretStore, Ingress Class, DNS automationggggg); Helm turns on the "Tap" (ExternalSecret, Ingress Resource).
 
 ## 4. The 5-Stage Lifecycle
 
