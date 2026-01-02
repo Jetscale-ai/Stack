@@ -39,6 +39,7 @@ Skaffold is intentionally scoped to **Kind** workflows (local + CI E2E).
 
 - Runbook: `docs/live-deploy.md`
 - Script: `scripts/deploy-live.sh`
+- CI/CD: **Stage 6** will redeploy Live on `envs/live/**` changes without forcing a new chart version (decoupled deploy).
 
 ## 🛠️ Quick Start (Local Dev)
 

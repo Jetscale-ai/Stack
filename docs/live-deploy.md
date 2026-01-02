@@ -13,6 +13,15 @@
 
 ## Live deploy (console.jetscale.ai) — Helm-only
 
+## CI/CD behavior (Option B: Decoupled Deploy)
+
+This repo separates the **Artifact Lifecycle** (published chart versions) from the **Deployment Lifecycle**
+(environment values):
+
+- **Chart changes (`charts/**`)**: Stage 6 will publish a new chart version (semantic-release) and deploy that new version.
+- **Live config changes (`envs/live/**`)**: Stage 6 will **skip version inflation** and redeploy the **latest tagged version**
+  with the updated `envs/live/values.yaml`.
+
 ### Preconditions (Terraform-owned “pipes”)
 
 - **Namespace**: `jetscale-prod` (convention: `{client_name}-{env}`)

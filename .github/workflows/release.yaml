@@ -6,6 +6,7 @@ on:
     paths:
       - 'charts/**'
       - '.release.yml'
+      - 'envs/live/**'
       - '.github/workflows/release.yaml'
       - '.github/workflows/reusable-release.yaml'
   workflow_dispatch: {}
@@ -37,8 +38,6 @@ jobs:
   deploy-live:
     name: "Promote to Live"
     needs: [publish]
-    # Only run if a new version was actually released
-    if: needs.publish.outputs.version != ''
     runs-on: ubuntu-latest
 
     # 🛑 THE PRODUCTION GATE
@@ -48,6 +47,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Required for resolving tags when this is a config-only change (no new release).
+          fetch-depth: 0
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -118,9 +120,31 @@ jobs:
           # This is safe/idempotent: it will no-op if the release does not exist.
           helm uninstall jetscale-stack --namespace default || true
 
+      - name: Resolve deploy version
+        id: version
+        env:
+          NEW_VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "${NEW_VERSION:-}" ]; then
+            echo "🚀 New release detected: ${NEW_VERSION}"
+            echo "target=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "♻️  Config-only change detected (no new release). Resolving latest tag..."
+          git fetch --tags --force
+          LATEST_TAG="$(git tag --list 'v*' --sort=-version:refname | head -n 1)"
+          if [ -z "${LATEST_TAG:-}" ]; then
+            echo "❌ Could not determine deploy version (no v* tags found)."
+            exit 1
+          fi
+          echo "Re-deploying version: ${LATEST_TAG}"
+          echo "target=${LATEST_TAG#v}" >> "$GITHUB_OUTPUT"
+
       - name: Deploy Live
         env:
-          VERSION: ${{ needs.publish.outputs.version }}
+          VERSION: ${{ steps.version.outputs.target }}
         run: |
           echo "🔥 Promoting Version $VERSION to Live..."
           # Match Jetscale-IaC namespace convention: {client}-{environment}
