@@ -6,6 +6,9 @@ on:
     paths:
       - 'charts/**'
       - '.release.yml'
+      - '.github/workflows/release.yaml'
+      - '.github/workflows/reusable-release.yaml'
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -62,6 +65,12 @@ jobs:
 
       - name: Update Kubeconfig
         run: aws eks update-kubeconfig --name jetscale-prod --region us-east-1
+
+      - name: Cleanup accidental default release
+        run: |
+          # A prior workflow bug installed `jetscale-stack` into the `default` namespace.
+          # This is safe/idempotent: it will no-op if the release does not exist.
+          helm uninstall jetscale-stack --namespace default || true
 
       - name: Deploy Live
         env:
