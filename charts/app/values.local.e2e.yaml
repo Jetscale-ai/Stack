@@ -38,6 +38,13 @@ backend-api:
   env:
     JETSCALE_APP_NAME: "JetScale Backend (E2E)"
     JETSCALE_DEBUG: "true"
+    # Required by backend bootstrap (admin user initialization)
+    JETSCALE_DEFAULT_ADMIN_EMAIL: "admin@e2e.local"
+    JETSCALE_DEFAULT_ADMIN_USERNAME: "admin"
+    JETSCALE_DEFAULT_ADMIN_PASSWORD: "e2e-admin-password"
+    # Required by backend entrypoint bootstrap (explicit host/user/password checks)
+    JETSCALE_DB_HOST: "jetscale-stack-test-postgres"
+    JETSCALE_DB_PORT: "5432"
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale-user"
     JETSCALE_DB_PASSWORD: "jetscale-password"

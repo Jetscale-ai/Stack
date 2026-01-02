@@ -57,8 +57,8 @@ profiles:
             namespace: jetscale-ci
             createNamespace: true
             valuesFiles:
-              # Uses ghcr.io/jetscale-ai/backend-dev:latest
-              - envs/preview/values.yaml
+              # Kind CI must be self-contained (no Terraform-managed Secrets/DB/Redis, no ALB)
+              - charts/app/values.ci.kind.yaml
 
   # --------------------------------------------------------
   # PREVIEW

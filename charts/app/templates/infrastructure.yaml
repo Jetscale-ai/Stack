@@ -43,6 +43,13 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+      {{- if not .Values.postgres.persistence.enabled }}
+      # Ephemeral storage for CI clusters without a default StorageClass.
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- end }}
+  {{- if .Values.postgres.persistence.enabled }}
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -51,9 +58,10 @@ spec:
         resources:
           requests:
             storage: {{ .Values.postgres.persistence.size }}
+  {{- end }}
 {{- end }}
 ---
-{{- if .Values.redis.enabled -}}
+{{ if .Values.redis.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
