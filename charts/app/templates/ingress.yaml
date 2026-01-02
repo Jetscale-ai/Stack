@@ -25,9 +25,9 @@ spec:
             backend:
               service:
                 # Default: route "/" to frontend-web. Use "/api" for backend.
-                name: {{ $.Release.Name }}{{- if hasPrefix "/api" .path -}}-backend-api{{- else -}}-frontend-web{{- end }}
+                name: {{ $.Release.Name }}{{ if hasPrefix "/api" .path }}-backend-api{{ else }}-frontend-web{{ end }}
                 port:
-                  number: {{- if hasPrefix "/api" .path -}} 8000 {{- else -}} 80 {{- end }}
+                  number: {{ if hasPrefix "/api" .path }}8000{{ else }}80{{ end }}
           {{- end }}
     {{- end }}
 {{- end -}}

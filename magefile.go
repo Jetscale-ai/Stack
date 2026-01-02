@@ -291,7 +291,8 @@ func (Test) CI() error {
 
 func (Test) Live() error {
 	fmt.Println("🔥 [E2E] Target: EKS Live (Verification)")
-	host := "app.jetscale.ai"
+	// Live console hostname (see envs/live/values.yaml)
+	host := "console.jetscale.ai"
 	return runTestRunner(fmt.Sprintf("https://%s", host))
 }
 
