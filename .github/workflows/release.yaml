@@ -10,6 +10,11 @@ on:
       - '.github/workflows/reusable-release.yaml'
   workflow_dispatch: {}
 
+# Prevent overlapping deploys to the same live cluster/namespace (queues instead of canceling).
+concurrency:
+  group: stage6-release-promote-live
+  cancel-in-progress: false
+
 permissions:
   contents: write
   packages: write
@@ -83,4 +88,21 @@ jobs:
             --namespace jetscale-prod \
             --create-namespace \
             --values envs/live/values.yaml \
-            --wait
+            --wait \
+            --timeout 15m0s \
+            --atomic
+
+      - name: Debug cluster on failure
+        if: failure()
+        run: |
+          set +e
+          echo "=== Helm status ==="
+          helm status jetscale-stack --namespace jetscale-prod
+          echo "=== Helm history ==="
+          helm history jetscale-stack --namespace jetscale-prod || true
+          echo "=== K8s resources (jetscale-prod) ==="
+          kubectl get all -n jetscale-prod || true
+          echo "=== K8s pods (wide) ==="
+          kubectl get pods -n jetscale-prod -o wide || true
+          echo "=== K8s events (last 200) ==="
+          kubectl get events -n jetscale-prod --sort-by=.metadata.creationTimestamp | tail -n 200 || true
