@@ -68,9 +68,9 @@ jobs:
           VERSION: ${{ needs.publish.outputs.version }}
         run: |
           echo "🔥 Promoting Version $VERSION to Live..."
+          # Match Jetscale-IaC namespace convention: {client}-{environment}
           helm upgrade --install jetscale-stack oci://ghcr.io/jetscale-ai/charts/jetscale-stack \
             --version "$VERSION" \
-            # Match Jetscale-IaC namespace convention: {client}-{environment}
             --namespace jetscale-prod \
             --create-namespace \
             --values envs/live/values.yaml \
