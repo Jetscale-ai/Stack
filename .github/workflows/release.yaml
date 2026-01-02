@@ -90,6 +90,20 @@ jobs:
             --type merge \
             -p '{"imagePullSecrets":[{"name":"ghcr-pull"}]}'
 
+      - name: Reset failed Helm release (if needed)
+        run: |
+          # If the release is already in a failed state, `helm upgrade --atomic` cannot roll back
+          # (there is no previously successful revision). Reset to a clean install.
+          set +e
+          STATUS="$(helm status jetscale-stack --namespace jetscale-prod 2>/dev/null | awk '/^STATUS:/ {print $2}')"
+          set -e
+          if [ "$STATUS" = "failed" ]; then
+            echo "Helm release is failed; uninstalling to reset before install/upgrade..."
+            helm uninstall jetscale-stack --namespace jetscale-prod || true
+          else
+            echo "Helm release status: ${STATUS:-not-installed}"
+          fi
+
       - name: Cleanup accidental default release
         run: |
           # A prior workflow bug installed `jetscale-stack` into the `default` namespace.
@@ -108,8 +122,7 @@ jobs:
             --create-namespace \
             --values envs/live/values.yaml \
             --wait \
-            --timeout 15m0s \
-            --atomic
+            --timeout 20m0s
 
       - name: Debug cluster on failure
         if: failure()
