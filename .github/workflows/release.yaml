@@ -71,6 +71,25 @@ jobs:
       - name: Update Kubeconfig
         run: aws eks update-kubeconfig --name jetscale-prod --region us-east-1
 
+      - name: Configure GHCR image pull credentials (namespace)
+        env:
+          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+        run: |
+          # EKS nodes pull app images from GHCR (ghcr.io/jetscale-ai/*). Those packages may be private,
+          # so we provision a docker-registry secret and attach it to the default ServiceAccount.
+          kubectl create secret docker-registry ghcr-pull \
+            --namespace jetscale-prod \
+            --docker-server=ghcr.io \
+            --docker-username=jetscalebot \
+            --docker-password="$GH_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Ensure pods that don't specify a ServiceAccount explicitly (our current subcharts) can pull images.
+          kubectl patch serviceaccount default \
+            --namespace jetscale-prod \
+            --type merge \
+            -p '{"imagePullSecrets":[{"name":"ghcr-pull"}]}'
+
       - name: Cleanup accidental default release
         run: |
           # A prior workflow bug installed `jetscale-stack` into the `default` namespace.
