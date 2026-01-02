@@ -50,12 +50,17 @@ Run these commands from the `stack/` directory:
 # 1. Create the local cluster
 kind create cluster --config kind/kind-config.yaml --name kind
 
-# 2. Authenticate (Required for OCI Charts)
-gh auth login --scopes read:packages
-gh auth token | helm registry login ghcr.io --username $(gh api user -q .login) --password-stdin
+# 2. Authenticate to GHCR (Required for private OCI chart dependencies)
+# Option A (recommended): create a gitignored `.env` with:
+#   GITHUB_TOKEN=<token with read:packages>
+# Then `mage validate:envs` will automatically login + build deps.
+#
+# Option B (GitHub CLI):
+#   gh auth login --scopes read:packages
+#   gh auth token | helm registry login ghcr.io --username $(gh api user -q .login) --password-stdin
 
-# 3. Vendor chart dependencies (From OCI)
-(cd charts/app && helm dependency build)
+# 3. Validate (also builds chart deps)
+mage validate:envs
 
 # 4. Start Dev Loop (Fat images + Hot Reload)
 tilt up

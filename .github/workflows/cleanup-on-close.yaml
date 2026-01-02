@@ -15,7 +15,9 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Calculate Env ID
-        run: echo "ENV_ID=pr-${{ github.event.number }}" >> $GITHUB_ENV
+        run: |
+          echo "ENV_ID=pr-${{ github.event.number }}" >> $GITHUB_ENV
+          echo "K8S_NAMESPACE=pr-${{ github.event.number }}-preview" >> $GITHUB_ENV
 
       - name: Checkout Jetscale-IaC
         uses: actions/checkout@v4
@@ -50,4 +52,4 @@ jobs:
             -var="environment=preview" \
             -var="tenant_id=${{ env.ENV_ID }}" \
             -var="aws_region=us-east-1" \
-            -var="create_dns_records=true" || echo "Cluster likely did not exist."
+            -var="create_dns_records=false" || echo "Cluster likely did not exist."

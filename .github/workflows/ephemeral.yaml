@@ -1,6 +1,8 @@
-name: "Manual: Ephemeral Env"
+name: "Ephemeral Review Env"
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       action:
@@ -19,7 +21,7 @@ permissions:
 
 jobs:
   manage-env:
-    name: "${{ inputs.action }} Ephemeral Env"
+    name: "${{ inputs.action || 'deploy' }} Ephemeral Env"
     runs-on: ubuntu-latest
     environment: 
       name: preview
@@ -30,16 +32,16 @@ jobs:
       
       - name: Calculate Env ID
         id: env-id
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PR_NUM=$(gh pr view --json number -q .number || echo "")
-          if [ -n "$PR_NUM" ]; then
-            echo "ENV_ID=pr-${PR_NUM}" >> $GITHUB_ENV
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ENV_ID=pr-${{ github.event.number }}" >> $GITHUB_ENV
           else
             SAFE_BRANCH=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]' | cut -c1-20)
             echo "ENV_ID=br-${SAFE_BRANCH}" >> $GITHUB_ENV
           fi
+
+          # Terraform namespace convention: {client}-{environment}
+          echo "K8S_NAMESPACE=${{ env.ENV_ID }}-preview" >> $GITHUB_ENV
 
       - name: Checkout Jetscale-IaC
         uses: actions/checkout@v4
@@ -62,7 +64,7 @@ jobs:
 
       # DEPLOY
       - name: Terraform Apply
-        if: inputs.action == 'deploy'
+        if: github.event_name == 'pull_request' || inputs.action == 'deploy'
         working-directory: iac/clients
         run: |
           terraform init \
@@ -75,27 +77,30 @@ jobs:
             -var="environment=preview" \
             -var="tenant_id=${{ env.ENV_ID }}" \
             -var="aws_region=us-east-1" \
-            -var="create_dns_records=true"
+            -var="create_dns_records=false"
 
       - name: Bootstrap & Deploy Stack
-        if: inputs.action == 'deploy'
+        if: github.event_name == 'pull_request' || inputs.action == 'deploy'
         run: |
           aws eks update-kubeconfig --name ${{ env.ENV_ID }}-preview --region us-east-1
-          
-          helm repo add eks https://aws.github.io/eks-charts
-          helm repo add external-secrets https://charts.external-secrets.io
-          helm repo update
-          
-          helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
-            -n kube-system --set clusterName=${{ env.ENV_ID }}-preview
-            
-          helm upgrade --install external-secrets external-secrets/external-secrets \
-             -n external-secrets --create-namespace
+
+          # Pull private OCI chart deps from GHCR
+          echo "${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}" | helm registry login ghcr.io --username jetscalebot --password-stdin
+          (cd charts/app && helm dependency build)
 
           helm upgrade --install jetscale-stack charts/app \
+            --namespace "${{ env.K8S_NAMESPACE }}" \
+            --create-namespace \
             --values envs/preview/values.yaml \
             --set global.env=preview \
+            --set global.client_name=${{ env.ENV_ID }} \
             --set global.tenant_id=${{ env.ENV_ID }} \
+            --set frontend-web.env.VITE_API_BASE_URL=https://${{ env.ENV_ID }}.jetscale.ai \
+            --set ingress.hosts[0].host=${{ env.ENV_ID }}.jetscale.ai \
+            --set backend-api.envFrom[0].secretRef.name=${{ env.ENV_ID }}-db-secret \
+            --set backend-api.envFrom[1].secretRef.name=${{ env.ENV_ID }}-redis-secret \
+            --set backend-api.envFrom[2].secretRef.name=${{ env.ENV_ID }}-common-secrets \
+            --set backend-api.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
             --wait --timeout 15m
 
       # DESTROY
@@ -113,4 +118,4 @@ jobs:
             -var="environment=preview" \
             -var="tenant_id=${{ env.ENV_ID }}" \
             -var="aws_region=us-east-1" \
-            -var="create_dns_records=true"
+            -var="create_dns_records=false"

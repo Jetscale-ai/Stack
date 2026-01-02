@@ -3,6 +3,10 @@
 # ==========================================================
 global:
   env: "production"
+  # Used for parity with Jetscale-IaC naming conventions and external entrypoints.
+  # Example: "jetscale" (live), "pr-123" (ephemeral)
+  client_name: ""
+  tenant_id: ""
 
 # ----------------------------------------------------------
 # 1. CORE SERVICES
@@ -64,6 +68,14 @@ ingress:
   hosts:
     - host: chart-example.local
       paths:
+        - path: /api
+          pathType: Prefix
         - path: /
           pathType: Prefix
   tls: []
+
+# ----------------------------------------------------------
+# 4. EXTERNAL ENTRYPOINT (Cloud-agnostic Service)
+# ----------------------------------------------------------
+apiExternal:
+  enabled: false

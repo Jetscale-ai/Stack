@@ -36,7 +36,7 @@ jobs:
     # 🛑 THE PRODUCTION GATE
     environment: 
       name: live
-      url: https://app.jetscale.ai
+      url: https://console.jetscale.ai
 
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +67,8 @@ jobs:
           echo "🔥 Promoting Version $VERSION to Live..."
           helm upgrade --install jetscale-stack oci://ghcr.io/jetscale-ai/charts/jetscale-stack \
             --version "$VERSION" \
-            --namespace jetscale-live \
+            # Match Jetscale-IaC namespace convention: {client}-{environment}
+            --namespace jetscale-prod \
             --create-namespace \
             --values envs/live/values.yaml \
             --wait

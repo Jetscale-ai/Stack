@@ -73,7 +73,7 @@ jobs:
           yq -i ".version = \"${VERSION}\"" Chart.yaml
           yq -i ".appVersion = \"${VERSION}\"" Chart.yaml
 
-          # Build Dependencies
+          # Build Dependencies (and regenerate Chart.lock deterministically)
           helm dependency update
 
           # Package & Push

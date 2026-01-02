@@ -1,30 +1,18 @@
 # ==========================================================
-# LIVE ENVIRONMENT (EKS)
+# LIVE ENVIRONMENT (EKS) — console.jetscale.ai
 # ==========================================================
 global:
-  env: "live"
+  # Align with Jetscale-IaC `clients/variables/jetscale.tfvars`
+  env: "prod"
+  client_name: "jetscale"
+  tenant_id: "jetscale-console"
 
-# 1. DATABASE
+# 1. INFRA (Managed by Terraform in AWS)
 postgres:
-  enabled: true
-  # Note: The current custom infrastructure.yaml only supports 
-  # single-replica. 'replication' is ignored until we switch 
-  # to the full Bitnami subchart.
-  architecture: standalone 
-  auth:
-    # In real live, use Secrets store driver or sealed secrets
-    username: "jetscale" 
-    database: "jetscale"
-    password: "live-password-placeholder" 
-  persistence:
-    size: 50Gi
-    storageClass: "gp3"
+  enabled: false
 
 redis:
-  enabled: true
-  persistence:
-    enabled: true
-    size: 5Gi
+  enabled: false
 
 # 2. BACKEND
 backend-api:
@@ -32,7 +20,42 @@ backend-api:
   replicaCount: 3
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "latest"
+    tag: "1.2.3"
+
+  # CRITICAL: Sticky sessions for EventBus/WebSockets when scaling >1 replica
+  service:
+    type: ClusterIP
+    port: 8000
+    sessionAffinity: ClientIP
+    sessionAffinityConfig:
+      clientIP:
+        timeoutSeconds: 10800
+
+  # Production schedule
+  cronJobs:
+    - name: discovery
+      schedule: "0 */4 * * *"
+      command: ["python3", "jobs/aws/discover_aws_resources.py"]
+    - name: pull-coh
+      schedule: "30 */6 * * *"
+      command: ["python3", "jobs/aws/action_pull_coh.py"]
+    - name: pull-co
+      schedule: "45 */12 * * *"
+      command: ["python3", "jobs/aws/action_pull_co.py"]
+
+  # Prefer Terraform-managed ESO targets (Jetscale-IaC creates these Secrets)
+  externalSecrets:
+    enabled: false
+
+  envFrom:
+    - secretRef:
+        name: "jetscale-db-secret"
+    - secretRef:
+        name: "jetscale-redis-secret"
+    - secretRef:
+        name: "jetscale-common-secrets"
+    - secretRef:
+        name: "jetscale-aws-client-secret"
   devMode:
     enabled: false
   resources:
@@ -49,16 +72,28 @@ frontend-web:
   replicaCount: 3
   image:
     repository: ghcr.io/jetscale-ai/frontend
+    tag: "2.0.4"
+  env:
+    # This should point at the same host the Ingress serves for /api
+    VITE_API_BASE_URL: "https://console.jetscale.ai"
 
-# 4. INGRESS
+# 4. ROUTING
 ingress:
   enabled: true
   className: "alb"
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
+    # Ensure ALB stickiness matches K8s Service stickiness
+    alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=10800
   hosts:
-    - host: "app.jetscale.ai"
+    - host: "console.jetscale.ai"
       paths:
+        - path: /api
+          pathType: Prefix
         - path: /
           pathType: Prefix
+
+# 5. EXTERNAL ENTRYPOINT (for Terraform DNS discovery)
+apiExternal:
+  enabled: true

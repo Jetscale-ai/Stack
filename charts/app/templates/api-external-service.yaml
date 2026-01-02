@@ -1,0 +1,32 @@
+{{- /*
+Expose the backend externally as a stable Service that Terraform can discover.
+
+Jetscale-IaC currently creates Route53 records by reading a Kubernetes Service:
+  name:      ${var.client_name}-api-external
+  namespace: ${local.name_prefix}  (i.e., ${client_name}-${environment})
+
+This Service is that contract. It stays cloud-agnostic (type LoadBalancer) and
+does not assume a specific Ingress implementation.
+*/ -}}
+{{- if and (index .Values "backend-api" "enabled") .Values.apiExternal.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ required "global.client_name is required when apiExternal.enabled=true" .Values.global.client_name }}-api-external
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    # Select backend-api pods (subchart uses these standard labels)
+    app.kubernetes.io/name: backend-api
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+

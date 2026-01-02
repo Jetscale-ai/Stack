@@ -2,11 +2,12 @@
 # PREVIEW ENVIRONMENT (Ephemeral EKS + AWS Infra)
 # ==========================================================
 global:
-  env: "preview" # Overridden by CI (e.g., "pr-123")
-  tenant_id: "preview" # Overridden by CI
+  # Overridden by CI (e.g., pr-123)
+  env: "preview"
+  client_name: "preview" # overwritten by workflow
+  tenant_id: "preview"   # overwritten by workflow
 
-# 1. INFRASTRUCTURE (Managed by Terraform)
-# Disable in-cluster stateful sets; we use AWS RDS/Redis.
+# 1. INFRA (Managed by Terraform in AWS)
 postgres:
   enabled: false
 
@@ -19,15 +20,16 @@ backend-api:
   replicaCount: 1
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "latest" # Overridden by CI
+    tag: "1.2.3" # Overridden by CI if needed
     pullPolicy: Always
   
-  # Connect via External Secrets (The "Tap")
+  # Prefer Terraform-managed ESO targets (Jetscale-IaC creates these Secrets)
   externalSecrets:
-    enabled: true
-    # Maps to the Secret created by Terraform in AWS Secrets Manager
-    # Naming convention: "${tenant_id}-${env}/database/postgres"
-    secretName: "{{ .Values.global.tenant_id }}-{{ .Values.global.env }}/database/postgres"
+    enabled: false
+
+  # NOTE: Secret names are tenant-specific (e.g., pr-123-db-secret).
+  # The workflow injects the correct envFrom refs via `--set`.
+  envFrom: []
   
   service:
     type: ClusterIP
@@ -39,19 +41,19 @@ backend-api:
 
   env:
     JETSCALE_AWS_REGION: "us-east-1"
-    # App code must construct DB_URL from the individual secret keys (host, user, pass)
+    # DB/Redis/JWT are injected via envFrom Secrets
 
 # 3. FRONTEND
 frontend-web:
   enabled: true
   image:
     repository: ghcr.io/jetscale-ai/frontend
-    tag: "latest" # Overridden by CI
+    tag: "2.0.4" # Overridden by CI if needed
   env:
-    # Points to the dynamic Ingress Hostname
-    VITE_API_BASE_URL: "https://{{ .Values.global.tenant_id }}.jetscale.ai"
+    # The workflow injects the correct host (e.g., https://pr-123.jetscale.ai)
+    VITE_API_BASE_URL: "https://preview.jetscale.ai"
 
-# 4. INGRESS
+# 4. ROUTING
 ingress:
   enabled: true
   className: "alb" # Fulfilled by AWS LB Controller
@@ -59,7 +61,12 @@ ingress:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
   hosts:
-    - host: "{{ .Values.global.tenant_id }}.jetscale.ai"
+    - host: "preview.jetscale.ai"
       paths:
+        - path: /api
+          pathType: Prefix
         - path: /
           pathType: Prefix
+
+apiExternal:
+  enabled: true
