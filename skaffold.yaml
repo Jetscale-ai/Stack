@@ -61,27 +61,7 @@ profiles:
               - charts/app/values.ci.kind.yaml
 
   # --------------------------------------------------------
-  # PREVIEW
-  # --------------------------------------------------------
-  - name: preview
-    deploy:
-      helm:
-        releases:
-          - name: jetscale-stack-preview
-            chartPath: charts/app
-            createNamespace: true
-            valuesFiles:
-              - envs/preview/values.yaml
-
-  # --------------------------------------------------------
-  # LIVE
-  # --------------------------------------------------------
-  - name: live
-    deploy:
-      helm:
-        releases:
-          - name: jetscale-stack
-            chartPath: charts/app
-            createNamespace: true
-            valuesFiles:
-              - envs/live/values.yaml
+  # NOTE:
+  # Preview + Live EKS deployments are Helm-only (and later ArgoCD), not Skaffold.
+  # Skaffold is intentionally scoped to Kind workflows (local + CI) where it shines
+  # at building artifacts + deploying ephemeral test stacks.

@@ -104,6 +104,14 @@ jobs:
             echo "Helm release status: ${STATUS:-not-installed}"
           fi
 
+      - name: Ensure api-external Service is fully deleted (avoid terminating-race)
+        run: |
+          # The LoadBalancer Service can sit in Terminating while AWS cleans up.
+          # If Helm applies while the Service is terminating, it can disappear during `--wait`
+          # and cause: `services "<name>" not found`.
+          kubectl delete service jetscale-api-external --namespace jetscale-prod --ignore-not-found
+          kubectl wait --for=delete service/jetscale-api-external --namespace jetscale-prod --timeout=10m || true
+
       - name: Cleanup accidental default release
         run: |
           # A prior workflow bug installed `jetscale-stack` into the `default` namespace.

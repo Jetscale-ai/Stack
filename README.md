@@ -32,6 +32,14 @@ To ensure our Helm chart remains **Cloud Agnostic** (deployable on AWS, Azure, o
 | **4** | **Preview Loop** | TF + Helm | **Ephemeral EKS** | **Isolation.** "Cluster-per-PR". Fresh infra, fresh data, destroy on close. |
 | **5** | **Live Verify** | TF + Helm | **Live EKS** | **Availability.** Persistent infra, rolling updates, schema migrations. |
 
+## Live deployment (Helm-only; ArgoCD later)
+
+Live (`console.jetscale.ai`) is deployed **via Helm** (and later **ArgoCD**) using the same umbrella chart + values contract.
+Skaffold is intentionally scoped to **Kind** workflows (local + CI E2E).
+
+- Runbook: `docs/live-deploy.md`
+- Script: `scripts/deploy-live.sh`
+
 ## 🛠️ Quick Start (Local Dev)
 
 ### 1. Prerequisites

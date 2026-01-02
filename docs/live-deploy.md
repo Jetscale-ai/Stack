@@ -1,0 +1,65 @@
+## ✅ Justified Action: Helm-first Live Deployment Contract
+#
+# Goal: Establish a single, deterministic “Helm-only” deployment path for Live (console.jetscale.ai),
+#       aligned with the future ArgoCD GitOps flow, and preserving parity with preview envs.
+#
+# Justification (Eudaimonia Invariants):
+# - Prudence: reduce accidental prod deploy paths and namespace drift.
+# - Clarity: one blessed command + explicit prerequisites.
+# - Concord: Terraform owns cluster “pipes”; Helm owns app “intent”.
+# - Identity: live deploys must target the correct namespace and secret contract.
+#
+# Audit: This document does not introduce credentials; it only documents required secret shapes.
+
+## Live deploy (console.jetscale.ai) — Helm-only
+
+### Preconditions (Terraform-owned “pipes”)
+
+- **Namespace**: `jetscale-prod` (convention: `{client_name}-{env}`)
+- **External Secrets Operator** installed in the cluster (Terraform `clients/` stack).
+- **SecretStore** in namespace `jetscale-prod` created by Terraform.
+- **ExternalSecret manifests** created by Terraform that materialize:
+  - `jetscale-db-secret`
+  - `jetscale-redis-secret`
+  - `jetscale-common-secrets`
+  - `jetscale-aws-client-secret`
+
+### Preconditions (out-of-band “vault values”)
+
+The AWS Secrets Manager secret backing the AWS client ExternalSecret must exist **and** have a value:
+
+- Name: `jetscale-prod/application/aws/client`
+- Keys required:
+  - `JETSCALE_CLIENT_AWS_REGION`
+  - `JETSCALE_CLIENT_AWS_ROLE_ARN`
+  - `JETSCALE_CLIENT_AWS_ROLE_EXTERNAL_ID`
+
+See `iac/clients/README.md` for copy/paste commands to create/update it.
+
+### Deploy command (Helm)
+
+From the `stack/` directory:
+
+```bash
+# Ensure chart dependencies are present (pulls pinned OCI subcharts)
+helm dependency build charts/app
+
+# Deploy/upgrade Live into the Terraform-managed namespace
+helm upgrade --install jetscale-stack charts/app \
+  --namespace jetscale-prod \
+  --create-namespace \
+  --values envs/live/values.yaml
+```
+
+### Quick verification
+
+```bash
+# Verify the secret exists (created by ESO)
+kubectl -n jetscale-prod get secret jetscale-aws-client-secret
+
+# Verify backend pods are not blocked by missing secrets
+kubectl -n jetscale-prod get pods
+kubectl -n jetscale-prod describe pod -l app.kubernetes.io/name=backend-api | sed -n '1,160p'
+```
+
+

@@ -60,11 +60,11 @@ backend-api:
     enabled: false
   resources:
     requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
       cpu: "1000m"
       memory: "1Gi"
-    limits:
-      cpu: "2000m"
-      memory: "2Gi"
 
 # 3. FRONTEND
 frontend-web:
