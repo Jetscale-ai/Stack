@@ -26,6 +26,11 @@
 
 ### Preconditions (out-of-band “vault values”)
 
+This repo uses **Option B (Container/Value Split)** for sensitive credentials:
+
+- **Terraform** creates the **secret container** and grants ESO access (IRSA policy).
+- **Humans/automation** inject the **secret value** out-of-band (rotation-safe; SOC2-friendly).
+
 The AWS Secrets Manager secret backing the AWS client ExternalSecret must exist **and** have a value:
 
 - Name: `jetscale-prod/application/aws/client`
