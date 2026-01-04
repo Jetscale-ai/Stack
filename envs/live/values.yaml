@@ -84,8 +84,15 @@ ingress:
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
+    # TLS (Live wildcard cert in the Live account/region)
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:134051052096:certificate/6e3e7f72-af8e-457d-a397-8f13728dd06c"
+    alb.ingress.kubernetes.io/ssl-policy: "ELBSecurityPolicy-TLS13-1-2-2021-06"
     # Ensure ALB stickiness matches K8s Service stickiness
     alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=10800
+    # ExternalDNS (explicit intent)
+    external-dns.alpha.kubernetes.io/hostname: "console.jetscale.ai"
   hosts:
     - host: "console.jetscale.ai"
       paths:
@@ -96,4 +103,4 @@ ingress:
 
 # 5. EXTERNAL ENTRYPOINT (for Terraform DNS discovery)
 apiExternal:
-  enabled: true
+  enabled: false
