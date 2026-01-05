@@ -1,109 +1,242 @@
-name: "Ephemeral Review Env"
+name: "Ephemeral Fleet (Cluster-per-PR)"
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [labeled]
   workflow_dispatch:
     inputs:
       action:
-        description: 'Action to perform'
-        required: true
+        description: 'Action'
         default: 'deploy'
         type: choice
-        options:
-        - deploy
-        - destroy
+        options: [deploy, destroy]
+      env_id:
+        description: 'Optional override for manual runs (e.g., pr-123). When set, skips PR lookup.'
+        required: false
+        type: string
 
+# ✅ SAFETY: Global permissions are read-only. We elevate only where needed.
 permissions:
   contents: read
   id-token: write
   pull-requests: read
 
+concurrency:
+  group: ephemeral-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   manage-env:
     name: "${{ inputs.action || 'deploy' }} Ephemeral Env"
     runs-on: ubuntu-latest
-    environment: 
-      name: preview
-      url: https://${{ env.ENV_ID }}.jetscale.ai
+    outputs:
+      env_id: ${{ steps.identity.outputs.env_id }}
+      public_host: ${{ steps.identity.outputs.public_host }}
     
+    # Guard: Run if Manual OR (PR Label == 'preview')
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.label.name == 'preview')
+
+    environment: 
+      name: ephemeral
+
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Calculate Env ID
-        id: env-id
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "ENV_ID=pr-${{ github.event.number }}" >> $GITHUB_ENV
-          else
-            SAFE_BRANCH=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]' | cut -c1-20)
-            echo "ENV_ID=br-${SAFE_BRANCH}" >> $GITHUB_ENV
-          fi
 
-          # Terraform namespace convention: {client}-{environment}
-          echo "K8S_NAMESPACE=${{ env.ENV_ID }}-preview" >> $GITHUB_ENV
+      # ✅ STABILITY: Strict Mode + Smart PR Lookup
+      - name: Calculate Identity & Hostname
+        id: identity
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          
+          PR_NUMBER=""
+          ENV_ID=""
+          
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_NUMBER="${{ github.event.number }}"
+          else
+            if [ -n "${{ inputs.env_id }}" ]; then
+              ENV_ID="${{ inputs.env_id }}"
+              if ! echo "$ENV_ID" | grep -Eq '^pr-[0-9]+$'; then
+                echo "::error::inputs.env_id must be like pr-123"
+                exit 1
+              fi
+              PR_NUMBER="${ENV_ID#pr-}"
+            else
+              echo "🔍 Manual Dispatch. Resolving PR for commit ${{ github.sha }}..."
+            
+              # If destroying, we allow closed PRs (to fix failed cleanups).
+              # If deploying, we only allow open PRs.
+              STATE_FILTER=""
+              if [ "${{ inputs.action }}" != "destroy" ]; then
+                STATE_FILTER='| select(.state=="open")'
+              fi
+            
+              # Logic: Get PRs -> Filter by State -> Take First -> Get Number
+              PR_NUMBER=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls \
+                --jq ".[] $STATE_FILTER | .number" | head -n 1)
+            
+              if [ -z "$PR_NUMBER" ]; then
+                echo "::error::❌ No matching PR found for this commit. Provide inputs.env_id to run deterministically."
+                exit 1
+              fi
+              echo "✅ Resolved to PR #${PR_NUMBER}"
+            fi
+          fi
+          
+          # Export Identity
+          echo "PR_NUMBER=${PR_NUMBER}" >> $GITHUB_ENV
+          if [ -z "$ENV_ID" ]; then
+            ENV_ID="pr-${PR_NUMBER}"
+          fi
+          echo "ENV_ID=${ENV_ID}" >> $GITHUB_ENV
+          
+          # Export Hostname
+          REF_NAME="${{ github.head_ref || github.ref_name }}"
+          SLUG=$(echo "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/^-//;s/-$//' | cut -c1-25)
+          SLUG=${SLUG:-branch}
+          
+          HOST="${ENV_ID}-${SLUG}-unstable.jetscale.ai"
+          echo "PUBLIC_HOST=${HOST}" >> $GITHUB_ENV
+          
+          # Timestamp for Reaper
+          echo "TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+
+          echo "env_id=${ENV_ID}" >> $GITHUB_OUTPUT
+          echo "public_host=${HOST}" >> $GITHUB_OUTPUT
 
       - name: Checkout Jetscale-IaC
         uses: actions/checkout@v4
         with:
           repository: Jetscale-ai/Jetscale-IaC
           path: iac
+          ref: feat/ephemeral-clusters
           token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::134051052096:role/github-actions-deployer
           aws-region: us-east-1
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_wrapper: false
+        uses: hashicorp/setup-terraform@v3
+        with: { terraform_wrapper: false }
 
-      # DEPLOY
-      - name: Terraform Apply
-        if: github.event_name == 'pull_request' || inputs.action == 'deploy'
+      - name: Install Tools
+        run: |
+          set -euo pipefail
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          ./get_helm.sh
+          aws --version
+
+      # ==========================================================
+      # PHASE 1: INFRASTRUCTURE
+      # ==========================================================
+      - name: Generate Terraform Vars
         working-directory: iac/clients
         run: |
+          set -euo pipefail
+          cat > ephemeral.auto.tfvars.json <<EOF
+          {
+            "client_name": "${{ env.ENV_ID }}",
+            "environment": "ephemeral",
+            "tenant_id": "${{ env.ENV_ID }}",
+            "aws_region": "us-east-1",
+            "expected_account_id": "134051052096",
+            "domain_name": "jetscale.ai",
+            "cluster_name": "${{ env.ENV_ID }}",
+            "kubernetes_namespace": "${{ env.ENV_ID }}",
+            "create_dns_records": false,
+            "enable_alb_controller": true,
+            "enable_external_dns": true,
+            "dns_authority_role_arn": "arn:aws:iam::081373342681:role/dns-authority",
+            "acm_certificate_domain": "*.jetscale.ai",
+            "tags": {
+              "jetscale.env_id": "${{ env.ENV_ID }}",
+              "jetscale.lifecycle": "ephemeral",
+              "jetscale.created_at": "${{ env.TIMESTAMP }}",
+              "jetscale.owner": "${{ github.actor }}"
+            }
+          }
+          EOF
+
+      - name: Terraform Apply
+        if: inputs.action != 'destroy'
+        working-directory: iac/clients
+        run: |
+          set -euo pipefail
           terraform init \
             -backend-config="bucket=jetscale-terraform-state" \
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
           
-          terraform apply -auto-approve \
-            -var="client_name=${{ env.ENV_ID }}" \
-            -var="environment=preview" \
-            -var="tenant_id=${{ env.ENV_ID }}" \
-            -var="aws_region=us-east-1" \
-            -var="create_dns_records=false"
+          terraform apply -auto-approve
 
-      - name: Bootstrap & Deploy Stack
-        if: github.event_name == 'pull_request' || inputs.action == 'deploy'
+          # ✅ RELIABILITY: Capture strict output
+          CLUSTER_NAME=$(terraform output -raw cluster_name)
+          if [ -z "$CLUSTER_NAME" ]; then
+            echo "::error::Terraform did not output a cluster_name"
+            exit 1
+          fi
+          echo "CLUSTER_NAME=${CLUSTER_NAME}" >> $GITHUB_ENV
+
+      # ==========================================================
+      # PHASE 2: APP DEPLOYMENT
+      # ==========================================================
+      - name: Deploy Stack
+        if: inputs.action != 'destroy'
         run: |
-          aws eks update-kubeconfig --name ${{ env.ENV_ID }}-preview --region us-east-1
+          set -euo pipefail
+          
+          # Use the authoritative Terraform output
+          aws eks update-kubeconfig --name ${{ env.CLUSTER_NAME }} --region us-east-1
 
-          # Pull private OCI chart deps from GHCR
+          echo "⏳ Waiting for AWS Load Balancer Controller..."
+          kubectl wait --for=condition=available deployment -n kube-system aws-load-balancer-controller --timeout=5m
+
           echo "${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}" | helm registry login ghcr.io --username jetscalebot --password-stdin
           (cd charts/app && helm dependency build)
 
           helm upgrade --install jetscale-stack charts/app \
-            --namespace "${{ env.K8S_NAMESPACE }}" \
+            --namespace "${{ env.ENV_ID }}" \
             --create-namespace \
+            --atomic \
             --values envs/preview/values.yaml \
-            --set global.env=preview \
-            --set global.client_name=${{ env.ENV_ID }} \
-            --set global.tenant_id=${{ env.ENV_ID }} \
-            --set frontend-web.env.VITE_API_BASE_URL=https://${{ env.ENV_ID }}.jetscale.ai \
-            --set ingress.hosts[0].host=${{ env.ENV_ID }}.jetscale.ai \
-            --set backend-api.envFrom[0].secretRef.name=${{ env.ENV_ID }}-db-secret \
-            --set backend-api.envFrom[1].secretRef.name=${{ env.ENV_ID }}-redis-secret \
-            --set backend-api.envFrom[2].secretRef.name=${{ env.ENV_ID }}-common-secrets \
-            --set backend-api.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
+            --set-string global.env=ephemeral \
+            --set-string global.client_name=${{ env.ENV_ID }} \
+            --set-string global.tenant_id=${{ env.ENV_ID }} \
+            --set-string frontend-web.env.VITE_API_BASE_URL=https://${{ env.PUBLIC_HOST }} \
+            --set-string ingress.hosts[0].host=${{ env.PUBLIC_HOST }} \
+            --set-string ingress.annotations."external-dns\.alpha\.kubernetes\.io/hostname"=${{ env.PUBLIC_HOST }} \
+            --set-string backend-api.envFrom[0].secretRef.name=${{ env.ENV_ID }}-db-secret \
+            --set-string backend-api.envFrom[1].secretRef.name=${{ env.ENV_ID }}-redis-secret \
+            --set-string backend-api.envFrom[2].secretRef.name=${{ env.ENV_ID }}-common-secrets \
+            --set-string backend-api.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
             --wait --timeout 15m
 
-      # DESTROY
+      - name: Verify Health
+        if: inputs.action != 'destroy'
+        run: |
+          echo "🔍 Checking https://${{ env.PUBLIC_HOST }}..."
+          for i in {1..30}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.PUBLIC_HOST }}/docs || echo "000")
+            if [ "$STATUS" -eq 200 ]; then
+              echo "✅ Endpoint is up!"
+              exit 0
+            fi
+            echo "⏳ ($i/30) Waiting for DNS/ALB... (Status: $STATUS)"
+            sleep 10
+          done
+          echo "⚠️ Endpoint didn't respond in time, but deployment succeeded."
+
+      # ==========================================================
+      # PHASE 3: DESTRUCTION
+      # ==========================================================
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
         working-directory: iac/clients
@@ -113,9 +246,30 @@ jobs:
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
 
-          terraform destroy -auto-approve \
-            -var="client_name=${{ env.ENV_ID }}" \
-            -var="environment=preview" \
-            -var="tenant_id=${{ env.ENV_ID }}" \
-            -var="aws_region=us-east-1" \
-            -var="create_dns_records=false"
+          terraform destroy -auto-approve
+
+  # ✅ USER EXPERIENCE: Separate Job for Commenting
+  # This isolates the 'write' permission to a tiny job.
+  notify:
+    needs: manage-env
+    if: inputs.action != 'destroy' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write # Only this job gets write access
+    steps:
+      - name: Post PR Comment
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ github.event.number }}
+          body: |
+            ## 🚀 Ephemeral Environment Ready
+            
+            Your ephemeral cluster has been deployed and is ready for testing.
+            
+            **Access URL:** https://${{ needs.manage-env.outputs.public_host }}
+            
+            **Cluster:** `${{ needs.manage-env.outputs.env_id }}`
+            
+            This environment will be automatically destroyed when the PR is closed or merged.
+            
+            <!-- ephemeral-env-comment -->
