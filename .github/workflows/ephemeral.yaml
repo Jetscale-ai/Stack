@@ -22,10 +22,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # Avoid TF state races:
-  # - PR label runs key off PR number
-  # - workflow_dispatch runs key off env_id (if provided) or ref (branch)
-  group: ephemeral-${{ github.event.pull_request.number || inputs.env_id || github.ref }}
+  group: ephemeral-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -57,7 +54,6 @@ jobs:
           
           PR_NUMBER=""
           ENV_ID=""
-          PR_HEAD_REF=""
           
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             PR_NUMBER="${{ github.event.number }}"
@@ -99,17 +95,7 @@ jobs:
           echo "ENV_ID=${ENV_ID}" >> $GITHUB_ENV
           
           # Export Hostname
-          #
-          # IMPORTANT: Hostname must be stable across trigger methods.
-          # For workflow_dispatch, github.ref_name is the dispatch branch (often main),
-          # which would generate a different slug than the PR's head branch.
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            PR_HEAD_REF="${{ github.head_ref }}"
-          else
-            PR_HEAD_REF=$(gh api repos/${{ github.repository }}/pulls/${PR_NUMBER} --jq '.head.ref' || true)
-          fi
-
-          REF_NAME="${PR_HEAD_REF:-${{ github.ref_name }}}"
+          REF_NAME="${{ github.head_ref || github.ref_name }}"
           SLUG=$(echo "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/^-//;s/-$//' | cut -c1-25)
           SLUG=${SLUG:-branch}
           
@@ -127,6 +113,7 @@ jobs:
         with:
           repository: Jetscale-ai/Jetscale-IaC
           path: iac
+          ref: feat/ephemeral-clusters
           token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
 
       - name: Configure AWS Credentials
