@@ -22,7 +22,8 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ephemeral-${{ github.event.pull_request.number || github.sha }}
+  # Include inputs.env_id for workflow_dispatch to avoid parallel runs fighting for the same TF state.
+  group: ephemeral-${{ inputs.env_id || github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -241,13 +242,43 @@ jobs:
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
         working-directory: iac/clients
+        id: tf_destroy
+        continue-on-error: true
         run: |
+          set -euo pipefail
           terraform init \
             -backend-config="bucket=jetscale-terraform-state" \
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
 
           terraform destroy -auto-approve
+
+      # ✅ SAFETY: Scorched Earth Fallback (manual destroy path)
+      - name: Force Cleanup (Fallback)
+        if: inputs.action == 'destroy' && always() && steps.tf_destroy.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          echo "⚠️ Terraform Destroy failed. Attempting force cleanup via AWS CLI..."
+          CLUSTER="${{ env.ENV_ID }}"
+          REGION="us-east-1"
+
+          NODEGROUPS=$(aws eks list-nodegroups --cluster-name "$CLUSTER" --region "$REGION" --query 'nodegroups[]' --output text || true)
+          for ng in $NODEGROUPS; do
+            echo "🧹 Deleting nodegroup: $ng"
+            aws eks delete-nodegroup --cluster-name "$CLUSTER" --nodegroup-name "$ng" --region "$REGION" || true
+            aws eks wait nodegroup-deleted --cluster-name "$CLUSTER" --nodegroup-name "$ng" --region "$REGION" || true
+          done
+
+          FARGATE=$(aws eks list-fargate-profiles --cluster-name "$CLUSTER" --region "$REGION" --query 'fargateProfileNames[]' --output text || true)
+          for fp in $FARGATE; do
+            echo "🧹 Deleting fargate profile: $fp"
+            aws eks delete-fargate-profile --cluster-name "$CLUSTER" --fargate-profile-name "$fp" --region "$REGION" || true
+            aws eks wait fargate-profile-deleted --cluster-name "$CLUSTER" --fargate-profile-name "$fp" --region "$REGION" || true
+          done
+
+          echo "🧨 Deleting EKS cluster: $CLUSTER"
+          aws eks delete-cluster --name "$CLUSTER" --region "$REGION" || echo "Cluster not found or already deleted"
+          aws eks wait cluster-deleted --name "$CLUSTER" --region "$REGION" || true
 
   # ✅ USER EXPERIENCE: Separate Job for Commenting
   # This isolates the 'write' permission to a tiny job.
