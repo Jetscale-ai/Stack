@@ -24,7 +24,7 @@ jobs:
         with:
           repository: Jetscale-ai/Jetscale-IaC
           path: iac
-          ref: feat/ephemeral-clusters
+          ref: main
           token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
 
       - name: Configure AWS Credentials
