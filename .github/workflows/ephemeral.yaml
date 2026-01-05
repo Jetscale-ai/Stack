@@ -149,6 +149,7 @@ jobs:
             "aws_region": "us-east-1",
             "expected_account_id": "134051052096",
             "domain_name": "jetscale.ai",
+            "terraform_s3_bucket": "jetscale-terraform-state",
             "cluster_name": "${{ env.ENV_ID }}",
             "kubernetes_namespace": "${{ env.ENV_ID }}",
             "create_dns_records": false,
