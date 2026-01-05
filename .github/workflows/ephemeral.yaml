@@ -14,10 +14,6 @@ on:
         description: 'Optional override for manual runs (e.g., pr-123). When set, skips PR lookup.'
         required: false
         type: string
-      iac_ref:
-        description: 'Git ref to checkout in Jetscale-ai/Jetscale-IaC (default: main).'
-        required: false
-        type: string
 
 # ✅ SAFETY: Global permissions are read-only. We elevate only where needed.
 permissions:
@@ -117,7 +113,7 @@ jobs:
         with:
           repository: Jetscale-ai/Jetscale-IaC
           path: iac
-          ref: ${{ inputs.iac_ref || 'main' }}
+          ref: feat/ephemeral-clusters
           token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
 
       - name: Configure AWS Credentials
