@@ -3,9 +3,9 @@
 # ==========================================================
 global:
   # Overridden by CI (e.g., pr-123)
-  env: "preview"
-  client_name: "preview" # overwritten by workflow
-  tenant_id: "preview"   # overwritten by workflow
+  env: "ephemeral"
+  client_name: "ephemeral" # overwritten by workflow
+  tenant_id: "ephemeral"   # overwritten by workflow
 
 # 1. INFRA (Managed by Terraform in AWS)
 postgres:

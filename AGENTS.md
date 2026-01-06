@@ -45,3 +45,13 @@ We represent a shift from "Container Orchestration" (Docker Compose) to "Platfor
 
 All architectural decisions must be justified by the 12 Invariants:
 _Ethos (Identity), Logos (Reason), Praxis (Action)._
+
+## 5. Operational Details
+
+**Local development:**
+
+- gh cli local access
+- gh act cli locally installed
+- aws cli installed; except when the human needs to use the breakglass mechanism, in which case instruct the human with commands to run
+- git commits require -S gpg signature by a human, so you may not commit; never push unless asked explicitly
+- you may propose git commit messages in the style of past commits, but never commit yourself. Aim for `git commit -F - <<'EOF'...` style multiline commit messages

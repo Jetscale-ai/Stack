@@ -55,8 +55,9 @@ jobs:
             "create_dns_records": false,
             "enable_alb_controller": true,
             "enable_external_dns": true,
-            "dns_authority_role_arn": "arn:aws:iam::081373342681:role/dns-authority",
+            "dns_authority_role_arn": "arn:aws:iam::081373342681:role/jetscale-external-dns-dns-authority",
             "acm_certificate_domain": "*.jetscale.ai",
+            "enable_deletion_protection": false,
             "tags": {
               "jetscale.env_id": "${{ env.ENV_ID }}"
             }
