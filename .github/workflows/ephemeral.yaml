@@ -170,7 +170,7 @@ jobs:
             fi
           fi
 
-      # ✅ RELIABILITY: Clean up orphaned AWS resources ONLY IF state is missing.
+      # ✅ RELIABILITY: Clean up orphaned AWS resources when Terraform state is unusable.
       # Re-running Apply after a partial failure can leave globally-unique resources behind
       # (IAM policies/roles, budgets, log groups, parameter groups, etc.) which then fail with "AlreadyExists".
       - name: "Integrity: Cleanup Orphan Resources (Preflight)"
@@ -185,25 +185,45 @@ jobs:
           PREFIX="${ENV_ID}-ephemeral"
           export AWS_DEFAULT_REGION="$REGION"
 
-          # 🛑 SAFETY GUARD: If state exists, Terraform owns the world. Do NOT delete anything.
+          # Determine if Terraform state exists for this env_id.
+          state_exists="false"
           if aws s3 ls "s3://$BUCKET/$STATE_KEY" >/dev/null 2>&1; then
-            echo "✅ Terraform state exists. Skipping orphan cleanup (Terraform will manage updates)."
-            exit 0
+            state_exists="true"
           fi
 
-          echo "🔍 State missing. Checking for orphan resources (prefix: $PREFIX)..."
+          # If state exists, we use it to decide what is truly orphaned (exists in AWS but NOT tracked in state).
+          tf_state_list=""
+          if [ "$state_exists" = "true" ]; then
+            echo "ℹ️ Terraform state exists. Verifying whether state tracks the resources we might delete..."
+            pushd iac/clients >/dev/null
+            terraform init \
+              -backend-config="bucket=jetscale-terraform-state" \
+              -backend-config="key=ephemeral/${ENV_ID}/terraform.tfstate" \
+              -backend-config="region=us-east-1" >/dev/null
+            tf_state_list="$(terraform state list 2>/dev/null || true)"
+            popd >/dev/null
+          else
+            echo "⚠️ Terraform state is missing. Treating matching AWS resources as orphans."
+          fi
+
+          in_state() {
+            local addr="$1"
+            echo "$tf_state_list" | grep -Fqx "$addr"
+          }
+
+          echo "🔍 Checking for orphan resources (prefix: $PREFIX)..."
 
           any_orphans="false"
-          aws iam get-role --role-name "${PREFIX}-eks-cluster-role" >/dev/null 2>&1 && any_orphans="true" || true
           aws rds describe-db-parameter-groups --db-parameter-group-name "${PREFIX}-postgres-params" >/dev/null 2>&1 && any_orphans="true" || true
-          aws logs describe-log-groups --log-group-name-prefix "/aws/eks/${ENV_ID}/cluster" --query 'logGroups[0].logGroupName' --output text 2>/dev/null | grep -q "/aws/eks/${ENV_ID}/cluster" && any_orphans="true" || true
+          aws iam get-role --role-name "${PREFIX}-aws-load-balancer-controller-role" >/dev/null 2>&1 && any_orphans="true" || true
+          aws elasticache describe-serverless-caches --query "ServerlessCaches[?starts_with(ServerlessCacheName, '${PREFIX}')].ServerlessCacheName | [0]" --output text 2>/dev/null | grep -vq "None" && any_orphans="true" || true
 
           if [ "$any_orphans" != "true" ]; then
             echo "✅ No obvious orphans found. Clean slate."
             exit 0
           fi
 
-          echo "⚠️ Orphans detected without state. Executing best-effort cleanup so Terraform can re-create cleanly..."
+          echo "⚠️ Orphans detected. Executing best-effort cleanup of resources NOT tracked in state..."
 
           delete_iam_policy_by_name() {
             local name="$1"
@@ -236,45 +256,100 @@ jobs:
             aws iam delete-role --role-name "$role" >/dev/null 2>&1 || true
           }
 
-          # RDS groups
-          aws rds delete-db-parameter-group --db-parameter-group-name "${PREFIX}-postgres-params" >/dev/null 2>&1 || true
-          aws rds delete-db-subnet-group --db-subnet-group-name "${PREFIX}-db-subnet-group" >/dev/null 2>&1 || true
+          # RDS groups (delete only if Terraform doesn't track them)
+          if [ "$state_exists" != "true" ] || ! in_state "aws_db_parameter_group.main[0]"; then
+            aws rds delete-db-parameter-group --db-parameter-group-name "${PREFIX}-postgres-params" >/dev/null 2>&1 || true
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_db_subnet_group.main[0]"; then
+            aws rds delete-db-subnet-group --db-subnet-group-name "${PREFIX}-db-subnet-group" >/dev/null 2>&1 || true
+          fi
 
           # CloudWatch Logs
-          aws logs delete-log-group --log-group-name "/aws/eks/${ENV_ID}/cluster" >/dev/null 2>&1 || true
+          if [ "$state_exists" != "true" ] || ! in_state "aws_cloudwatch_log_group.eks_cluster"; then
+            aws logs delete-log-group --log-group-name "/aws/eks/${ENV_ID}/cluster" >/dev/null 2>&1 || true
+          fi
 
           # Budgets (global service)
-          aws budgets delete-budget --account-id "$ACCOUNT_ID" --budget-name "${PREFIX}-monthly-budget" >/dev/null 2>&1 || true
-          aws budgets delete-budget --account-id "$ACCOUNT_ID" --budget-name "${PREFIX}-eks-budget" >/dev/null 2>&1 || true
+          if [ "$state_exists" != "true" ] || ! in_state "aws_budgets_budget.monthly_cost"; then
+            aws budgets delete-budget --account-id "$ACCOUNT_ID" --budget-name "${PREFIX}-monthly-budget" >/dev/null 2>&1 || true
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_budgets_budget.eks_cost"; then
+            aws budgets delete-budget --account-id "$ACCOUNT_ID" --budget-name "${PREFIX}-eks-budget" >/dev/null 2>&1 || true
+          fi
 
           # Secrets (force delete; ephemeral only)
-          aws secretsmanager delete-secret --secret-id "${PREFIX}/application/backend/redis" --force-delete-without-recovery >/dev/null 2>&1 || true
-          aws secretsmanager delete-secret --secret-id "${PREFIX}/application/encryption_key" --force-delete-without-recovery >/dev/null 2>&1 || true
-          aws secretsmanager delete-secret --secret-id "${PREFIX}/application/aws/client" --force-delete-without-recovery >/dev/null 2>&1 || true
-          aws secretsmanager delete-secret --secret-id "${PREFIX}/database/postgres" --force-delete-without-recovery >/dev/null 2>&1 || true
+          if [ "$state_exists" != "true" ] || ! in_state "aws_secretsmanager_secret.application_aws_redis_secrets[0]"; then
+            aws secretsmanager delete-secret --secret-id "${PREFIX}/application/backend/redis" --force-delete-without-recovery >/dev/null 2>&1 || true
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_secretsmanager_secret.application_encryption[0]"; then
+            aws secretsmanager delete-secret --secret-id "${PREFIX}/application/encryption_key" --force-delete-without-recovery >/dev/null 2>&1 || true
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_secretsmanager_secret.application_aws_client"; then
+            aws secretsmanager delete-secret --secret-id "${PREFIX}/application/aws/client" --force-delete-without-recovery >/dev/null 2>&1 || true
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_secretsmanager_secret.db_secret[0]"; then
+            aws secretsmanager delete-secret --secret-id "${PREFIX}/database/postgres" --force-delete-without-recovery >/dev/null 2>&1 || true
+          fi
 
           # ECR repositories
-          aws ecr delete-repository --repository-name "${PREFIX}-backend" --force >/dev/null 2>&1 || true
-          aws ecr delete-repository --repository-name "${PREFIX}-frontend" --force >/dev/null 2>&1 || true
+          if [ "$state_exists" != "true" ] || ! in_state "aws_ecr_repository.app[0]"; then
+            aws ecr delete-repository --repository-name "${PREFIX}-backend" --force >/dev/null 2>&1 || true
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_ecr_repository.frontend[0]"; then
+            aws ecr delete-repository --repository-name "${PREFIX}-frontend" --force >/dev/null 2>&1 || true
+          fi
 
           # IAM roles/policies (names are deterministic in Jetscale-IaC)
-          delete_iam_role_by_name "${PREFIX}-rds-monitoring-role"
-          delete_iam_role_by_name "${PREFIX}-eks-cluster-role"
-          delete_iam_role_by_name "${PREFIX}-eks-node-role"
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_role.rds_monitoring[0]"; then
+            delete_iam_role_by_name "${PREFIX}-rds-monitoring-role"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_role.eks_cluster"; then
+            delete_iam_role_by_name "${PREFIX}-eks-cluster-role"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_role.eks_nodes"; then
+            delete_iam_role_by_name "${PREFIX}-eks-node-role"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_role.aws_load_balancer_controller[0]"; then
+            delete_iam_role_by_name "${PREFIX}-aws-load-balancer-controller-role"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_role.external_dns[0]"; then
+            delete_iam_role_by_name "${PREFIX}-external-dns-role"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_role.ebs_csi_driver[0]"; then
+            delete_iam_role_by_name "${PREFIX}-ebs-csi-driver-role"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_role.app"; then
+            delete_iam_role_by_name "${PREFIX}-app-role"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_role.external_secrets[0]"; then
+            delete_iam_role_by_name "${PREFIX}-external-secrets-role"
+          fi
 
-          delete_iam_policy_by_name "${PREFIX}-aws-load-balancer-controller-policy"
-          delete_iam_policy_by_name "${PREFIX}-external-dns-assume-dns-authority-policy"
-          delete_iam_policy_by_name "${PREFIX}-node-additional-policy"
-          delete_iam_policy_by_name "${PREFIX}-app-policy"
-          delete_iam_policy_by_name "${PREFIX}-external-secrets-policy"
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_policy.aws_load_balancer_controller[0]"; then
+            delete_iam_policy_by_name "${PREFIX}-aws-load-balancer-controller-policy"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_policy.external_dns_assume_dns_authority[0]"; then
+            delete_iam_policy_by_name "${PREFIX}-external-dns-assume-dns-authority-policy"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_policy.node_additional_policy"; then
+            delete_iam_policy_by_name "${PREFIX}-node-additional-policy"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_policy.app_policy"; then
+            delete_iam_policy_by_name "${PREFIX}-app-policy"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_policy.external_secrets[0]"; then
+            delete_iam_policy_by_name "${PREFIX}-external-secrets-policy"
+          fi
 
           # ElastiCache serverless cache (best-effort)
-          mapfile -t caches < <(aws elasticache describe-serverless-caches \
-            --query "ServerlessCaches[?starts_with(ServerlessCacheName, '${PREFIX}')].ServerlessCacheName" \
-            --output text 2>/dev/null || true)
-          for c in "${caches[@]}"; do
-            [ -n "$c" ] && aws elasticache delete-serverless-cache --serverless-cache-name "$c" >/dev/null 2>&1 || true
-          done
+          if [ "$state_exists" != "true" ] || ! in_state "module.elasticache[0].aws_elasticache_serverless_cache.this[0]"; then
+            mapfile -t caches < <(aws elasticache describe-serverless-caches \
+              --query "ServerlessCaches[?starts_with(ServerlessCacheName, '${PREFIX}')].ServerlessCacheName" \
+              --output text 2>/dev/null || true)
+            for c in "${caches[@]}"; do
+              [ -n "$c" ] && aws elasticache delete-serverless-cache --serverless-cache-name "$c" >/dev/null 2>&1 || true
+            done
+          fi
 
           echo "✅ Preflight cleanup complete (best-effort). Proceeding with Terraform."
       
