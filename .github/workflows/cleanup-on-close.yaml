@@ -157,6 +157,12 @@ jobs:
           delete_iam_role_by_name "${PREFIX}-rds-monitoring-role"
           delete_iam_role_by_name "${PREFIX}-eks-cluster-role"
           delete_iam_role_by_name "${PREFIX}-eks-node-role"
+          delete_iam_role_by_name "${PREFIX}-aws-load-balancer-controller-role"
+          delete_iam_role_by_name "${PREFIX}-external-dns-role"
+          delete_iam_role_by_name "${PREFIX}-ebs-csi-driver-role"
+          delete_iam_role_by_name "${PREFIX}-app-role"
+          delete_iam_role_by_name "${PREFIX}-external-secrets-role"
+          delete_iam_role_by_name "${PREFIX}-client-discovery-role"
 
           delete_iam_policy_by_name "${PREFIX}-aws-load-balancer-controller-policy"
           delete_iam_policy_by_name "${PREFIX}-external-dns-assume-dns-authority-policy"

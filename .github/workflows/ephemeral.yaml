@@ -256,6 +256,31 @@ jobs:
             aws iam delete-role --role-name "$role" >/dev/null 2>&1 || true
           }
 
+          # IAM instance profiles (roles can be stuck if an instance profile still exists)
+          mapfile -t profiles < <(aws iam list-instance-profiles \
+            --query "InstanceProfiles[?starts_with(InstanceProfileName, '${PREFIX}')].InstanceProfileName" \
+            --output text 2>/dev/null || true)
+          for prof in "${profiles[@]}"; do
+            [ -z "$prof" ] && continue
+            mapfile -t prof_roles < <(aws iam get-instance-profile --instance-profile-name "$prof" --query 'InstanceProfile.Roles[].RoleName' --output text 2>/dev/null || true)
+            for r in "${prof_roles[@]}"; do
+              [ -n "$r" ] && aws iam remove-role-from-instance-profile --instance-profile-name "$prof" --role-name "$r" >/dev/null 2>&1 || true
+            done
+            aws iam delete-instance-profile --instance-profile-name "$prof" >/dev/null 2>&1 || true
+          done
+
+          # RDS instances (parameter/subnet groups cannot be deleted while in use)
+          if [ "$state_exists" != "true" ] || ! in_state "aws_db_instance.main[0]"; then
+            mapfile -t dbs < <(aws rds describe-db-instances \
+              --query "DBInstances[?starts_with(DBInstanceIdentifier, '${PREFIX}')].DBInstanceIdentifier" \
+              --output text 2>/dev/null || true)
+            for db in "${dbs[@]}"; do
+              [ -z "$db" ] && continue
+              aws rds delete-db-instance --db-instance-identifier "$db" --skip-final-snapshot --delete-automated-backups >/dev/null 2>&1 || true
+              aws rds wait db-instance-deleted --db-instance-identifier "$db" >/dev/null 2>&1 || true
+            done
+          fi
+
           # RDS groups (delete only if Terraform doesn't track them)
           if [ "$state_exists" != "true" ] || ! in_state "aws_db_parameter_group.main[0]"; then
             aws rds delete-db-parameter-group --db-parameter-group-name "${PREFIX}-postgres-params" >/dev/null 2>&1 || true
@@ -323,6 +348,9 @@ jobs:
           fi
           if [ "$state_exists" != "true" ] || ! in_state "aws_iam_role.external_secrets[0]"; then
             delete_iam_role_by_name "${PREFIX}-external-secrets-role"
+          fi
+          if [ "$state_exists" != "true" ] || ! in_state "aws_iam_role.client_discovery[0]"; then
+            delete_iam_role_by_name "${PREFIX}-client-discovery-role"
           fi
 
           if [ "$state_exists" != "true" ] || ! in_state "aws_iam_policy.aws_load_balancer_controller[0]"; then
@@ -546,6 +574,12 @@ jobs:
           delete_iam_role_by_name "${PREFIX}-rds-monitoring-role"
           delete_iam_role_by_name "${PREFIX}-eks-cluster-role"
           delete_iam_role_by_name "${PREFIX}-eks-node-role"
+          delete_iam_role_by_name "${PREFIX}-aws-load-balancer-controller-role"
+          delete_iam_role_by_name "${PREFIX}-external-dns-role"
+          delete_iam_role_by_name "${PREFIX}-ebs-csi-driver-role"
+          delete_iam_role_by_name "${PREFIX}-app-role"
+          delete_iam_role_by_name "${PREFIX}-external-secrets-role"
+          delete_iam_role_by_name "${PREFIX}-client-discovery-role"
 
           delete_iam_policy_by_name "${PREFIX}-aws-load-balancer-controller-policy"
           delete_iam_policy_by_name "${PREFIX}-external-dns-assume-dns-authority-policy"
