@@ -86,6 +86,9 @@ jobs:
           echo "⚠️ Terraform Destroy failed. Attempting force cleanup via AWS CLI..."
           CLUSTER="${{ env.ENV_ID }}"
           REGION="us-east-1"
+          ACCOUNT_ID="134051052096"
+          PREFIX="${CLUSTER}-ephemeral"
+          export AWS_DEFAULT_REGION="$REGION"
 
           # Delete managed nodegroups first (otherwise delete-cluster often fails).
           NODEGROUPS=$(aws eks list-nodegroups --cluster-name "$CLUSTER" --region "$REGION" --query 'nodegroups[]' --output text || true)
@@ -106,3 +109,66 @@ jobs:
           echo "🧨 Deleting EKS cluster: $CLUSTER"
           aws eks delete-cluster --name "$CLUSTER" --region "$REGION" || echo "Cluster not found or already deleted"
           aws eks wait cluster-deleted --name "$CLUSTER" --region "$REGION" || true
+
+          echo "🧹 Cleaning up non-EKS orphan resources (prefix: $PREFIX)..."
+
+          delete_iam_policy_by_name() {
+            local name="$1"
+            local arn
+            arn="$(aws iam list-policies --scope Local --query "Policies[?PolicyName=='${name}'].Arn | [0]" --output text 2>/dev/null || true)"
+            if [ -z "$arn" ] || [ "$arn" = "None" ]; then
+              return 0
+            fi
+            mapfile -t versions < <(aws iam list-policy-versions --policy-arn "$arn" --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text 2>/dev/null || true)
+            for v in "${versions[@]}"; do
+              [ -n "$v" ] && aws iam delete-policy-version --policy-arn "$arn" --version-id "$v" >/dev/null 2>&1 || true
+            done
+            aws iam delete-policy --policy-arn "$arn" >/dev/null 2>&1 || true
+          }
+
+          delete_iam_role_by_name() {
+            local role="$1"
+            aws iam get-role --role-name "$role" >/dev/null 2>&1 || return 0
+            mapfile -t attached < <(aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null || true)
+            for p in "${attached[@]}"; do
+              [ -n "$p" ] && aws iam detach-role-policy --role-name "$role" --policy-arn "$p" >/dev/null 2>&1 || true
+            done
+            mapfile -t inline < <(aws iam list-role-policies --role-name "$role" --query 'PolicyNames[]' --output text 2>/dev/null || true)
+            for ip in "${inline[@]}"; do
+              [ -n "$ip" ] && aws iam delete-role-policy --role-name "$role" --policy-name "$ip" >/dev/null 2>&1 || true
+            done
+            aws iam delete-role --role-name "$role" >/dev/null 2>&1 || true
+          }
+
+          aws rds delete-db-parameter-group --db-parameter-group-name "${PREFIX}-postgres-params" >/dev/null 2>&1 || true
+          aws rds delete-db-subnet-group --db-subnet-group-name "${PREFIX}-db-subnet-group" >/dev/null 2>&1 || true
+          aws logs delete-log-group --log-group-name "/aws/eks/${CLUSTER}/cluster" >/dev/null 2>&1 || true
+          aws budgets delete-budget --account-id "$ACCOUNT_ID" --budget-name "${PREFIX}-monthly-budget" >/dev/null 2>&1 || true
+          aws budgets delete-budget --account-id "$ACCOUNT_ID" --budget-name "${PREFIX}-eks-budget" >/dev/null 2>&1 || true
+
+          aws secretsmanager delete-secret --secret-id "${PREFIX}/application/backend/redis" --force-delete-without-recovery >/dev/null 2>&1 || true
+          aws secretsmanager delete-secret --secret-id "${PREFIX}/application/encryption_key" --force-delete-without-recovery >/dev/null 2>&1 || true
+          aws secretsmanager delete-secret --secret-id "${PREFIX}/application/aws/client" --force-delete-without-recovery >/dev/null 2>&1 || true
+          aws secretsmanager delete-secret --secret-id "${PREFIX}/database/postgres" --force-delete-without-recovery >/dev/null 2>&1 || true
+
+          aws ecr delete-repository --repository-name "${PREFIX}-backend" --force >/dev/null 2>&1 || true
+          aws ecr delete-repository --repository-name "${PREFIX}-frontend" --force >/dev/null 2>&1 || true
+
+          delete_iam_role_by_name "${PREFIX}-rds-monitoring-role"
+          delete_iam_role_by_name "${PREFIX}-eks-cluster-role"
+          delete_iam_role_by_name "${PREFIX}-eks-node-role"
+
+          delete_iam_policy_by_name "${PREFIX}-aws-load-balancer-controller-policy"
+          delete_iam_policy_by_name "${PREFIX}-external-dns-assume-dns-authority-policy"
+          delete_iam_policy_by_name "${PREFIX}-node-additional-policy"
+          delete_iam_policy_by_name "${PREFIX}-app-policy"
+          delete_iam_policy_by_name "${PREFIX}-external-secrets-policy"
+
+          mapfile -t caches < <(aws elasticache describe-serverless-caches \
+            --query "ServerlessCaches[?starts_with(ServerlessCacheName, '${PREFIX}')].ServerlessCacheName" \
+            --output text 2>/dev/null || true)
+          for c in "${caches[@]}"; do
+            [ -n "$c" ] && aws elasticache delete-serverless-cache --serverless-cache-name "$c" >/dev/null 2>&1 || true
+          done
+
+          echo "✅ Force cleanup complete (best-effort)."
