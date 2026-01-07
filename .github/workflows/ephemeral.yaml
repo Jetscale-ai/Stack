@@ -133,7 +133,12 @@ jobs:
           curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
           chmod 700 get_helm.sh
           ./get_helm.sh
+          # kubectl for post-failure diagnostics (and later Deploy Stack step)
+          curl -fsSL -o kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
           aws --version
+          kubectl version --client=true
 
       # ==========================================================
       # PHASE 1: INFRASTRUCTURE
@@ -504,7 +509,27 @@ jobs:
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
           
-          terraform apply -auto-approve
+          # Apply once; if the AWS LB Controller helm_release times out, emit diagnostics and retry once.
+          set +e
+          terraform apply -auto-approve 2>&1 | tee /tmp/tf-apply.log
+          rc=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$rc" -ne 0 ] && rg -n "helm_release\\.aws_load_balancer_controller|aws-load-balancer-controller|context deadline exceeded" /tmp/tf-apply.log >/dev/null 2>&1; then
+            echo "::group::Diagnostics: aws-load-balancer-controller helm_release timeout"
+            echo "Terraform apply failed due to aws-load-balancer-controller helm_release timeout. Collecting cluster diagnostics and retrying once..."
+            aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 || true
+            kubectl -n kube-system get pods -o wide || true
+            kubectl -n kube-system get events --sort-by=.lastTimestamp | tail -n 80 || true
+            helm -n kube-system status aws-load-balancer-controller || true
+            kubectl -n kube-system describe deployment aws-load-balancer-controller || true
+            echo "::endgroup::"
+
+            echo "🔁 Retrying terraform apply once..."
+            terraform apply -auto-approve
+          elif [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
 
           # ✅ RELIABILITY: Capture strict output
           CLUSTER_NAME=$(terraform output -raw cluster_name)
