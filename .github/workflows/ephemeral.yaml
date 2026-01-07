@@ -526,6 +526,43 @@ jobs:
             -backend-config="bucket=jetscale-terraform-state" \
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
+
+          # If NAT is enabled, bootstrap egress first so Helm releases can pull public images (public.ecr.aws / ghcr.io).
+          # This avoids the chicken-and-egg where aws-load-balancer-controller blocks before NAT/route changes converge.
+          ENABLE_NAT="$(python - <<'PY'
+import json
+try:
+  data = json.load(open("ephemeral.auto.tfvars.json"))
+  print("true" if data.get("enable_nat_gateway") else "false")
+except Exception:
+  print("false")
+PY
+)"
+          if [ "$ENABLE_NAT" = "true" ]; then
+            echo "::group::Bootstrap: NAT gateway + private egress routes"
+            echo "enable_nat_gateway=true → applying NAT + private route changes first"
+            terraform apply -auto-approve \
+              -target=aws_eip.nat[0] \
+              -target=aws_nat_gateway.main[0] \
+              -target=aws_route_table.private \
+              -target=aws_route_table_association.private
+
+            # Wait briefly for NAT to become available (best-effort) so pods can start pulling images.
+            VPC_ID="$(terraform state show -no-color aws_vpc.main 2>/dev/null | sed -n 's/^id = //p' | head -n 1 || true)"
+            if [ -n "$VPC_ID" ]; then
+              echo "vpc_id=$VPC_ID"
+              for i in $(seq 1 30); do
+                STATE="$(aws ec2 describe-nat-gateways --filter \"Name=vpc-id,Values=$VPC_ID\" \"Name=state,Values=pending,available\" --query 'NatGateways[0].State' --output text 2>/dev/null || true)"
+                if [ "$STATE" = "available" ]; then
+                  echo "✅ NAT gateway is available"
+                  break
+                fi
+                echo "⏳ Waiting for NAT gateway... (state=${STATE:-unknown}) [$i/30]"
+                sleep 10
+              done
+            fi
+            echo "::endgroup::"
+          fi
           
           # If the AWS LB Controller helm_release times out (or hits "name in use"), emit diagnostics and retry a few times.
           # This accommodates slow cluster bring-up while still surfacing actionable debug info.
