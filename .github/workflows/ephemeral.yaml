@@ -190,11 +190,13 @@ jobs:
           if aws s3 ls "s3://$BUCKET/$STATE_KEY" >/dev/null 2>&1; then
             state_exists="true"
           fi
+          echo "ℹ️ state_exists=$state_exists (s3://$BUCKET/$STATE_KEY)"
 
           # If state exists, we use it to decide what is truly orphaned (exists in AWS but NOT tracked in state).
           tf_state_list=""
           if [ "$state_exists" = "true" ]; then
-            echo "ℹ️ Terraform state exists. Verifying whether state tracks the resources we might delete..."
+            echo "::group::Terraform State Inspection"
+            echo "ℹ️ Terraform state exists. Inspecting state for ownership checks..."
             pushd iac/clients >/dev/null
             terraform init \
               -backend-config="bucket=jetscale-terraform-state" \
@@ -202,6 +204,23 @@ jobs:
               -backend-config="region=us-east-1" >/dev/null
             tf_state_list="$(terraform state list 2>/dev/null || true)"
             popd >/dev/null
+            echo "ℹ️ TF state entries: $(echo "$tf_state_list" | sed '/^$/d' | wc -l | tr -d ' ')"
+            for addr in \
+              "aws_db_instance.main[0]" \
+              "aws_db_parameter_group.main[0]" \
+              "aws_db_subnet_group.main[0]" \
+              "aws_iam_role.eks_nodes" \
+              "aws_iam_policy.node_additional_policy" \
+              "aws_iam_role.client_discovery[0]" \
+              "module.elasticache[0].aws_elasticache_serverless_cache.this[0]"
+            do
+              if echo "$tf_state_list" | grep -Fqx "$addr"; then
+                echo "✅ in_state: $addr"
+              else
+                echo "❌ not_in_state: $addr"
+              fi
+            done
+            echo "::endgroup::"
           else
             echo "⚠️ Terraform state is missing. Treating matching AWS resources as orphans."
           fi
@@ -214,8 +233,17 @@ jobs:
           echo "🔍 Checking for orphan resources (prefix: $PREFIX)..."
 
           any_orphans="false"
+          # Detect a broad set of known deterministic-name resources that commonly drift from state.
           aws rds describe-db-parameter-groups --db-parameter-group-name "${PREFIX}-postgres-params" >/dev/null 2>&1 && any_orphans="true" || true
+          aws rds describe-db-subnet-groups --db-subnet-group-name "${PREFIX}-db-subnet-group" >/dev/null 2>&1 && any_orphans="true" || true
+
           aws iam get-role --role-name "${PREFIX}-aws-load-balancer-controller-role" >/dev/null 2>&1 && any_orphans="true" || true
+          aws iam get-role --role-name "${PREFIX}-external-dns-role" >/dev/null 2>&1 && any_orphans="true" || true
+          aws iam get-role --role-name "${PREFIX}-eks-node-role" >/dev/null 2>&1 && any_orphans="true" || true
+          aws iam get-role --role-name "${PREFIX}-client-discovery-role" >/dev/null 2>&1 && any_orphans="true" || true
+
+          aws iam list-policies --scope Local --query "Policies[?PolicyName=='${PREFIX}-node-additional-policy'].Arn | [0]" --output text 2>/dev/null | grep -vqE "^(None)?$" && any_orphans="true" || true
+
           aws elasticache describe-serverless-caches --query "ServerlessCaches[?starts_with(ServerlessCacheName, '${PREFIX}')].ServerlessCacheName | [0]" --output text 2>/dev/null | grep -vq "None" && any_orphans="true" || true
 
           if [ "$any_orphans" != "true" ]; then
@@ -232,17 +260,37 @@ jobs:
             if [ -z "$arn" ] || [ "$arn" = "None" ]; then
               return 0
             fi
+            echo "::group::Delete IAM policy: ${name}"
+            echo "arn=${arn}"
+
+            # Detach the policy from any entities (roles/users/groups) before deletion.
+            mapfile -t roles < <(aws iam list-entities-for-policy --policy-arn "$arn" --query 'PolicyRoles[].RoleName' --output text 2>/dev/null || true)
+            for r in "${roles[@]}"; do
+              [ -n "$r" ] && aws iam detach-role-policy --role-name "$r" --policy-arn "$arn" >/dev/null 2>&1 || true
+            done
+            mapfile -t users < <(aws iam list-entities-for-policy --policy-arn "$arn" --query 'PolicyUsers[].UserName' --output text 2>/dev/null || true)
+            for u in "${users[@]}"; do
+              [ -n "$u" ] && aws iam detach-user-policy --user-name "$u" --policy-arn "$arn" >/dev/null 2>&1 || true
+            done
+            mapfile -t groups < <(aws iam list-entities-for-policy --policy-arn "$arn" --query 'PolicyGroups[].GroupName' --output text 2>/dev/null || true)
+            for g in "${groups[@]}"; do
+              [ -n "$g" ] && aws iam detach-group-policy --group-name "$g" --policy-arn "$arn" >/dev/null 2>&1 || true
+            done
+
             # Must delete non-default versions before deleting the policy
             mapfile -t versions < <(aws iam list-policy-versions --policy-arn "$arn" --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text 2>/dev/null || true)
             for v in "${versions[@]}"; do
               [ -n "$v" ] && aws iam delete-policy-version --policy-arn "$arn" --version-id "$v" >/dev/null 2>&1 || true
             done
             aws iam delete-policy --policy-arn "$arn" >/dev/null 2>&1 || true
+            aws iam get-policy --policy-arn "$arn" >/dev/null 2>&1 && echo "⚠️ still exists (may be in use)" || echo "✅ deleted"
+            echo "::endgroup::"
           }
 
           delete_iam_role_by_name() {
             local role="$1"
             aws iam get-role --role-name "$role" >/dev/null 2>&1 || return 0
+            echo "::group::Delete IAM role: ${role}"
             # Detach managed policies
             mapfile -t attached < <(aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null || true)
             for p in "${attached[@]}"; do
@@ -254,31 +302,41 @@ jobs:
               [ -n "$ip" ] && aws iam delete-role-policy --role-name "$role" --policy-name "$ip" >/dev/null 2>&1 || true
             done
             aws iam delete-role --role-name "$role" >/dev/null 2>&1 || true
+            aws iam get-role --role-name "$role" >/dev/null 2>&1 && echo "⚠️ still exists (often due to instance-profile attachment)" || echo "✅ deleted"
+            echo "::endgroup::"
           }
 
           # IAM instance profiles (roles can be stuck if an instance profile still exists)
+          echo "::group::Cleanup IAM instance profiles"
           mapfile -t profiles < <(aws iam list-instance-profiles \
             --query "InstanceProfiles[?starts_with(InstanceProfileName, '${PREFIX}')].InstanceProfileName" \
             --output text 2>/dev/null || true)
+          echo "profiles_found: ${#profiles[@]} (${profiles[*]-})"
           for prof in "${profiles[@]}"; do
             [ -z "$prof" ] && continue
+            echo "deleting instance-profile: $prof"
             mapfile -t prof_roles < <(aws iam get-instance-profile --instance-profile-name "$prof" --query 'InstanceProfile.Roles[].RoleName' --output text 2>/dev/null || true)
             for r in "${prof_roles[@]}"; do
               [ -n "$r" ] && aws iam remove-role-from-instance-profile --instance-profile-name "$prof" --role-name "$r" >/dev/null 2>&1 || true
             done
             aws iam delete-instance-profile --instance-profile-name "$prof" >/dev/null 2>&1 || true
           done
+          echo "::endgroup::"
 
           # RDS instances (parameter/subnet groups cannot be deleted while in use)
           if [ "$state_exists" != "true" ] || ! in_state "aws_db_instance.main[0]"; then
+            echo "::group::Cleanup RDS DB instances"
             mapfile -t dbs < <(aws rds describe-db-instances \
               --query "DBInstances[?starts_with(DBInstanceIdentifier, '${PREFIX}')].DBInstanceIdentifier" \
               --output text 2>/dev/null || true)
+            echo "db_instances_found: ${#dbs[@]} (${dbs[*]-})"
             for db in "${dbs[@]}"; do
               [ -z "$db" ] && continue
+              echo "deleting db-instance: $db"
               aws rds delete-db-instance --db-instance-identifier "$db" --skip-final-snapshot --delete-automated-backups >/dev/null 2>&1 || true
               aws rds wait db-instance-deleted --db-instance-identifier "$db" >/dev/null 2>&1 || true
             done
+            echo "::endgroup::"
           fi
 
           # RDS groups (delete only if Terraform doesn't track them)
@@ -371,12 +429,15 @@ jobs:
 
           # ElastiCache serverless cache (best-effort)
           if [ "$state_exists" != "true" ] || ! in_state "module.elasticache[0].aws_elasticache_serverless_cache.this[0]"; then
+            echo "::group::Cleanup ElastiCache serverless caches"
             mapfile -t caches < <(aws elasticache describe-serverless-caches \
               --query "ServerlessCaches[?starts_with(ServerlessCacheName, '${PREFIX}')].ServerlessCacheName" \
               --output text 2>/dev/null || true)
+            echo "caches_found: ${#caches[@]} (${caches[*]-})"
             for c in "${caches[@]}"; do
               [ -n "$c" ] && aws elasticache delete-serverless-cache --serverless-cache-name "$c" >/dev/null 2>&1 || true
             done
+            echo "::endgroup::"
           fi
 
           echo "✅ Preflight cleanup complete (best-effort). Proceeding with Terraform."
