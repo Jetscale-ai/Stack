@@ -258,6 +258,22 @@ jobs:
               fi
             fi
 
+            # Helm release drift: if the release exists in the cluster but isn't tracked in TF state,
+            # Terraform will attempt a fresh install and fail with:
+            #   "cannot re-use a name that is still in use"
+            if ! echo "$tf_state_list" | grep -Fqx "helm_release.aws_load_balancer_controller[0]"; then
+              echo "::group::Terraform Import: helm_release.aws_load_balancer_controller[0] (if present in cluster)"
+              # Best-effort kubeconfig; may fail if cluster isn't up yet.
+              aws eks update-kubeconfig --name "${ENV_ID}" --region "$REGION" >/dev/null 2>&1 || true
+              if helm -n kube-system status aws-load-balancer-controller >/dev/null 2>&1; then
+                terraform import -input=false 'helm_release.aws_load_balancer_controller[0]' 'kube-system/aws-load-balancer-controller' >/dev/null 2>&1 || true
+                echo "✅ imported existing helm release into TF state"
+              else
+                echo "ℹ️ helm release not found (or cluster not reachable) — skipping import"
+              fi
+              echo "::endgroup::"
+            fi
+
             # Refresh state after any imports
             tf_state_list="$(terraform state list 2>/dev/null || true)"
             popd >/dev/null
@@ -269,6 +285,7 @@ jobs:
               "aws_iam_role.eks_nodes" \
               "aws_iam_policy.node_additional_policy" \
               "aws_iam_role.client_discovery[0]" \
+              "helm_release.aws_load_balancer_controller[0]" \
               "module.elasticache[0].aws_elasticache_serverless_cache.this[0]"
             do
               if echo "$tf_state_list" | grep -Fqx "$addr"; then
