@@ -543,6 +543,24 @@ jobs:
               break
             fi
 
+            # Backend lockfile drift: cancelled/failed runs can leave an S3 lockfile behind.
+            # Because we already enforce per-env_id concurrency, it is safe to force-unlock and retry.
+            if grep -Eq "Error acquiring the state lock|PreconditionFailed" /tmp/tf-apply.log; then
+              lock_id="$(sed -n 's/^[[:space:]]*ID:[[:space:]]*//p' /tmp/tf-apply.log | head -n 1 | tr -d '\r')"
+              echo "::group::Diagnostics: Terraform state lock"
+              echo "Terraform failed to acquire the state lock. Attempting force-unlock (lock_id=${lock_id:-unknown})..."
+              if [ -n "${lock_id:-}" ]; then
+                terraform force-unlock -force "$lock_id" || true
+              fi
+              echo "::endgroup::"
+              if [ "$attempt" -lt "$max_attempts" ]; then
+                sleep_for=$((30 * attempt))
+                echo "⏳ Waiting ${sleep_for}s before retry..."
+                sleep "$sleep_for"
+                continue
+              fi
+            fi
+
             if grep -Eq "helm_release\\.aws_load_balancer_controller|aws-load-balancer-controller|context deadline exceeded|cannot re-use a name that is still in use" /tmp/tf-apply.log; then
               echo "::group::Diagnostics: aws-load-balancer-controller (attempt ${attempt})"
               echo "Terraform apply failed while reconciling aws-load-balancer-controller. Collecting cluster diagnostics..."
