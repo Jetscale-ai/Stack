@@ -579,6 +579,43 @@ jobs:
               kubectl -n kube-system get events --sort-by=.lastTimestamp | tail -n 120 || true
               helm -n kube-system status aws-load-balancer-controller || true
               helm -n kube-system history aws-load-balancer-controller || true
+
+              echo "::group::Network egress diagnostics (NAT/Routes)"
+              VPC_ID="$(aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 --query 'cluster.resourcesVpcConfig.vpcId' --output text 2>/dev/null || true)"
+              SUBNET_IDS="$(aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 --query 'cluster.resourcesVpcConfig.subnetIds' --output text 2>/dev/null || true)"
+              echo "vpc_id=${VPC_ID:-unknown}"
+              echo "cluster_subnets=${SUBNET_IDS:-unknown}"
+
+              if [ -n "${VPC_ID:-}" ] && [ "${VPC_ID:-}" != "None" ]; then
+                echo "internet_gateways:"
+                aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" \
+                  --query 'InternetGateways[].InternetGatewayId' --output text 2>/dev/null || true
+
+                echo "nat_gateways (available/pending):"
+                aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available,pending" \
+                  --query 'NatGateways[].{id:NatGatewayId,state:State,subnet:SubnetId,publicIp:NatGatewayAddresses[0].PublicIp}' \
+                  --output table 2>/dev/null || true
+              fi
+
+              # For each cluster subnet, show the 0.0.0.0/0 route (if any) and whether it targets a NAT or IGW.
+              for s in $SUBNET_IDS; do
+                [ -z "$s" ] && continue
+                echo "--- subnet: $s"
+                RT_IDS="$(aws ec2 describe-route-tables --filters "Name=association.subnet-id,Values=$s" \
+                  --query 'RouteTables[].RouteTableId' --output text 2>/dev/null || true)"
+                if [ -z "$RT_IDS" ]; then
+                  echo "no route table association found for subnet"
+                  continue
+                fi
+                for rt in $RT_IDS; do
+                  echo "route_table: $rt"
+                  aws ec2 describe-route-tables --route-table-ids "$rt" \
+                    --query 'RouteTables[0].Routes[?DestinationCidrBlock==`0.0.0.0/0`]' \
+                    --output json 2>/dev/null || true
+                done
+              done
+              echo "::endgroup::"
+
               echo "::endgroup::"
 
               if [ "$attempt" -lt "$max_attempts" ]; then
