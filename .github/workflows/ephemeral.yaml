@@ -526,25 +526,48 @@ jobs:
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
           
-          # Apply once; if the AWS LB Controller helm_release times out, emit diagnostics and retry once.
-          set +e
-          terraform apply -auto-approve 2>&1 | tee /tmp/tf-apply.log
-          rc=${PIPESTATUS[0]}
-          set -e
-
-          if [ "$rc" -ne 0 ] && rg -n "helm_release\\.aws_load_balancer_controller|aws-load-balancer-controller|context deadline exceeded" /tmp/tf-apply.log >/dev/null 2>&1; then
-            echo "::group::Diagnostics: aws-load-balancer-controller helm_release timeout"
-            echo "Terraform apply failed due to aws-load-balancer-controller helm_release timeout. Collecting cluster diagnostics and retrying once..."
-            aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 || true
-            kubectl -n kube-system get pods -o wide || true
-            kubectl -n kube-system get events --sort-by=.lastTimestamp | tail -n 80 || true
-            helm -n kube-system status aws-load-balancer-controller || true
-            kubectl -n kube-system describe deployment aws-load-balancer-controller || true
+          # If the AWS LB Controller helm_release times out (or hits "name in use"), emit diagnostics and retry a few times.
+          # This accommodates slow cluster bring-up while still surfacing actionable debug info.
+          max_attempts=3
+          rc=0
+          for attempt in $(seq 1 "$max_attempts"); do
+            echo "::group::Terraform Apply (attempt ${attempt}/${max_attempts})"
+            set +e
+            terraform apply -auto-approve 2>&1 | tee /tmp/tf-apply.log
+            rc=${PIPESTATUS[0]}
+            set -e
             echo "::endgroup::"
 
-            echo "🔁 Retrying terraform apply once..."
-            terraform apply -auto-approve
-          elif [ "$rc" -ne 0 ]; then
+            if [ "$rc" -eq 0 ]; then
+              break
+            fi
+
+            if grep -Eq "helm_release\\.aws_load_balancer_controller|aws-load-balancer-controller|context deadline exceeded|cannot re-use a name that is still in use" /tmp/tf-apply.log; then
+              echo "::group::Diagnostics: aws-load-balancer-controller (attempt ${attempt})"
+              echo "Terraform apply failed while reconciling aws-load-balancer-controller. Collecting cluster diagnostics..."
+              aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 || true
+              kubectl get nodes -o wide || true
+              kubectl -n kube-system get pods -o wide || true
+              kubectl -n kube-system describe deployment aws-load-balancer-controller || true
+              kubectl -n kube-system logs deployment/aws-load-balancer-controller --tail=200 || true
+              kubectl -n kube-system get events --sort-by=.lastTimestamp | tail -n 120 || true
+              helm -n kube-system status aws-load-balancer-controller || true
+              helm -n kube-system history aws-load-balancer-controller || true
+              echo "::endgroup::"
+
+              if [ "$attempt" -lt "$max_attempts" ]; then
+                sleep_for=$((60 * attempt))
+                echo "⏳ Waiting ${sleep_for}s before retry..."
+                sleep "$sleep_for"
+                continue
+              fi
+            fi
+
+            # Non-ALB-controller failure, or ran out of retries.
+            exit "$rc"
+          done
+
+          if [ "$rc" -ne 0 ]; then
             exit "$rc"
           fi
 
