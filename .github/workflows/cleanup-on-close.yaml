@@ -1,4 +1,4 @@
-name: "Auto-Cleanup Ephemeral"
+name: "Janitor (Cleanup Ephemeral)"
 
 on:
   pull_request:
@@ -8,48 +8,87 @@ permissions:
   contents: read
   id-token: write
 
+# ✅ FIX: Concurrency control to prevent racing with manual Destroy runs
+concurrency:
+  group: ephemeral-pr-${{ github.event.number }}
+  cancel-in-progress: false
+
 jobs:
   destroy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
-      - name: Calculate Env ID
+      - name: Calculate Identity
         run: |
+          set -euo pipefail
           echo "ENV_ID=pr-${{ github.event.number }}" >> $GITHUB_ENV
-          echo "K8S_NAMESPACE=pr-${{ github.event.number }}-preview" >> $GITHUB_ENV
 
       - name: Checkout Jetscale-IaC
         uses: actions/checkout@v4
         with:
           repository: Jetscale-ai/Jetscale-IaC
           path: iac
+          ref: main
           token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::134051052096:role/github-actions-deployer
           aws-region: us-east-1
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+        uses: hashicorp/setup-terraform@v3
         with: { terraform_wrapper: false }
 
-      - name: Terraform Destroy
+      - name: Generate Terraform Vars
         working-directory: iac/clients
         run: |
+          set -euo pipefail
+          cat > ephemeral.auto.tfvars.json <<EOF
+          {
+            "client_name": "${{ env.ENV_ID }}",
+            "environment": "ephemeral",
+            "tenant_id": "${{ env.ENV_ID }}",
+            "aws_region": "us-east-1",
+            "expected_account_id": "134051052096",
+            "domain_name": "jetscale.ai",
+            "terraform_s3_bucket": "jetscale-terraform-state",
+            "cluster_name": "${{ env.ENV_ID }}",
+            "kubernetes_namespace": "${{ env.ENV_ID }}",
+            "create_dns_records": false,
+            "enable_alb_controller": true,
+            "enable_external_dns": true,
+            "dns_authority_role_arn": "arn:aws:iam::081373342681:role/jetscale-external-dns-dns-authority",
+            "acm_certificate_domain": "*.jetscale.ai",
+            "enable_deletion_protection": false,
+            "enable_nat_gateway": true,
+            "tags": {
+              "jetscale.env_id": "${{ env.ENV_ID }}"
+            }
+          }
+          EOF
+
+      - name: Terraform Destroy
+        id: tf_destroy
+        working-directory: iac/clients
+        continue-on-error: true
+        run: |
+          set -euo pipefail
           terraform init \
             -backend-config="bucket=jetscale-terraform-state" \
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
 
-          # We blindly destroy. If it doesn't exist (user never deployed), this fails gracefully or we can add a check.
-          # To be safe, we allow failure if state is missing.
-          terraform destroy -auto-approve \
-            -var="client_name=${{ env.ENV_ID }}" \
-            -var="environment=preview" \
-            -var="tenant_id=${{ env.ENV_ID }}" \
-            -var="aws_region=us-east-1" \
-            -var="create_dns_records=false" || echo "Cluster likely did not exist."
+          terraform destroy -auto-approve
+
+      # ✅ SAFETY: Scorched Earth Fallback
+      # Uses the shared cleanup script to prevent drift
+      - name: Force Cleanup (Fallback)
+        if: always() && steps.tf_destroy.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          test -x ./scripts/ephemeral-cleanup.sh
+          echo "⚠️ Terraform Destroy failed. Invoking shared cleanup script..."
+          ./scripts/ephemeral-cleanup.sh "fallback" "${{ env.ENV_ID }}" "us-east-1" "134051052096"
