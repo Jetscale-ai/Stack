@@ -546,11 +546,18 @@ jobs:
             # Backend lockfile drift: cancelled/failed runs can leave an S3 lockfile behind.
             # Because we already enforce per-env_id concurrency, it is safe to force-unlock and retry.
             if grep -Eq "Error acquiring the state lock|PreconditionFailed" /tmp/tf-apply.log; then
-              lock_id="$(sed -n 's/^[[:space:]]*ID:[[:space:]]*//p' /tmp/tf-apply.log | head -n 1 | tr -d '\r')"
+              # Terraform output can include ANSI escape codes; strip them before parsing.
+              clean_log="$(sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' /tmp/tf-apply.log | tr -d '\r')"
+              # Prefer extracting the UUID lock ID from the Lock Info block.
+              lock_id="$(echo "$clean_log" | grep -oE '[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}' | head -n 1 || true)"
               echo "::group::Diagnostics: Terraform state lock"
-              echo "Terraform failed to acquire the state lock. Attempting force-unlock (lock_id=${lock_id:-unknown})..."
+              echo "Terraform failed to acquire the state lock."
+              echo "parsed_lock_id=${lock_id:-unknown}"
               if [ -n "${lock_id:-}" ]; then
                 terraform force-unlock -force "$lock_id" || true
+              else
+                echo "⚠️ Could not parse lock ID; lock block (sanitized):"
+                echo "$clean_log" | sed -n '/Lock Info:/,/^$/p' | head -n 60 || true
               fi
               echo "::endgroup::"
               if [ "$attempt" -lt "$max_attempts" ]; then
