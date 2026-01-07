@@ -138,6 +138,36 @@ jobs:
       # ==========================================================
       # PHASE 1: INFRASTRUCTURE
       # ==========================================================
+
+      - name: Generate Terraform Vars
+        working-directory: iac/clients
+        run: |
+          set -euo pipefail
+          cat > ephemeral.auto.tfvars.json <<EOF
+          {
+            "client_name": "${{ env.ENV_ID }}",
+            "environment": "ephemeral",
+            "tenant_id": "${{ env.ENV_ID }}",
+            "aws_region": "us-east-1",
+            "expected_account_id": "134051052096",
+            "domain_name": "jetscale.ai",
+            "terraform_s3_bucket": "jetscale-terraform-state",
+            "cluster_name": "${{ env.ENV_ID }}",
+            "kubernetes_namespace": "${{ env.ENV_ID }}",
+            "create_dns_records": false,
+            "enable_alb_controller": true,
+            "enable_external_dns": true,
+            "dns_authority_role_arn": "arn:aws:iam::081373342681:role/jetscale-external-dns-dns-authority",
+            "acm_certificate_domain": "*.jetscale.ai",
+            "enable_deletion_protection": false,
+            "tags": {
+              "jetscale.env_id": "${{ env.ENV_ID }}",
+              "jetscale.lifecycle": "ephemeral",
+              "jetscale.created_at": "${{ env.TIMESTAMP }}",
+              "jetscale.owner": "${{ github.actor }}"
+            }
+          }
+          EOF
       
       # ✅ FIX: Integrity Check - Prevent "Zombie State" Lockout
       # If the cluster is gone (AWS) but state exists (S3), providers will fail to init (localhost error).
@@ -202,6 +232,28 @@ jobs:
               -backend-config="bucket=jetscale-terraform-state" \
               -backend-config="key=ephemeral/${ENV_ID}/terraform.tfstate" \
               -backend-config="region=us-east-1" >/dev/null
+            tf_state_list="$(terraform state list 2>/dev/null || true)"
+
+            # If state exists but is missing critical IAM resources that already exist in AWS,
+            # prefer importing them over deleting (roles can be "in use" by instance profiles/nodegroups).
+            if ! echo "$tf_state_list" | grep -Fqx "aws_iam_role.eks_nodes"; then
+              if aws iam get-role --role-name "${PREFIX}-eks-node-role" >/dev/null 2>&1; then
+                echo "::group::Terraform Import: aws_iam_role.eks_nodes"
+                terraform import -input=false aws_iam_role.eks_nodes "${PREFIX}-eks-node-role" >/dev/null 2>&1 || true
+                echo "::endgroup::"
+              fi
+            fi
+
+            if ! echo "$tf_state_list" | grep -Fqx "aws_iam_policy.node_additional_policy"; then
+              policy_arn="$(aws iam list-policies --scope Local --query "Policies[?PolicyName=='${PREFIX}-node-additional-policy'].Arn | [0]" --output text 2>/dev/null || true)"
+              if [ -n "$policy_arn" ] && [ "$policy_arn" != "None" ]; then
+                echo "::group::Terraform Import: aws_iam_policy.node_additional_policy"
+                terraform import -input=false aws_iam_policy.node_additional_policy "$policy_arn" >/dev/null 2>&1 || true
+                echo "::endgroup::"
+              fi
+            fi
+
+            # Refresh state after any imports
             tf_state_list="$(terraform state list 2>/dev/null || true)"
             popd >/dev/null
             echo "ℹ️ TF state entries: $(echo "$tf_state_list" | sed '/^$/d' | wc -l | tr -d ' ')"
@@ -442,36 +494,6 @@ jobs:
 
           echo "✅ Preflight cleanup complete (best-effort). Proceeding with Terraform."
       
-      - name: Generate Terraform Vars
-        working-directory: iac/clients
-        run: |
-          set -euo pipefail
-          cat > ephemeral.auto.tfvars.json <<EOF
-          {
-            "client_name": "${{ env.ENV_ID }}",
-            "environment": "ephemeral",
-            "tenant_id": "${{ env.ENV_ID }}",
-            "aws_region": "us-east-1",
-            "expected_account_id": "134051052096",
-            "domain_name": "jetscale.ai",
-            "terraform_s3_bucket": "jetscale-terraform-state",
-            "cluster_name": "${{ env.ENV_ID }}",
-            "kubernetes_namespace": "${{ env.ENV_ID }}",
-            "create_dns_records": false,
-            "enable_alb_controller": true,
-            "enable_external_dns": true,
-            "dns_authority_role_arn": "arn:aws:iam::081373342681:role/jetscale-external-dns-dns-authority",
-            "acm_certificate_domain": "*.jetscale.ai",
-            "enable_deletion_protection": false,
-            "tags": {
-              "jetscale.env_id": "${{ env.ENV_ID }}",
-              "jetscale.lifecycle": "ephemeral",
-              "jetscale.created_at": "${{ env.TIMESTAMP }}",
-              "jetscale.owner": "${{ github.actor }}"
-            }
-          }
-          EOF
-
       - name: Terraform Apply
         if: inputs.action != 'destroy'
         working-directory: iac/clients
