@@ -18,7 +18,7 @@ redis:
   image: "redis:7-bullseye"
 
 # 3. BACKEND API
-backend-api:
+backend:
   enabled: true
   replicaCount: 1
   image:
@@ -45,7 +45,7 @@ backend-api:
     PYTHONUNBUFFERED: "1"
 
 # 4. FRONTEND WEB
-frontend-web:
+frontend:
   enabled: true
   image:
     # Strictly local name

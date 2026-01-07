@@ -8,7 +8,7 @@ Jetscale-IaC currently creates Route53 records by reading a Kubernetes Service:
 This Service is that contract. It stays cloud-agnostic (type LoadBalancer) and
 does not assume a specific Ingress implementation.
 */ -}}
-{{- if and (index .Values "backend-api" "enabled") .Values.apiExternal.enabled -}}
+{{- if and (index .Values "backend" "enabled") .Values.apiExternal.enabled -}}
 apiVersion: v1
 kind: Service
 metadata:
@@ -24,8 +24,8 @@ spec:
       targetPort: 8000
       protocol: TCP
   selector:
-    # Select backend-api pods (subchart uses these standard labels)
-    app.kubernetes.io/name: backend-api
+    # Select backend pods (subchart uses these standard labels)
+    app.kubernetes.io/name: backend
     app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 

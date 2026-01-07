@@ -18,9 +18,12 @@ redis:
   image: "redis:7-bullseye"
 
 # 3. BACKEND API (Dev Mode)
-backend-api:
+backend:
   enabled: true
   replicaCount: 1
+  serviceAccount:
+    create: true
+    name: "jetscale-service-account"
   image:
     repository: ghcr.io/jetscale-ai/backend-dev
     pullPolicy: IfNotPresent
@@ -44,11 +47,23 @@ backend-api:
     PYTHONUNBUFFERED: "1"
 
 # 4. FRONTEND WEB (Dev Mode)
-frontend-web:
+frontend:
   enabled: true
+  serviceAccount:
+    create: false
   image:
     repository: ghcr.io/jetscale-ai/frontend-dev
     pullPolicy: IfNotPresent
+  service:
+    port: 80
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 80
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 80
   devMode:
     enabled: true
   env:

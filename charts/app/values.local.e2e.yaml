@@ -18,13 +18,14 @@ redis:
   image: "redis:7-bullseye"
 
 # 3. BACKEND API (Prod-Parity Mode)
-backend-api:
+backend:
   enabled: true
   replicaCount: 1
   image:
     # Local-only name – built by Skaffold using the Alpine runtime stage
     repository: jetscale-backend-local
     pullPolicy: IfNotPresent
+  imagePullSecrets: []
 
   service:
     type: ClusterIP
@@ -53,12 +54,23 @@ backend-api:
     JETSCALE_AWS_REGION: "us-east-1"
 
 # 4. FRONTEND WEB (Prod-Parity-ish)
-frontend-web:
+frontend:
   enabled: true
   image:
     repository: jetscale-frontend-local
     pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  service:
+    port: 80
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 80
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 80
   devMode:
     enabled: false
   env:
-    VITE_API_BASE_URL: "http://jetscale-stack-test-backend-api:8000"
+    VITE_API_BASE_URL: "http://jetscale-stack-test-backend:8000"

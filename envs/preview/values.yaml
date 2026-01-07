@@ -15,7 +15,7 @@ redis:
   enabled: false
 
 # 2. BACKEND
-backend-api:
+backend:
   enabled: true
   replicaCount: 1
   image:
@@ -44,7 +44,7 @@ backend-api:
     # DB/Redis/JWT are injected via envFrom Secrets
 
 # 3. FRONTEND
-frontend-web:
+frontend:
   enabled: true
   image:
     repository: ghcr.io/jetscale-ai/frontend
