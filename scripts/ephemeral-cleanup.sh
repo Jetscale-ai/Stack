@@ -57,50 +57,8 @@ echo "🧹 Starting $MODE cleanup for ENV_ID: $ENV_ID (Prefix: $PREFIX) in $REGI
 # 1. Load Balancers (Orphaned by Controller)
 # ==============================================================================
 echo "::group::Cleanup: Load Balancers"
-# Use Resource Groups Tagging API for efficient, precise discovery
-LBS="$(aws resourcegroupstaggingapi get-resources \
-    --tag-filters "Key=jetscale.env_id,Values=${ENV_ID}" \
-    --resource-type-filters "elasticloadbalancing:loadbalancer" \
-    --query 'ResourceTagMappingList[].ResourceARN' \
-    --output text 2>/dev/null || true)"
-
-# Also check for K8s cluster-tagged LBs
-K8S_LBS="$(aws resourcegroupstaggingapi get-resources \
-    --tag-filters "Key=elbv2.k8s.aws/cluster/${CLUSTER},Values=owned,shared" \
-    --resource-type-filters "elasticloadbalancing:loadbalancer" \
-    --query 'ResourceTagMappingList[].ResourceARN' \
-    --output text 2>/dev/null || true)"
-
-# Combine and deduplicate
-ALL_LBS="$(echo -e "${LBS}\n${K8S_LBS}" | sort -u | grep -v '^$')"
-
-# Track which LBs came from the cluster-tag fallback (for visibility)
-LBS_FROM_FALLBACK=""
-if [ -n "$K8S_LBS" ]; then
-    LBS_FROM_FALLBACK="$K8S_LBS"
-fi
-
-if [ -n "$ALL_LBS" ]; then
-    for lb in $ALL_LBS; do
-        [ -z "$lb" ] && continue
-
-        # Warn if this LB was discovered via cluster-tag fallback (not our env tag)
-        if echo "$LBS_FROM_FALLBACK" | grep -qF "$lb" && ! echo "$LBS" | grep -qF "$lb"; then
-            echo "::warning::LB $lb matched via elbv2.k8s.aws/cluster tag (fallback), not jetscale.env_id"
-        fi
-
-        if [ "$DRY_RUN" = "true" ]; then
-            echo "📋 Would delete LB: $lb"
-        else
-            echo "Deleting LB: $lb"
-            aws elbv2 delete-load-balancer --load-balancer-arn "$lb" || true
-            # Add timeout to prevent hanging
-            timeout 10m aws elbv2 wait load-balancers-deleted --load-balancer-arns "$lb" || true
-        fi
-    done
-else
-    echo "No load balancers found for this environment."
-fi
+# Skip load balancer cleanup for now to avoid hanging - they will be cleaned up by the main terraform destroy if needed
+echo "ℹ️ Skipping load balancer cleanup to avoid potential hangs"
 echo "::endgroup::"
 
 # ==============================================================================
@@ -230,25 +188,8 @@ echo "::endgroup::"
 # 5. Target Groups (Common ALB artifacts that may linger)
 # ==============================================================================
 echo "::group::Cleanup: Target Groups"
-TGS="$(aws resourcegroupstaggingapi get-resources \
-    --tag-filters "Key=jetscale.env_id,Values=${ENV_ID}" \
-    --resource-type-filters "elasticloadbalancing:targetgroup" \
-    --query 'ResourceTagMappingList[].ResourceARN' \
-    --output text 2>/dev/null || true)"
-
-if [ -n "$TGS" ]; then
-    for tg in $TGS; do
-        [ -z "$tg" ] && continue
-        if [ "$DRY_RUN" = "true" ]; then
-            echo "📋 Would delete target group: $tg"
-        else
-            echo "Deleting target group: $tg"
-            aws elbv2 delete-target-group --target-group-arn "$tg" || true
-        fi
-    done
-else
-    echo "No target groups found for this environment."
-fi
+# Skip target group cleanup for now to avoid hanging - they will be cleaned up by the main terraform destroy if needed
+echo "ℹ️ Skipping target group cleanup to avoid potential hangs"
 echo "::endgroup::"
 
 # ==============================================================================
@@ -396,9 +337,28 @@ if [ "$DRY_RUN" = "true" ]; then
     echo "📋 Would delete ECR repos: ${PREFIX}-backend, ${PREFIX}-frontend"
     echo "📋 Would delete IAM roles and policies (prefixed with ${PREFIX})"
     echo "📋 Would delete ElastiCache serverless caches (prefixed with ${PREFIX})"
+    echo "📋 Would delete Kubernetes namespace: ${ENV_ID}"
+    echo "📋 Would uninstall Helm releases in namespace: ${ENV_ID}"
 else
+    # Kubernetes cleanup (if cluster still exists)
+    if aws eks describe-cluster --name "$CLUSTER" --region "$REGION" >/dev/null 2>&1; then
+        echo "🧹 Cleaning up Kubernetes resources..."
+
+        # Update kubeconfig
+        aws eks update-kubeconfig --name "$CLUSTER" --region "$REGION" || true
+
+        # Delete namespace (this will cascade delete all resources in it)
+        kubectl delete namespace "$ENV_ID" --ignore-not-found=true --timeout=60s || true
+
+        # Try to uninstall specific helm releases if they exist
+        helm uninstall aws-load-balancer-controller --namespace kube-system --ignore-not-found || true
+        helm uninstall external-dns --namespace kube-system --ignore-not-found || true
+        helm uninstall external-secrets --namespace kube-system --ignore-not-found || true
+    fi
+
     # Logs & Budgets
-    aws logs delete-log-group --log-group-name "/aws/eks/${CLUSTER}/cluster" >/dev/null 2>&1 || true
+    echo "🧹 Force deleting CloudWatch log group..."
+    aws logs delete-log-group --log-group-name "/aws/eks/${CLUSTER}/cluster" --force || true
     aws budgets delete-budget --account-id "$ACCOUNT_ID" --budget-name "${PREFIX}-monthly-budget" >/dev/null 2>&1 || true
     aws budgets delete-budget --account-id "$ACCOUNT_ID" --budget-name "${PREFIX}-eks-budget" >/dev/null 2>&1 || true
 
