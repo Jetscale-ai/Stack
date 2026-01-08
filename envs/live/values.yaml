@@ -73,6 +73,8 @@ frontend:
   image:
     repository: ghcr.io/jetscale-ai/frontend
     tag: "2.0.4"
+  service:
+    port: 80
   env:
     # This should point at the same host the Ingress serves for /api
     VITE_API_BASE_URL: "https://console.jetscale.ai"

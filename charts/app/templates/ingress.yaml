@@ -27,18 +27,6 @@ spec:
                 # Default: route "/" to frontend. Use "/api" for backend.
                 name: {{ $.Release.Name }}{{ if hasPrefix "/api" .path }}-backend{{ else }}-frontend{{ end }}
                 port:
-                  # ✅ Justified Action: Port correctness for ALB reconciliation
-                  #
-                  # Goal:
-                  # - Route to the *actual* Service ports configured for dependency charts.
-                  # - Prevent aws-load-balancer-controller errors like:
-                  #   "unable to find port 80 on service ...-frontend"
-                  #
-                  # Invariants: Clarity, Vigor, Concord
-                  #
-                  # Notes:
-                  # - Dependency chart values are keyed by name (backend / frontend). Because
-                  #   of the dash, use `index` to access them.
                   number: {{ if hasPrefix "/api" .path }}{{ default 8000 (index $.Values "backend" "service" "port") }}{{ else }}{{ default 80 (index $.Values "frontend" "service" "port") }}{{ end }}
           {{- end }}
     {{- end }}

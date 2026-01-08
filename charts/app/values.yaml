@@ -31,7 +31,8 @@ frontend:
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
-    port: 3000
+    # Frontend container listens on 80 (nginx-style). Using 3000 causes probe/ALB failures.
+    port: 80
   resources:
     requests:
       cpu: 100m
