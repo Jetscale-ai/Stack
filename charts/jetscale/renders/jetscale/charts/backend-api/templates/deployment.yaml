@@ -1,0 +1,122 @@
+---
+# Source: jetscale/charts/backend-api/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-backend-api
+  labels:
+    helm.sh/chart: backend-api-2.0.3
+    app.kubernetes.io/name: backend-api
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend-api
+      app.kubernetes.io/instance: test
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: backend-api-2.0.3
+        app.kubernetes.io/name: backend-api
+        app.kubernetes.io/instance: test
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: jetscale-service-account
+      initContainers:
+        - name: setup-db
+          image: "081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend:latest"
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - "echo \"\U0001F527 Running database setup...\"\npython3 setup_db.py\necho \"\U0001F4E6
+              Loading fixtures...\"\npython3 load_fixtures.py\necho \"✅ Database initialization
+              complete\"\n"
+          env:
+          envFrom:
+            - configMapRef:
+                name: jetscale-config
+            - secretRef:
+                name: jetscale-app-secrets
+            - secretRef:
+                name: jetscale-db-secret
+            - secretRef:
+                name: jetscale-aws-client-secret
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+      containers:
+        - name: backend-api
+          image: "081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend:latest"
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - "echo \"\U0001F680 Starting JetScale API with correct database configuration...\"\necho
+              \"Using database: $JETSCALE_DB_NAME\"\npython3 -m uvicorn main:app --host 0.0.0.0
+              --port 8000 --proxy-headers --forwarded-allow-ips=\"*\"\n"
+          env:
+            - name: JETSCALE_COMPONENT
+              value: "api"
+            - name: JETSCALE_LOG_LEVEL
+              value: "INFO"
+          envFrom:
+            - configMapRef:
+                name: jetscale-config
+            - secretRef:
+                name: jetscale-app-secrets
+            - secretRef:
+                name: jetscale-db-secret
+            - secretRef:
+                name: jetscale-redis-secret
+            - secretRef:
+                name: jetscale-aws-client-secret
+            - secretRef:
+                name: jetscale-common-secrets
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /api/v1/health/
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /api/v1/health/
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 2.5Gi
+            requests:
+              cpu: 200m
+              memory: 768Mi
+          volumeMounts:
+            - mountPath: /app/data
+              name: jetscale-data
+            - mountPath: /app/logs
+              name: jetscale-logs
+      volumes:
+        - emptyDir: {}
+          name: jetscale-data
+        - emptyDir: {}
+          name: jetscale-logs

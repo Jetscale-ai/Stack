@@ -1,0 +1,60 @@
+---
+# Source: jetscale/charts/frontend/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-frontend
+  labels:
+    helm.sh/chart: frontend-2.1.0
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+      app.kubernetes.io/instance: test
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: frontend-2.1.0
+        app.kubernetes.io/name: frontend
+        app.kubernetes.io/instance: test
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      imagePullSecrets:
+        - name: jetscale-registry-secret
+      serviceAccountName: test-frontend
+      containers:
+        - name: frontend
+          image: "081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-frontend:latest"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NODE_ENV
+              value: "production"
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi

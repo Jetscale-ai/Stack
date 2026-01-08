@@ -1,0 +1,52 @@
+---
+# Source: jetscale/templates/redis.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: jetscale-redis-master
+  labels:
+    helm.sh/chart: jetscale-0.2.1
+    app.kubernetes.io/name: jetscale
+    app.kubernetes.io/instance: jetscale
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    app.kubernetes.io/name: jetscale
+    app.kubernetes.io/instance: jetscale
+    app.kubernetes.io/component: redis
+---
+# Source: jetscale/templates/redis.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jetscale-redis
+  labels:
+    helm.sh/chart: jetscale-0.2.1
+    app.kubernetes.io/name: jetscale
+    app.kubernetes.io/instance: jetscale
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  serviceName: jetscale-redis-master
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jetscale
+      app.kubernetes.io/instance: jetscale
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jetscale
+        app.kubernetes.io/instance: jetscale
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-bullseye
+          ports:
+            - containerPort: 6379

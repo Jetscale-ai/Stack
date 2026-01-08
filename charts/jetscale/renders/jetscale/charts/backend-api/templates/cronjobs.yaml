@@ -1,0 +1,300 @@
+---
+# Source: jetscale/charts/backend-api/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: test-backend-api-discover-aws-resources
+  labels:
+    helm.sh/chart: backend-api-2.0.3
+    app.kubernetes.io/name: backend-api
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: cronjob
+spec:
+  schedule: "0 3 * * *"
+  suspend: false
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backend-api
+            app.kubernetes.io/instance: test
+            app.kubernetes.io/component: cronjob
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: "discover-aws-resources"
+              image: "081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend:latest"
+              imagePullPolicy: IfNotPresent
+              command:
+                - python3
+                - jobs/aws/discover_aws_resources.py
+              env:
+              envFrom:
+                - configMapRef:
+                    name: jetscale-config
+                - secretRef:
+                    name: jetscale-app-secrets
+                - secretRef:
+                    name: jetscale-db-secret
+                - secretRef:
+                    name: jetscale-redis-secret
+                - secretRef:
+                    name: jetscale-aws-client-secret
+                - secretRef:
+                    name: jetscale-common-secrets
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 1Gi
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+---
+# Source: jetscale/charts/backend-api/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: test-backend-api-generate-custom-reco-from-coh
+  labels:
+    helm.sh/chart: backend-api-2.0.3
+    app.kubernetes.io/name: backend-api
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: cronjob
+spec:
+  schedule: "30 2 * * *"
+  suspend: true
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backend-api
+            app.kubernetes.io/instance: test
+            app.kubernetes.io/component: cronjob
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: "generate-custom-reco-from-coh"
+              image: "081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend:latest"
+              imagePullPolicy: IfNotPresent
+              command:
+                - python3
+                - jobs/aws/generate_custom_reco_from_coh.py
+              env:
+              envFrom:
+                - configMapRef:
+                    name: jetscale-config
+                - secretRef:
+                    name: jetscale-app-secrets
+                - secretRef:
+                    name: jetscale-db-secret
+                - secretRef:
+                    name: jetscale-redis-secret
+                - secretRef:
+                    name: jetscale-aws-client-secret
+                - secretRef:
+                    name: jetscale-common-secrets
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 1Gi
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+---
+# Source: jetscale/charts/backend-api/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: test-backend-api-generate-custom-reco-from-discovery
+  labels:
+    helm.sh/chart: backend-api-2.0.3
+    app.kubernetes.io/name: backend-api
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: cronjob
+spec:
+  schedule: "30 3 * * *"
+  suspend: false
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backend-api
+            app.kubernetes.io/instance: test
+            app.kubernetes.io/component: cronjob
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: "generate-custom-reco-from-discovery"
+              image: "081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend:latest"
+              imagePullPolicy: IfNotPresent
+              command:
+                - python3
+                - jobs/aws/generate_custom_reco_from_discovery.py
+              env:
+              envFrom:
+                - configMapRef:
+                    name: jetscale-config
+                - secretRef:
+                    name: jetscale-app-secrets
+                - secretRef:
+                    name: jetscale-db-secret
+                - secretRef:
+                    name: jetscale-redis-secret
+                - secretRef:
+                    name: jetscale-aws-client-secret
+                - secretRef:
+                    name: jetscale-common-secrets
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 1Gi
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+---
+# Source: jetscale/charts/backend-api/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: test-backend-api-pull-co-recommendations
+  labels:
+    helm.sh/chart: backend-api-2.0.3
+    app.kubernetes.io/name: backend-api
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: cronjob
+spec:
+  schedule: "45 2 * * *"
+  suspend: false
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backend-api
+            app.kubernetes.io/instance: test
+            app.kubernetes.io/component: cronjob
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: "pull-co-recommendations"
+              image: "081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend:latest"
+              imagePullPolicy: IfNotPresent
+              command:
+                - python3
+                - jobs/aws/action_pull_co.py
+              env:
+              envFrom:
+                - configMapRef:
+                    name: jetscale-config
+                - secretRef:
+                    name: jetscale-app-secrets
+                - secretRef:
+                    name: jetscale-db-secret
+                - secretRef:
+                    name: jetscale-redis-secret
+                - secretRef:
+                    name: jetscale-aws-client-secret
+                - secretRef:
+                    name: jetscale-common-secrets
+              resources:
+                limits:
+                  cpu: 300m
+                  memory: 512Mi
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+---
+# Source: jetscale/charts/backend-api/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: test-backend-api-pull-coh-recommendations
+  labels:
+    helm.sh/chart: backend-api-2.0.3
+    app.kubernetes.io/name: backend-api
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: cronjob
+spec:
+  schedule: "30 2 * * *"
+  suspend: false
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backend-api
+            app.kubernetes.io/instance: test
+            app.kubernetes.io/component: cronjob
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: "pull-coh-recommendations"
+              image: "081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend:latest"
+              imagePullPolicy: IfNotPresent
+              command:
+                - python3
+                - jobs/aws/action_pull_coh.py
+              env:
+              envFrom:
+                - configMapRef:
+                    name: jetscale-config
+                - secretRef:
+                    name: jetscale-app-secrets
+                - secretRef:
+                    name: jetscale-db-secret
+                - secretRef:
+                    name: jetscale-redis-secret
+                - secretRef:
+                    name: jetscale-aws-client-secret
+                - secretRef:
+                    name: jetscale-common-secrets
+              resources:
+                limits:
+                  cpu: 300m
+                  memory: 512Mi
+                requests:
+                  cpu: 100m
+                  memory: 256Mi

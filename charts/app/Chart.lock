@@ -1,9 +1,0 @@
-dependencies:
-- name: backend-api
-  repository: oci://ghcr.io/jetscale-ai/charts
-  version: 1.2.1
-- name: frontend-web
-  repository: oci://ghcr.io/jetscale-ai/charts
-  version: 2.0.2
-digest: sha256:162329a5ce762a468b685d84d6f17a1a35992cd3d20050126a1882c23b2bd1df
-generated: "2026-01-02T07:36:44.365558981-05:00"

@@ -1,0 +1,31 @@
+apiVersion: v2
+name: jetscale
+description: The JetScale Platform Umbrella Chart
+type: application
+version: 0.2.1
+appVersion: "1.0.0"
+
+dependencies:
+  # Backend Service (Proprietary OCI)
+  - name: backend
+    alias: backend-api
+    version: "2.0.3"
+    # Point to the parent namespace, Helm appends the name
+    # repository: "oci://ghcr.io/jetscale-ai/charts"
+    repository: "file://../../../Backend/chart"
+    condition: backend-api.enabled
+  - name: backend
+    alias: backend-ws
+    version: "2.0.3"
+    # Point to the parent namespace, Helm appends the name
+    # repository: "oci://ghcr.io/jetscale-ai/charts"
+    repository: "file://../../../Backend/chart"
+    condition: backend-ws.enabled
+
+  # Frontend Service (Proprietary OCI)
+  - name: frontend
+    version: "2.1.0"
+    # Point to the parent namespace, Helm appends the name
+    # repository: "oci://ghcr.io/jetscale-ai/charts"
+    repository: "file://../../../Frontend/chart"
+    condition: frontend.enabled
