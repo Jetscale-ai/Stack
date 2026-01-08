@@ -334,6 +334,52 @@ jobs:
           # 3. Fix Webhook Deadlock (CRITICAL)
           # The ALB Controller webhook from a previous run can block new pods (like metrics-server).
           if aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
+            # 3a. ✅ Bootstrap EKS Auth for Terraform/Kubectl (Access Entries)
+            #
+            # Goal:
+            # - Avoid Terraform kubernetes provider "Unauthorized" during refresh/import/apply.
+            # - Ensure the GitHub Actions deployer role has ClusterAdmin via EKS Access Entries.
+            #
+            # Notes:
+            # - Requires cluster auth mode API or API_AND_CONFIG_MAP.
+            # - Safe/idempotent: create-access-entry + associate-access-policy are no-ops if already present.
+            ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+            PRINCIPAL_ARN="arn:aws:iam::${ACCOUNT_ID}:role/github-actions-deployer"
+
+            AUTH_MODE="$(aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 --query 'cluster.accessConfig.authenticationMode' --output text 2>/dev/null || true)"
+            if [ "$AUTH_MODE" = "CONFIG_MAP" ]; then
+              echo "🔐 Updating cluster auth mode to API_AND_CONFIG_MAP (was CONFIG_MAP)..."
+              UPDATE_JSON="$(aws eks update-cluster-config --name "${{ env.ENV_ID }}" --region us-east-1 --access-config authenticationMode=API_AND_CONFIG_MAP --output json || true)"
+              UPDATE_ID="$(echo "${UPDATE_JSON:-}" | jq -r '.update.id // empty' 2>/dev/null || true)"
+              if [ -n "${UPDATE_ID:-}" ]; then
+                echo "⏳ Waiting for auth-mode update to complete: ${UPDATE_ID}"
+                for i in $(seq 1 60); do
+                  STATUS="$(aws eks describe-update --name "${{ env.ENV_ID }}" --region us-east-1 --update-id "$UPDATE_ID" --query 'update.status' --output text 2>/dev/null || true)"
+                  if [ "$STATUS" = "Successful" ]; then
+                    echo "✅ Auth mode update successful"
+                    break
+                  fi
+                  if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+                    echo "::warning::Auth mode update status=${STATUS} (continuing; access entry may fail)"
+                    break
+                  fi
+                  sleep 10
+                done
+              fi
+            fi
+
+            aws eks create-access-entry \
+              --cluster-name "${{ env.ENV_ID }}" --region us-east-1 \
+              --principal-arn "${PRINCIPAL_ARN}" \
+              >/dev/null 2>&1 || true
+
+            aws eks associate-access-policy \
+              --cluster-name "${{ env.ENV_ID }}" --region us-east-1 \
+              --principal-arn "${PRINCIPAL_ARN}" \
+              --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+              --access-scope type=cluster \
+              >/dev/null 2>&1 || true
+
             echo "🔗 Updating kubeconfig..."
             aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 || true
             
@@ -383,6 +429,14 @@ jobs:
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
 
+          # Best-effort: ensure terraform runner can talk to the Kubernetes API (prevents refresh Unauthorized).
+          if aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
+            ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+            PRINCIPAL_ARN="arn:aws:iam::${ACCOUNT_ID}:role/github-actions-deployer"
+            aws eks create-access-entry --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1 || true
+            aws eks associate-access-policy --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster >/dev/null 2>&1 || true
+          fi
+
           # ✅ Justified Action: Prevent destructive replacement on reruns
           #
           # Goal: If state exists, ensure our generated tfvars cannot trigger VPC replacement, and avoid targeted bootstrap.
@@ -425,7 +479,7 @@ jobs:
           if [ "$ENABLE_NAT" = "true" ]; then
             echo "::group::Bootstrap: NAT gateway + private egress routes"
             echo "enable_nat_gateway=true → applying NAT + private route changes first"
-            terraform apply -auto-approve \
+            terraform apply -auto-approve -refresh=false \
               -target=aws_vpc.main \
               -target=aws_internet_gateway.main \
               -target=aws_subnet.public \
