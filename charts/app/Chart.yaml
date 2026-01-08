@@ -2,13 +2,13 @@ apiVersion: v2
 name: jetscale-stack
 description: The JetScale Platform Umbrella Chart
 type: application
-version: 0.2.1
+version: 0.3.0
 appVersion: "1.0.0"
 
 dependencies:
   # Backend Service (Proprietary OCI)
   - name: backend
-    version: "2.0.2"
+    version: "2.1.0"
     # Point to the parent namespace, Helm appends the name
     repository: "oci://ghcr.io/jetscale-ai/charts"
     condition: backend.enabled
