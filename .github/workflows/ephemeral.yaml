@@ -1,4 +1,4 @@
-name: "Ephemeral Fleet (Cluster-per-PR)"
+name: "Ephemeral Cluster per PR"
 
 on:
   pull_request:
@@ -33,14 +33,21 @@ jobs:
     outputs:
       env_id: ${{ steps.identity.outputs.env_id }}
       public_host: ${{ steps.identity.outputs.public_host }}
-    
+
     # Guard: Run if Manual OR (PR Label == 'preview')
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.label.name == 'preview')
 
-    environment: 
-      name: ephemeral
+    environment:
+      # Allow per-PR environment secrets (e.g. env `pr-123`) to override defaults without clobbering
+      # other concurrent ephemeral environments.
+      #
+      # Priority:
+      # 1) workflow_dispatch inputs.env_id (already in form pr-123)
+      # 2) pull_request number -> pr-<n>
+      # 3) fallback: "ephemeral" (no per-PR secret isolation)
+      name: ${{ inputs.env_id || format('pr-{0}', github.event.pull_request.number) || 'ephemeral' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -52,10 +59,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          
+
           PR_NUMBER=""
           ENV_ID=""
-          
+
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             PR_NUMBER="${{ github.event.number }}"
           else
@@ -68,18 +75,18 @@ jobs:
               PR_NUMBER="${ENV_ID#pr-}"
             else
               echo "🔍 Manual Dispatch. Resolving PR for commit ${{ github.sha }}..."
-            
+
               # If destroying, we allow closed PRs (to fix failed cleanups).
               # If deploying, we only allow open PRs.
               STATE_FILTER=""
               if [ "${{ inputs.action }}" != "destroy" ]; then
                 STATE_FILTER='| select(.state=="open")'
               fi
-            
+
               # Logic: Get PRs -> Filter by State -> Take First -> Get Number
               PR_NUMBER=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls \
                 --jq ".[] $STATE_FILTER | .number" | head -n 1)
-            
+
               if [ -z "$PR_NUMBER" ]; then
                 echo "::error::❌ No matching PR found for this commit. Provide inputs.env_id to run deterministically."
                 exit 1
@@ -87,22 +94,22 @@ jobs:
               echo "✅ Resolved to PR #${PR_NUMBER}"
             fi
           fi
-          
+
           # Export Identity
           echo "PR_NUMBER=${PR_NUMBER}" >> $GITHUB_ENV
           if [ -z "$ENV_ID" ]; then
             ENV_ID="pr-${PR_NUMBER}"
           fi
           echo "ENV_ID=${ENV_ID}" >> $GITHUB_ENV
-          
+
           # Export Hostname
           REF_NAME="${{ github.head_ref || github.ref_name }}"
           SLUG=$(echo "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/^-//;s/-$//' | cut -c1-25)
           SLUG=${SLUG:-branch}
-          
+
           HOST="${ENV_ID}-${SLUG}-unstable.jetscale.ai"
           echo "PUBLIC_HOST=${HOST}" >> $GITHUB_ENV
-          
+
           # Timestamp for Reaper
           echo "TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
 
@@ -127,55 +134,33 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with: { terraform_wrapper: false }
 
-      - name: Install Tools
+      # ✅ Justified Action: Deterministic toolchain install (avoid flaky curl)
+      #
+      # Goal: Avoid transient 503/404 from dl.k8s.io stable.txt and install tooling reproducibly.
+      # Invariants: Prudence, Vigor
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.33.5
+
+      - name: Tool versions
         run: |
           set -euo pipefail
-          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-          chmod 700 get_helm.sh
-          ./get_helm.sh
-          # kubectl for post-failure diagnostics (and later Deploy Stack step)
-          curl -fsSL -o kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/kubectl
           aws --version
+          helm version
           kubectl version --client=true
 
       # ==========================================================
-      # PHASE 1: INFRASTRUCTURE
+      # PHASE 1: INFRASTRUCTURE (CHECK & CLEAN)
       # ==========================================================
 
-      - name: Generate Terraform Vars
-        working-directory: iac/clients
-        run: |
-          set -euo pipefail
-          cat > ephemeral.auto.tfvars.json <<EOF
-          {
-            "client_name": "${{ env.ENV_ID }}",
-            "environment": "ephemeral",
-            "tenant_id": "${{ env.ENV_ID }}",
-            "aws_region": "us-east-1",
-            "expected_account_id": "134051052096",
-            "domain_name": "jetscale.ai",
-            "terraform_s3_bucket": "jetscale-terraform-state",
-            "cluster_name": "${{ env.ENV_ID }}",
-            "kubernetes_namespace": "${{ env.ENV_ID }}",
-            "create_dns_records": false,
-            "enable_alb_controller": true,
-            "enable_external_dns": true,
-            "dns_authority_role_arn": "arn:aws:iam::081373342681:role/jetscale-external-dns-dns-authority",
-            "acm_certificate_domain": "*.jetscale.ai",
-            "enable_deletion_protection": false,
-            "enable_nat_gateway": true,
-            "tags": {
-              "jetscale.env_id": "${{ env.ENV_ID }}",
-              "jetscale.lifecycle": "ephemeral",
-              "jetscale.created_at": "${{ env.TIMESTAMP }}",
-              "jetscale.owner": "${{ github.actor }}"
-            }
-          }
-          EOF
-      
-      # ✅ FIX: Integrity Check - Prevent "Zombie State" Lockout
+      # 1. Prune Zombie State
+      # ✅ Prevent "Zombie State" Lockout
       # If the cluster is gone (AWS) but state exists (S3), providers will fail to init (localhost error).
       # In this case, we MUST nuke the state to allow a fresh bootstrap.
       - name: "Integrity: Prune Zombie State"
@@ -186,15 +171,15 @@ jobs:
           STATE_KEY="ephemeral/${{ env.ENV_ID }}/terraform.tfstate"
           BUCKET="jetscale-terraform-state"
           REGION="us-east-1"
-          
+
           echo "🔍 Checking for Zombie State (Cluster: $CLUSTER_NAME)..."
-          
+
           # 1. Check if Cluster Exists in AWS
           if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" >/dev/null 2>&1; then
             echo "✅ Cluster exists in AWS. Terraform state is likely valid."
           else
             echo "👻 Cluster '$CLUSTER_NAME' NOT found in AWS."
-            
+
             # 2. Check if Terraform State Exists
             if aws s3 ls "s3://$BUCKET/$STATE_KEY" >/dev/null 2>&1; then
               echo "⚠️  ORPHANED STATE DETECTED! (Cluster missing, but state exists)"
@@ -206,14 +191,14 @@ jobs:
             fi
           fi
 
+      # 2. Cleanup Orphan Resources
       # ✅ RELIABILITY: Clean up orphaned AWS resources when Terraform state is unusable.
-      # Re-running Apply after a partial failure can leave globally-unique resources behind
-      # (IAM policies/roles, budgets, log groups, parameter groups, etc.) which then fail with "AlreadyExists".
       - name: "Integrity: Cleanup Orphan Resources (Preflight)"
         if: inputs.action != 'destroy'
+        working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          
+
           # Only run if state is missing
           if aws s3 ls "s3://jetscale-terraform-state/ephemeral/${{ env.ENV_ID }}/terraform.tfstate" >/dev/null 2>&1; then
             echo "✅ Terraform state exists. Skipping orphan cleanup."
@@ -223,7 +208,217 @@ jobs:
           test -x ./scripts/ephemeral-cleanup.sh
           echo "⚠️ No state found. Invoking shared cleanup script to purge orphans..."
           ./scripts/ephemeral-cleanup.sh "preflight" "${{ env.ENV_ID }}" "us-east-1" "134051052096"
-      
+
+      # ==========================================================
+      # PHASE 2: INFRASTRUCTURE (CONFIG & RECONCILE)
+      # ==========================================================
+
+      # 3. Generate Terraform Vars
+      - name: Generate Terraform Vars
+        working-directory: iac/clients
+        run: |
+          set -euo pipefail
+
+          # ✅ Justified Action: Decouple ephemeral NAT from Hub DNS permissions
+          #
+          # Goal: Allow GitHub Actions (spoke identity) to create NAT egress without needing direct Route53 read/write in Tools.
+          # Invariants: Identity (preserve hub/spoke boundary), Prudence (avoid plan-time DNS failures), Concord (keep ExternalDNS as the DNS writer).
+          #
+          # ✅ Justified Action: Ephemeral VPC CIDR stability
+          #
+          # Goal: Prevent accidental VPC replacement on reruns by making vpc_cidr explicit and stable per ENV_ID.
+          # Invariants: Prudence (avoid destructive drift), Identity (env_id -> stable network identity), Vigor (fix root cause, not symptoms).
+          BUCKET="jetscale-terraform-state"
+          STATE_KEY="ephemeral/${{ env.ENV_ID }}/terraform.tfstate"
+          STATE_PATH="/tmp/${{ env.ENV_ID }}.tfstate.json"
+
+          VPC_CIDR=""
+          if aws s3 ls "s3://${BUCKET}/${STATE_KEY}" >/dev/null 2>&1; then
+            echo "🔒 State exists for ${{ env.ENV_ID }}; reusing VPC CIDR from state to prevent replacement."
+            aws s3 cp "s3://${BUCKET}/${STATE_KEY}" "$STATE_PATH" >/dev/null
+            VPC_CIDR="$(jq -r '
+              .resources[]
+              | select(.type=="aws_vpc" and .name=="main")
+              | .instances[0].attributes.cidr_block
+              ' "$STATE_PATH" 2>/dev/null || true)"
+
+            if [ -z "${VPC_CIDR:-}" ] || [ "$VPC_CIDR" = "null" ]; then
+              echo "::error::State exists but could not determine aws_vpc.main.cidr_block from ${STATE_KEY}. Refusing to proceed (prevents destructive replacement)."
+              exit 1
+            fi
+          else
+            # Deterministic (and low collision) CIDR for new ephemeral envs.
+            # Keep within 10.20.0.0/16 - 10.219.0.0/16
+            PR="${PR_NUMBER:-0}"
+            if ! echo "$PR" | grep -Eq '^[0-9]+$'; then
+              PR=0
+            fi
+            OCTET=$(( (PR % 200) + 20 ))
+            VPC_CIDR="10.${OCTET}.0.0/16"
+            echo "🧮 No state found; computed deterministic VPC CIDR: ${VPC_CIDR}"
+          fi
+
+          cat > ephemeral.auto.tfvars.json <<EOF
+          {
+            "client_name": "${{ env.ENV_ID }}",
+            "environment": "ephemeral",
+            "tenant_id": "${{ env.ENV_ID }}",
+            "aws_region": "us-east-1",
+            "expected_account_id": "134051052096",
+            "domain_name": "jetscale.ai",
+            "terraform_s3_bucket": "jetscale-terraform-state",
+            "cluster_name": "${{ env.ENV_ID }}",
+            "kubernetes_namespace": "${{ env.ENV_ID }}",
+            "vpc_cidr": "${VPC_CIDR}",
+            "create_dns_records": false,
+            "enable_alb_controller": true,
+            "enable_external_dns": true,
+            "dns_authority_role_arn": "arn:aws:iam::081373342681:role/jetscale-external-dns-dns-authority",
+            "acm_certificate_domain": "*.jetscale.ai",
+            "enable_deletion_protection": false,
+            "enable_nat_gateway": true,
+            "create_nat_dns_record": false,
+            "tags": {
+              "jetscale.env_id": "${{ env.ENV_ID }}",
+              "jetscale.lifecycle": "ephemeral",
+              "jetscale.created_at": "${{ env.TIMESTAMP }}",
+              "jetscale.owner": "${{ github.actor }}"
+            }
+          }
+          EOF
+
+      # 4. State Reconciliation (Adopt Orphaned Resources)
+      - name: "Integrity: State Reconciliation"
+        if: inputs.action != 'destroy'
+        working-directory: iac/clients
+        run: |
+          set -euo pipefail
+          echo "🔧 Starting State Reconciliation..."
+
+          # 1. Initialize Terraform (Required for import/state operations)
+          terraform init \
+            -backend-config="bucket=jetscale-terraform-state" \
+            -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
+            -backend-config="region=us-east-1"
+
+          # 2. VPC Reconciliation (The "Recovery" Logic)
+          # If VPC exists in AWS but not in state, import it so we can manage/destroy it.
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:jetscale.env_id,Values=${{ env.ENV_ID }}" --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "None")
+          if [ "$VPC_ID" != "None" ] && [ -n "$VPC_ID" ]; then
+            if ! terraform state list aws_vpc.main >/dev/null 2>&1; then
+              echo "📥 Importing existing VPC: $VPC_ID"
+              terraform import aws_vpc.main "$VPC_ID" || echo "⚠️ VPC import failed (ignoring)"
+            else
+              echo "✅ VPC already in state"
+            fi
+
+            # Import Internet Gateway if it exists
+            IGW_ID=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query 'InternetGateways[0].InternetGatewayId' --output text 2>/dev/null || echo "None")
+            if [ "$IGW_ID" != "None" ] && [ -n "$IGW_ID" ]; then
+              if ! terraform state list aws_internet_gateway.main >/dev/null 2>&1; then
+                echo "📥 Importing IGW: $IGW_ID"
+                terraform import aws_internet_gateway.main "$IGW_ID" || echo "⚠️ IGW import failed (ignoring)"
+              fi
+            fi
+
+            # Import NAT Gateway if it exists
+            NAT_ID=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available" --query 'NatGateways[0].NatGatewayId' --output text 2>/dev/null || echo "None")
+            if [ "$NAT_ID" != "None" ] && [ -n "$NAT_ID" ]; then
+              if ! terraform state list 'aws_nat_gateway.main[0]' >/dev/null 2>&1; then
+                echo "📥 Importing NAT Gateway: $NAT_ID"
+                terraform import 'aws_nat_gateway.main[0]' "$NAT_ID" || echo "⚠️ NAT import failed (ignoring)"
+              fi
+            fi
+          fi
+
+          # 3. Fix Webhook Deadlock (CRITICAL)
+          # The ALB Controller webhook from a previous run can block new pods (like metrics-server).
+          if aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
+            # 3a. ✅ Bootstrap EKS Auth for Terraform/Kubectl (Access Entries)
+            #
+            # Goal:
+            # - Avoid Terraform kubernetes provider "Unauthorized" during refresh/import/apply.
+            # - Ensure the GitHub Actions deployer role has ClusterAdmin via EKS Access Entries.
+            #
+            # Notes:
+            # - Requires cluster auth mode API or API_AND_CONFIG_MAP.
+            # - Safe/idempotent: create-access-entry + associate-access-policy are no-ops if already present.
+            ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+            PRINCIPAL_ARN="arn:aws:iam::${ACCOUNT_ID}:role/github-actions-deployer"
+
+            AUTH_MODE="$(aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 --query 'cluster.accessConfig.authenticationMode' --output text 2>/dev/null || true)"
+            if [ "$AUTH_MODE" = "CONFIG_MAP" ]; then
+              echo "🔐 Updating cluster auth mode to API_AND_CONFIG_MAP (was CONFIG_MAP)..."
+              UPDATE_JSON="$(aws eks update-cluster-config --name "${{ env.ENV_ID }}" --region us-east-1 --access-config authenticationMode=API_AND_CONFIG_MAP --output json || true)"
+              UPDATE_ID="$(echo "${UPDATE_JSON:-}" | jq -r '.update.id // empty' 2>/dev/null || true)"
+              if [ -n "${UPDATE_ID:-}" ]; then
+                echo "⏳ Waiting for auth-mode update to complete: ${UPDATE_ID}"
+                for i in $(seq 1 60); do
+                  STATUS="$(aws eks describe-update --name "${{ env.ENV_ID }}" --region us-east-1 --update-id "$UPDATE_ID" --query 'update.status' --output text 2>/dev/null || true)"
+                  if [ "$STATUS" = "Successful" ]; then
+                    echo "✅ Auth mode update successful"
+                    break
+                  fi
+                  if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+                    echo "::warning::Auth mode update status=${STATUS} (continuing; access entry may fail)"
+                    break
+                  fi
+                  sleep 10
+                done
+              fi
+            fi
+
+            aws eks create-access-entry \
+              --cluster-name "${{ env.ENV_ID }}" --region us-east-1 \
+              --principal-arn "${PRINCIPAL_ARN}" \
+              >/dev/null 2>&1 || true
+
+            aws eks associate-access-policy \
+              --cluster-name "${{ env.ENV_ID }}" --region us-east-1 \
+              --principal-arn "${PRINCIPAL_ARN}" \
+              --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+              --access-scope type=cluster \
+              >/dev/null 2>&1 || true
+
+            echo "🔗 Updating kubeconfig..."
+            aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 || true
+            
+            if kubectl get validatingwebhookconfiguration aws-load-balancer-webhook >/dev/null 2>&1; then
+              echo "🔥 Deleting zombie ALB validating webhook to prevent deadlock..."
+              kubectl delete validatingwebhookconfiguration aws-load-balancer-webhook --ignore-not-found
+            fi
+
+            if kubectl get mutatingwebhookconfiguration aws-load-balancer-webhook >/dev/null 2>&1; then
+              echo "🔥 Deleting zombie ALB mutating webhook..."
+              kubectl delete mutatingwebhookconfiguration aws-load-balancer-webhook --ignore-not-found
+            fi
+          fi
+
+          # 4. Import Namespace if it exists but is missing from state
+          if aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
+            if kubectl get ns "${{ env.ENV_ID }}" >/dev/null 2>&1; then
+              if ! terraform state list kubernetes_namespace.this >/dev/null 2>&1; then
+                echo "📥 Importing existing Namespace: ${{ env.ENV_ID }}"
+                terraform import kubernetes_namespace.this "${{ env.ENV_ID }}" || echo "⚠️ Namespace import failed (ignoring)"
+              fi
+            fi
+          fi
+
+          # 5. Import Log Group if it exists but is missing from state
+          LOG_GROUP="/aws/eks/${{ env.ENV_ID }}/cluster"
+          if aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --query "logGroups[?logGroupName==\`$LOG_GROUP\`].logGroupName" --output text 2>/dev/null | grep -q "$LOG_GROUP"; then
+            if ! terraform state list aws_cloudwatch_log_group.eks_cluster >/dev/null 2>&1; then
+              echo "📥 Importing existing Log Group: $LOG_GROUP"
+              terraform import aws_cloudwatch_log_group.eks_cluster "$LOG_GROUP" || echo "⚠️ Log group import failed (ignoring)"
+            fi
+          fi
+          
+          echo "✅ State Reconciliation Complete."
+
+      # ==========================================================
+      # PHASE 3: INFRASTRUCTURE (APPLY)
+      # ==========================================================
+
       - name: Terraform Apply
         if: inputs.action != 'destroy'
         working-directory: iac/clients
@@ -234,33 +429,73 @@ jobs:
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
 
+          # Best-effort: ensure terraform runner can talk to the Kubernetes API (prevents refresh Unauthorized).
+          if aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
+            ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+            PRINCIPAL_ARN="arn:aws:iam::${ACCOUNT_ID}:role/github-actions-deployer"
+            aws eks create-access-entry --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1 || true
+            aws eks associate-access-policy --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster >/dev/null 2>&1 || true
+          fi
+
+          # ✅ Justified Action: Prevent destructive replacement on reruns
+          #
+          # Goal: If state exists, ensure our generated tfvars cannot trigger VPC replacement, and avoid targeted bootstrap.
+          # Invariants: Prudence, Identity, Justice
+          BUCKET="jetscale-terraform-state"
+          STATE_KEY="ephemeral/${{ env.ENV_ID }}/terraform.tfstate"
+          STATE_PATH="/tmp/${{ env.ENV_ID }}.tfstate.json"
+          STATE_EXISTS="false"
+          if aws s3 ls "s3://${BUCKET}/${STATE_KEY}" >/dev/null 2>&1; then
+            STATE_EXISTS="true"
+            aws s3 cp "s3://${BUCKET}/${STATE_KEY}" "$STATE_PATH" >/dev/null
+            STATE_VPC_CIDR="$(jq -r '
+              .resources[]
+              | select(.type=="aws_vpc" and .name=="main")
+              | .instances[0].attributes.cidr_block
+              ' "$STATE_PATH" 2>/dev/null || true)"
+            VARS_VPC_CIDR="$(python -c "import json; print(json.load(open('ephemeral.auto.tfvars.json')).get('vpc_cidr',''))" 2>/dev/null || true)"
+
+            if [ -z "${STATE_VPC_CIDR:-}" ] || [ "$STATE_VPC_CIDR" = "null" ]; then
+              echo "::error::State exists but could not determine aws_vpc.main.cidr_block from ${STATE_KEY}. Refusing to proceed."
+              exit 1
+            fi
+            if [ -z "${VARS_VPC_CIDR:-}" ]; then
+              echo "::error::ephemeral.auto.tfvars.json is missing vpc_cidr. Refusing to proceed."
+              exit 1
+            fi
+            if [ "$STATE_VPC_CIDR" != "$VARS_VPC_CIDR" ]; then
+              echo "::error::Refusing to proceed: vpc_cidr mismatch for ${{ env.ENV_ID }} (state=${STATE_VPC_CIDR}, vars=${VARS_VPC_CIDR}). This would force VPC replacement."
+              exit 1
+            fi
+          fi
+
           # If NAT is enabled, bootstrap egress first so Helm releases can pull public images (public.ecr.aws / ghcr.io).
           # This avoids the chicken-and-egg where aws-load-balancer-controller blocks before NAT/route changes converge.
-          ENABLE_NAT="$(python - <<'PY'
-import json
-try:
-  data = json.load(open("ephemeral.auto.tfvars.json"))
-  print("true" if data.get("enable_nat_gateway") else "false")
-except Exception:
-  print("false")
-PY
-)"
+          #
+          # IMPORTANT:
+          # - We run this even on reruns (state exists) because partially-applied/old envs can have broken routing.
+          # - Targets are restricted to network primitives only.
+          ENABLE_NAT="$(python -c "import json; data = json.load(open('ephemeral.auto.tfvars.json')); print('true' if data.get('enable_nat_gateway') else 'false')" 2>/dev/null || echo "false")"
           if [ "$ENABLE_NAT" = "true" ]; then
             echo "::group::Bootstrap: NAT gateway + private egress routes"
             echo "enable_nat_gateway=true → applying NAT + private route changes first"
-            terraform apply -auto-approve \
+            terraform apply -auto-approve -refresh=false \
+              -target=aws_vpc.main \
+              -target=aws_internet_gateway.main \
+              -target=aws_subnet.public \
+              -target=aws_route_table.public \
+              -target=aws_route_table_association.public \
               -target=aws_eip.nat[0] \
               -target=aws_nat_gateway.main[0] \
               -target=aws_route_table.private \
               -target=aws_route_table_association.private
 
             # Wait briefly for NAT to become available (best-effort) so pods can start pulling images.
-            # ✅ FIX: sed pattern match whitespace
             VPC_ID="$(terraform state show -no-color aws_vpc.main 2>/dev/null | grep -E '^\s*id\s*=' | awk -F'=' '{print $2}' | tr -d ' "' || true)"
             if [ -n "$VPC_ID" ]; then
               echo "vpc_id=$VPC_ID"
               for i in $(seq 1 30); do
-                STATE="$(aws ec2 describe-nat-gateways --filter \"Name=vpc-id,Values=$VPC_ID\" \"Name=state,Values=pending,available\" --query 'NatGateways[0].State' --output text 2>/dev/null || true)"
+                STATE="$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=pending,available" --query 'NatGateways[0].State' --output text 2>/dev/null || true)"
                 if [ "$STATE" = "available" ]; then
                   echo "✅ NAT gateway is available"
                   break
@@ -271,7 +506,7 @@ PY
             fi
             echo "::endgroup::"
           fi
-          
+
           # If the AWS LB Controller helm_release times out (or hits "name in use"), emit diagnostics and retry a few times.
           # This accommodates slow cluster bring-up while still surfacing actionable debug info.
           max_attempts=3
@@ -331,17 +566,6 @@ PY
               echo "vpc_id=${VPC_ID:-unknown}"
               echo "cluster_subnets=${SUBNET_IDS:-unknown}"
 
-              if [ -n "${VPC_ID:-}" ] && [ "${VPC_ID:-}" != "None" ]; then
-                echo "internet_gateways:"
-                aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" \
-                  --query 'InternetGateways[].InternetGatewayId' --output text 2>/dev/null || true
-
-                echo "nat_gateways (available/pending):"
-                aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available,pending" \
-                  --query 'NatGateways[].{id:NatGatewayId,state:State,subnet:SubnetId,publicIp:NatGatewayAddresses[0].PublicIp}' \
-                  --output table 2>/dev/null || true
-              fi
-
               # For each cluster subnet, show the 0.0.0.0/0 route (if any) and whether it targets a NAT or IGW.
               for s in $SUBNET_IDS; do
                 [ -z "$s" ] && continue
@@ -387,21 +611,90 @@ PY
           fi
           echo "CLUSTER_NAME=${CLUSTER_NAME}" >> $GITHUB_ENV
 
+      - name: Ensure AWS client secret exists (Secrets Manager -> ESO)
+        if: inputs.action != 'destroy'
+        env:
+          # Optional override for this env. If unset, we self-target by default.
+          # If you want per-env overrides, store this as an Environment secret and/or provide it via workflow_dispatch in a future enhancement.
+          AWS_CLIENT_SECRET_JSON: ${{ secrets.AWS_CLIENT_SECRET_JSON }}
+        run: |
+          set -euo pipefail
+
+          REGION="us-east-1"
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+
+          # Matches Jetscale-IaC ExternalSecret key: ${local.name_prefix}/application/aws/client
+          # local.name_prefix = "${client_name}-${environment}" => "${ENV_ID}-ephemeral"
+          SECRET_ID="${{ env.ENV_ID }}-ephemeral/application/aws/client"
+
+          ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${{ env.ENV_ID }}-ephemeral-client-discovery-role"
+          DEFAULT_SECRET_JSON="$(cat <<EOF
+          {
+            "JETSCALE_CLIENT_AWS_REGION": "${REGION}",
+            "JETSCALE_CLIENT_AWS_ROLE_ARN": "${ROLE_ARN}",
+            "JETSCALE_CLIENT_AWS_ROLE_EXTERNAL_ID": ""
+          }
+          EOF
+          )"
+
+          SECRET_JSON="${AWS_CLIENT_SECRET_JSON:-$DEFAULT_SECRET_JSON}"
+          echo "$SECRET_JSON" | jq -e . >/dev/null
+
+          # Create container if missing, otherwise ensure AWSCURRENT exists.
+          set +e
+          aws secretsmanager describe-secret --secret-id "$SECRET_ID" --region "$REGION" >/dev/null 2>&1
+          DESCRIBE_RC=$?
+          aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --region "$REGION" --version-stage AWSCURRENT >/dev/null 2>&1
+          CURRENT_RC=$?
+          set -e
+
+          if [ "$DESCRIBE_RC" -ne 0 ]; then
+            aws secretsmanager create-secret \
+              --name "$SECRET_ID" \
+              --description "Ephemeral AWS client discovery config (ESO -> ${ENV_ID}-aws-client-secret)" \
+              --secret-string "$SECRET_JSON" \
+              --region "$REGION"
+          elif [ "$CURRENT_RC" -ne 0 ]; then
+            aws secretsmanager put-secret-value \
+              --secret-id "$SECRET_ID" \
+              --secret-string "$SECRET_JSON" \
+              --region "$REGION"
+          else
+            echo "✅ Secrets Manager secret exists with AWSCURRENT value: $SECRET_ID"
+          fi
+
+          # Nudge ESO in case it already reconciled before the value existed.
+          kubectl -n external-secrets-system rollout restart deploy/external-secrets || true
+
+          echo "⏳ Waiting for ESO to create Kubernetes secret: ${{ env.ENV_ID }}-aws-client-secret"
+          for i in $(seq 1 60); do
+            if kubectl -n "${{ env.ENV_ID }}" get secret "${{ env.ENV_ID }}-aws-client-secret" >/dev/null 2>&1; then
+              echo "✅ Found Kubernetes secret: ${{ env.ENV_ID }}-aws-client-secret"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "::error::Timed out waiting for ${{ env.ENV_ID }}-aws-client-secret"
+          kubectl -n "${{ env.ENV_ID }}" get externalsecret "${{ env.ENV_ID }}-aws-client-secret" -o wide || true
+          kubectl -n "${{ env.ENV_ID }}" describe externalsecret "${{ env.ENV_ID }}-aws-client-secret" || true
+          exit 1
+
       # ==========================================================
-      # PHASE 2: APP DEPLOYMENT
+      # PHASE 4: APP DEPLOYMENT
       # ==========================================================
       - name: Deploy Stack
         if: inputs.action != 'destroy'
         run: |
           set -euo pipefail
-          
+
           # Use the authoritative Terraform output
           aws eks update-kubeconfig --name ${{ env.CLUSTER_NAME }} --region us-east-1
 
           echo "⏳ Waiting for AWS Load Balancer Controller..."
           kubectl wait --for=condition=available deployment -n kube-system aws-load-balancer-controller --timeout=5m
 
-          echo "${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}" | helm registry login ghcr.io --username jetscalebot --password-stdin
+          helm registry login ghcr.io --username jetscalebot --password "${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}"
           (cd charts/app && helm dependency build)
 
           helm upgrade --install jetscale-stack charts/app \
@@ -421,6 +714,29 @@ PY
             --set-string backend.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
             --wait --timeout 15m
 
+      - name: Configure GHCR Image Pull Credentials
+        if: inputs.action != 'destroy'
+        run: |
+          set -euo pipefail
+
+          echo "🔐 Creating GHCR image pull secret for namespace ${{ env.ENV_ID }}..."
+
+          # Create docker-registry secret for GHCR authentication
+          kubectl create secret docker-registry ghcr-pull \
+            --namespace ${{ env.ENV_ID }} \
+            --docker-server=ghcr.io \
+            --docker-username=jetscalebot \
+            --docker-password="${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Attach to default ServiceAccount so pods can pull images
+          kubectl patch serviceaccount default \
+            --namespace ${{ env.ENV_ID }} \
+            --type merge \
+            -p '{"imagePullSecrets":[{"name":"ghcr-pull"}]}'
+
+          echo "✅ GHCR image pull credentials configured"
+
       - name: Verify Health
         if: inputs.action != 'destroy'
         run: |
@@ -437,7 +753,7 @@ PY
           echo "⚠️ Endpoint didn't respond in time, but deployment succeeded."
 
       # ==========================================================
-      # PHASE 3: DESTRUCTION
+      # PHASE 5: DESTRUCTION
       # ==========================================================
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
@@ -477,13 +793,13 @@ PY
           issue-number: ${{ github.event.number }}
           body: |
             ## 🚀 Ephemeral Environment Ready
-            
+
             Your ephemeral cluster has been deployed and is ready for testing.
-            
+
             **Access URL:** https://${{ needs.manage-env.outputs.public_host }}
-            
+
             **Cluster:** `${{ needs.manage-env.outputs.env_id }}`
-            
+
             This environment will be automatically destroyed when the PR is closed or merged.
-            
+
             <!-- ephemeral-env-comment -->

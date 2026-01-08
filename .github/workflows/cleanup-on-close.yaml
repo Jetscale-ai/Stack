@@ -46,6 +46,10 @@ jobs:
         working-directory: iac/clients
         run: |
           set -euo pipefail
+          # ✅ Justified Action: Decouple ephemeral NAT from Hub DNS permissions
+          #
+          # Goal: Ensure PR-close cleanup can run under GitHub Actions without needing direct Route53 access in Tools.
+          # Invariants: Identity, Prudence, Concord
           cat > ephemeral.auto.tfvars.json <<EOF
           {
             "client_name": "${{ env.ENV_ID }}",
@@ -64,6 +68,7 @@ jobs:
             "acm_certificate_domain": "*.jetscale.ai",
             "enable_deletion_protection": false,
             "enable_nat_gateway": true,
+            "create_nat_dns_record": false,
             "tags": {
               "jetscale.env_id": "${{ env.ENV_ID }}"
             }
@@ -80,6 +85,14 @@ jobs:
             -backend-config="bucket=jetscale-terraform-state" \
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
+
+          # Best-effort: ensure terraform runner can talk to the Kubernetes API (prevents refresh Unauthorized).
+          if aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
+            ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+            PRINCIPAL_ARN="arn:aws:iam::${ACCOUNT_ID}:role/github-actions-deployer"
+            aws eks create-access-entry --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1 || true
+            aws eks associate-access-policy --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster >/dev/null 2>&1 || true
+          fi
 
           terraform destroy -auto-approve
 
