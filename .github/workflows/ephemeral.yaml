@@ -134,17 +134,25 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with: { terraform_wrapper: false }
 
-      - name: Install Tools
+      # ✅ Justified Action: Deterministic toolchain install (avoid flaky curl)
+      #
+      # Goal: Avoid transient 503/404 from dl.k8s.io stable.txt and install tooling reproducibly.
+      # Invariants: Prudence, Vigor
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.33.5
+
+      - name: Tool versions
         run: |
           set -euo pipefail
-          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-          chmod 700 get_helm.sh
-          ./get_helm.sh
-          # kubectl for post-failure diagnostics (and later Deploy Stack step)
-          curl -fsSL -o kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/kubectl
           aws --version
+          helm version
           kubectl version --client=true
 
       # ==========================================================
