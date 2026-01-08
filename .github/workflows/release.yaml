@@ -119,24 +119,41 @@ jobs:
           SECRET_ID="jetscale-prod/application/aws/client"
           REGION="us-east-1"
 
-          if aws secretsmanager describe-secret --secret-id "$SECRET_ID" --region "$REGION" >/dev/null 2>&1; then
-            echo "✅ Secrets Manager secret exists: $SECRET_ID"
+          # We must ensure the secret has an AWSCURRENT value. A secret can exist (DescribeSecret works)
+          # while still having no current version (GetSecretValue fails), which breaks ESO extraction.
+          set +e
+          aws secretsmanager describe-secret --secret-id "$SECRET_ID" --region "$REGION" >/dev/null 2>&1
+          DESCRIBE_RC=$?
+          aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --region "$REGION" --version-stage AWSCURRENT >/dev/null 2>&1
+          CURRENT_RC=$?
+          set -e
+
+          if [ "$DESCRIBE_RC" -eq 0 ] && [ "$CURRENT_RC" -eq 0 ]; then
+            echo "✅ Secrets Manager secret exists with AWSCURRENT value: $SECRET_ID"
           else
             if [ -z "${LIVE_AWS_CLIENT_SECRET_JSON:-}" ]; then
-              echo "::error::Missing Secrets Manager secret '$SECRET_ID' and LIVE_JETSCALE_PROD_AWS_CLIENT_SECRET_JSON is not set."
-              echo "::error::Create it manually (breakglass) or add the GitHub Environment secret so this deploy is reproducible."
+              echo "::error::Secrets Manager secret '$SECRET_ID' is missing or has no AWSCURRENT value, and LIVE_JETSCALE_PROD_AWS_CLIENT_SECRET_JSON is not set."
+              echo "::error::Fix by setting the secret value in AWS (preferred) or by configuring LIVE_JETSCALE_PROD_AWS_CLIENT_SECRET_JSON in the GitHub Environment 'live'."
               exit 1
             fi
 
             # Validate JSON (fail fast with a clear error).
             echo "$LIVE_AWS_CLIENT_SECRET_JSON" | jq -e . >/dev/null
 
-            echo "🛠️ Creating Secrets Manager secret: $SECRET_ID"
-            aws secretsmanager create-secret \
-              --name "$SECRET_ID" \
-              --description "JetScale client AWS assume-role credentials (consumed by ESO -> jetscale-aws-client-secret)" \
-              --secret-string "$LIVE_AWS_CLIENT_SECRET_JSON" \
-              --region "$REGION"
+            if [ "$DESCRIBE_RC" -ne 0 ]; then
+              echo "🛠️ Creating Secrets Manager secret: $SECRET_ID"
+              aws secretsmanager create-secret \
+                --name "$SECRET_ID" \
+                --description "JetScale client AWS assume-role credentials (consumed by ESO -> jetscale-aws-client-secret)" \
+                --secret-string "$LIVE_AWS_CLIENT_SECRET_JSON" \
+                --region "$REGION"
+            else
+              echo "🛠️ Secret exists but has no AWSCURRENT value; setting value for: $SECRET_ID"
+              aws secretsmanager put-secret-value \
+                --secret-id "$SECRET_ID" \
+                --secret-string "$LIVE_AWS_CLIENT_SECRET_JSON" \
+                --region "$REGION"
+            fi
           fi
 
           # Ensure ESO has materialized the Kubernetes secret the app expects.
