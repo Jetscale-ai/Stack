@@ -223,6 +223,41 @@ jobs:
           #
           # Goal: Allow GitHub Actions (spoke identity) to create NAT egress without needing direct Route53 read/write in Tools.
           # Invariants: Identity (preserve hub/spoke boundary), Prudence (avoid plan-time DNS failures), Concord (keep ExternalDNS as the DNS writer).
+          #
+          # ✅ Justified Action: Ephemeral VPC CIDR stability
+          #
+          # Goal: Prevent accidental VPC replacement on reruns by making vpc_cidr explicit and stable per ENV_ID.
+          # Invariants: Prudence (avoid destructive drift), Identity (env_id -> stable network identity), Vigor (fix root cause, not symptoms).
+          BUCKET="jetscale-terraform-state"
+          STATE_KEY="ephemeral/${{ env.ENV_ID }}/terraform.tfstate"
+          STATE_PATH="/tmp/${{ env.ENV_ID }}.tfstate.json"
+
+          VPC_CIDR=""
+          if aws s3 ls "s3://${BUCKET}/${STATE_KEY}" >/dev/null 2>&1; then
+            echo "🔒 State exists for ${{ env.ENV_ID }}; reusing VPC CIDR from state to prevent replacement."
+            aws s3 cp "s3://${BUCKET}/${STATE_KEY}" "$STATE_PATH" >/dev/null
+            VPC_CIDR="$(jq -r '
+              .resources[]
+              | select(.type=="aws_vpc" and .name=="main")
+              | .instances[0].attributes.cidr_block
+              ' "$STATE_PATH" 2>/dev/null || true)"
+
+            if [ -z "${VPC_CIDR:-}" ] || [ "$VPC_CIDR" = "null" ]; then
+              echo "::error::State exists but could not determine aws_vpc.main.cidr_block from ${STATE_KEY}. Refusing to proceed (prevents destructive replacement)."
+              exit 1
+            fi
+          else
+            # Deterministic (and low collision) CIDR for new ephemeral envs.
+            # Keep within 10.20.0.0/16 - 10.219.0.0/16
+            PR="${PR_NUMBER:-0}"
+            if ! echo "$PR" | grep -Eq '^[0-9]+$'; then
+              PR=0
+            fi
+            OCTET=$(( (PR % 200) + 20 ))
+            VPC_CIDR="10.${OCTET}.0.0/16"
+            echo "🧮 No state found; computed deterministic VPC CIDR: ${VPC_CIDR}"
+          fi
+
           cat > ephemeral.auto.tfvars.json <<EOF
           {
             "client_name": "${{ env.ENV_ID }}",
@@ -234,6 +269,7 @@ jobs:
             "terraform_s3_bucket": "jetscale-terraform-state",
             "cluster_name": "${{ env.ENV_ID }}",
             "kubernetes_namespace": "${{ env.ENV_ID }}",
+            "vpc_cidr": "${VPC_CIDR}",
             "create_dns_records": false,
             "enable_alb_controller": true,
             "enable_external_dns": true,
@@ -347,10 +383,42 @@ jobs:
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
 
+          # ✅ Justified Action: Prevent destructive replacement on reruns
+          #
+          # Goal: If state exists, ensure our generated tfvars cannot trigger VPC replacement, and avoid targeted bootstrap.
+          # Invariants: Prudence, Identity, Justice
+          BUCKET="jetscale-terraform-state"
+          STATE_KEY="ephemeral/${{ env.ENV_ID }}/terraform.tfstate"
+          STATE_PATH="/tmp/${{ env.ENV_ID }}.tfstate.json"
+          STATE_EXISTS="false"
+          if aws s3 ls "s3://${BUCKET}/${STATE_KEY}" >/dev/null 2>&1; then
+            STATE_EXISTS="true"
+            aws s3 cp "s3://${BUCKET}/${STATE_KEY}" "$STATE_PATH" >/dev/null
+            STATE_VPC_CIDR="$(jq -r '
+              .resources[]
+              | select(.type=="aws_vpc" and .name=="main")
+              | .instances[0].attributes.cidr_block
+              ' "$STATE_PATH" 2>/dev/null || true)"
+            VARS_VPC_CIDR="$(python -c "import json; print(json.load(open('ephemeral.auto.tfvars.json')).get('vpc_cidr',''))" 2>/dev/null || true)"
+
+            if [ -z "${STATE_VPC_CIDR:-}" ] || [ "$STATE_VPC_CIDR" = "null" ]; then
+              echo "::error::State exists but could not determine aws_vpc.main.cidr_block from ${STATE_KEY}. Refusing to proceed."
+              exit 1
+            fi
+            if [ -z "${VARS_VPC_CIDR:-}" ]; then
+              echo "::error::ephemeral.auto.tfvars.json is missing vpc_cidr. Refusing to proceed."
+              exit 1
+            fi
+            if [ "$STATE_VPC_CIDR" != "$VARS_VPC_CIDR" ]; then
+              echo "::error::Refusing to proceed: vpc_cidr mismatch for ${{ env.ENV_ID }} (state=${STATE_VPC_CIDR}, vars=${VARS_VPC_CIDR}). This would force VPC replacement."
+              exit 1
+            fi
+          fi
+
           # If NAT is enabled, bootstrap egress first so Helm releases can pull public images (public.ecr.aws / ghcr.io).
           # This avoids the chicken-and-egg where aws-load-balancer-controller blocks before NAT/route changes converge.
           ENABLE_NAT="$(python -c "import json; data = json.load(open('ephemeral.auto.tfvars.json')); print('true' if data.get('enable_nat_gateway') else 'false')" 2>/dev/null || echo "false")"
-          if [ "$ENABLE_NAT" = "true" ]; then
+          if [ "$ENABLE_NAT" = "true" ] && [ "$STATE_EXISTS" != "true" ]; then
             echo "::group::Bootstrap: NAT gateway + private egress routes"
             echo "enable_nat_gateway=true → applying NAT + private route changes first"
             terraform apply -auto-approve \
@@ -373,6 +441,8 @@ jobs:
               done
             fi
             echo "::endgroup::"
+          elif [ "$ENABLE_NAT" = "true" ] && [ "$STATE_EXISTS" = "true" ]; then
+            echo "✅ State exists; skipping targeted NAT bootstrap to avoid partial plans and accidental replacements."
           fi
 
           # If the AWS LB Controller helm_release times out (or hits "name in use"), emit diagnostics and retry a few times.
