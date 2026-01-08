@@ -417,14 +417,24 @@ jobs:
 
           # If NAT is enabled, bootstrap egress first so Helm releases can pull public images (public.ecr.aws / ghcr.io).
           # This avoids the chicken-and-egg where aws-load-balancer-controller blocks before NAT/route changes converge.
+          #
+          # IMPORTANT:
+          # - We run this even on reruns (state exists) because partially-applied/old envs can have broken routing.
+          # - Targets are restricted to network primitives only.
           ENABLE_NAT="$(python -c "import json; data = json.load(open('ephemeral.auto.tfvars.json')); print('true' if data.get('enable_nat_gateway') else 'false')" 2>/dev/null || echo "false")"
-          if [ "$ENABLE_NAT" = "true" ] && [ "$STATE_EXISTS" != "true" ]; then
+          if [ "$ENABLE_NAT" = "true" ]; then
             echo "::group::Bootstrap: NAT gateway + private egress routes"
             echo "enable_nat_gateway=true → applying NAT + private route changes first"
             terraform apply -auto-approve \
+              -target=aws_vpc.main \
+              -target=aws_internet_gateway.main \
+              -target=aws_subnet.public \
+              -target=aws_route_table.public \
+              -target=aws_route_table_association.public \
               -target=aws_eip.nat[0] \
               -target=aws_nat_gateway.main[0] \
-              -target=aws_route_table.private
+              -target=aws_route_table.private \
+              -target=aws_route_table_association.private
 
             # Wait briefly for NAT to become available (best-effort) so pods can start pulling images.
             VPC_ID="$(terraform state show -no-color aws_vpc.main 2>/dev/null | grep -E '^\s*id\s*=' | awk -F'=' '{print $2}' | tr -d ' "' || true)"
@@ -441,8 +451,6 @@ jobs:
               done
             fi
             echo "::endgroup::"
-          elif [ "$ENABLE_NAT" = "true" ] && [ "$STATE_EXISTS" = "true" ]; then
-            echo "✅ State exists; skipping targeted NAT bootstrap to avoid partial plans and accidental replacements."
           fi
 
           # If the AWS LB Controller helm_release times out (or hits "name in use"), emit diagnostics and retry a few times.
