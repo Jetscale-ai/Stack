@@ -67,30 +67,93 @@ jobs:
 
       - name: Login to GHCR (for Helm Pull)
         env:
-          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
-        run: echo "$GH_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
+          GHCR_PULL_TOKEN: ${{ secrets.JETSCALEBOT_GHCR_PULL_TOKEN }}
+        run: echo "$GHCR_PULL_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
 
       - name: Update Kubeconfig
         run: aws eks update-kubeconfig --name jetscale-prod --region us-east-1
 
       - name: Configure GHCR image pull credentials (namespace)
         env:
-          GH_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+          GHCR_PULL_TOKEN: ${{ secrets.JETSCALEBOT_GHCR_PULL_TOKEN }}
         run: |
+          set -euo pipefail
           # EKS nodes pull app images from GHCR (ghcr.io/jetscale-ai/*). Those packages may be private,
           # so we provision a docker-registry secret and attach it to the default ServiceAccount.
+          #
+          # IMPORTANT:
+          # The backend/frontend subcharts currently expect the secret name `jetscale-registry-secret`.
+          # Creating only `ghcr-pull` causes ImagePullBackOff due to FailedToRetrieveImagePullSecret.
+          kubectl create secret docker-registry jetscale-registry-secret \
+            --namespace jetscale-prod \
+            --docker-server=ghcr.io \
+            --docker-username=jetscalebot \
+            --docker-password="$GHCR_PULL_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Backward-compat: keep `ghcr-pull` for older workflows/scripts.
           kubectl create secret docker-registry ghcr-pull \
             --namespace jetscale-prod \
             --docker-server=ghcr.io \
             --docker-username=jetscalebot \
-            --docker-password="$GH_TOKEN" \
+            --docker-password="$GHCR_PULL_TOKEN" \
             --dry-run=client -o yaml | kubectl apply -f -
 
           # Ensure pods that don't specify a ServiceAccount explicitly (our current subcharts) can pull images.
           kubectl patch serviceaccount default \
             --namespace jetscale-prod \
             --type merge \
-            -p '{"imagePullSecrets":[{"name":"ghcr-pull"}]}'
+            -p '{"imagePullSecrets":[{"name":"jetscale-registry-secret"},{"name":"ghcr-pull"}]}'
+
+      - name: Ensure AWS client secret exists (Secrets Manager -> ESO)
+        env:
+          # Optional: provide the JSON payload via the GitHub Environment "live" secret.
+          # Expected JSON keys (example):
+          # - JETSCALE_CLIENT_AWS_REGION
+          # - JETSCALE_CLIENT_AWS_ROLE_ARN
+          # - JETSCALE_CLIENT_AWS_ROLE_EXTERNAL_ID
+          LIVE_AWS_CLIENT_SECRET_JSON: ${{ secrets.LIVE_JETSCALE_PROD_AWS_CLIENT_SECRET_JSON }}
+        run: |
+          set -euo pipefail
+
+          SECRET_ID="jetscale-prod/application/aws/client"
+          REGION="us-east-1"
+
+          if aws secretsmanager describe-secret --secret-id "$SECRET_ID" --region "$REGION" >/dev/null 2>&1; then
+            echo "✅ Secrets Manager secret exists: $SECRET_ID"
+          else
+            if [ -z "${LIVE_AWS_CLIENT_SECRET_JSON:-}" ]; then
+              echo "::error::Missing Secrets Manager secret '$SECRET_ID' and LIVE_JETSCALE_PROD_AWS_CLIENT_SECRET_JSON is not set."
+              echo "::error::Create it manually (breakglass) or add the GitHub Environment secret so this deploy is reproducible."
+              exit 1
+            fi
+
+            # Validate JSON (fail fast with a clear error).
+            echo "$LIVE_AWS_CLIENT_SECRET_JSON" | jq -e . >/dev/null
+
+            echo "🛠️ Creating Secrets Manager secret: $SECRET_ID"
+            aws secretsmanager create-secret \
+              --name "$SECRET_ID" \
+              --description "JetScale client AWS assume-role credentials (consumed by ESO -> jetscale-aws-client-secret)" \
+              --secret-string "$LIVE_AWS_CLIENT_SECRET_JSON" \
+              --region "$REGION"
+          fi
+
+          # Ensure ESO has materialized the Kubernetes secret the app expects.
+          # (ESO refresh interval is 1h; we rely on initial reconcile + any controller retry.)
+          echo "⏳ Waiting for ESO to create jetscale-aws-client-secret in namespace jetscale-prod..."
+          for i in $(seq 1 60); do
+            if kubectl -n jetscale-prod get secret jetscale-aws-client-secret >/dev/null 2>&1; then
+              echo "✅ Found Kubernetes secret: jetscale-aws-client-secret"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "::error::Timed out waiting for jetscale-aws-client-secret. Check ExternalSecret status:"
+          kubectl -n jetscale-prod get externalsecret jetscale-aws-client-secret -o wide || true
+          kubectl -n jetscale-prod describe externalsecret jetscale-aws-client-secret || true
+          exit 1
 
       - name: Reset failed Helm release (if needed)
         run: |
@@ -113,12 +176,6 @@ jobs:
           # and cause: `services "<name>" not found`.
           kubectl delete service jetscale-api-external --namespace jetscale-prod --ignore-not-found
           kubectl wait --for=delete service/jetscale-api-external --namespace jetscale-prod --timeout=10m || true
-
-      - name: Cleanup accidental default release
-        run: |
-          # A prior workflow bug installed `jetscale-stack` into the `default` namespace.
-          # This is safe/idempotent: it will no-op if the release does not exist.
-          helm uninstall jetscale-stack --namespace default || true
 
       - name: Resolve deploy version
         id: version
