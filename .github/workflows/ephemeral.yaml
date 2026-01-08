@@ -412,13 +412,13 @@ PY
             --set-string global.env=ephemeral \
             --set-string global.client_name=${{ env.ENV_ID }} \
             --set-string global.tenant_id=${{ env.ENV_ID }} \
-            --set-string frontend-web.env.VITE_API_BASE_URL=https://${{ env.PUBLIC_HOST }} \
+            --set-string frontend.env.VITE_API_BASE_URL=https://${{ env.PUBLIC_HOST }} \
             --set-string ingress.hosts[0].host=${{ env.PUBLIC_HOST }} \
             --set-string ingress.annotations."external-dns\.alpha\.kubernetes\.io/hostname"=${{ env.PUBLIC_HOST }} \
-            --set-string backend-api.envFrom[0].secretRef.name=${{ env.ENV_ID }}-db-secret \
-            --set-string backend-api.envFrom[1].secretRef.name=${{ env.ENV_ID }}-redis-secret \
-            --set-string backend-api.envFrom[2].secretRef.name=${{ env.ENV_ID }}-common-secrets \
-            --set-string backend-api.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
+            --set-string backend.envFrom[0].secretRef.name=${{ env.ENV_ID }}-db-secret \
+            --set-string backend.envFrom[1].secretRef.name=${{ env.ENV_ID }}-redis-secret \
+            --set-string backend.envFrom[2].secretRef.name=${{ env.ENV_ID }}-common-secrets \
+            --set-string backend.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
             --wait --timeout 15m
 
       - name: Verify Health

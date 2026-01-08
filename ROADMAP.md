@@ -2,7 +2,7 @@
 
 ## Phase 1: Foundation (Completed)
 - [x] Establish `Jetscale-ai/Stack`.
-- [x] **Chart Synthesis:** Implemented missing subcharts (`backend-api`, `frontend-web`).
+- [x] **Chart Synthesis:** Implemented missing subcharts (`backend`, `frontend`).
 - [x] **Orchestration:** Implemented `Tiltfile` and `skaffold.yaml`.
 
 ## Phase 2: Adoption (Completed)

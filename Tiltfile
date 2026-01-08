@@ -39,16 +39,16 @@ k8s_yaml(helm(
 # ---------------------------
 # Port-forwards per resource
 # ---------------------------
-# backend-api (FastAPI /docs)
+# backend (FastAPI /docs)
 k8s_resource(
-    'jetscale-stack-local-backend-api',
+    'jetscale-stack-local-backend',
     port_forwards=[port_forward(8000, 8000)],  # local: 8000 -> container: 8000
 )
 
-# frontend-web (Nginx serving SPA)
+# frontend (Nginx serving SPA)
 k8s_resource(
-    'jetscale-stack-local-frontend-web',
-    port_forwards=[port_forward(3000, 80)],    # local: 3000 -> container: 80
+    'jetscale-stack-local-frontend',
+    port_forwards=[port_forward(3002, 80)],    # local: 3002 -> container: 80
 )
 
 # postgres

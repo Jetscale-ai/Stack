@@ -15,7 +15,7 @@ redis:
   enabled: false
 
 # 2. BACKEND
-backend-api:
+backend:
   enabled: true
   replicaCount: 3
   image:
@@ -67,7 +67,7 @@ backend-api:
       memory: "1Gi"
 
 # 3. FRONTEND
-frontend-web:
+frontend:
   enabled: true
   replicaCount: 3
   image:
