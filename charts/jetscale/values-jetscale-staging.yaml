@@ -14,17 +14,17 @@ global:
 backend-api:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend
-    tag: latest
+    tag: staging-jetscale-20260106-233532-d3d4f78
     
 backend-ws:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend
-    tag: latest
+    tag: staging-jetscale-20260106-233532-d3d4f78
   
 frontend:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-frontend
-    tag: latest
+    tag: staging-jetscale-20260106-233814-797dbe3
 
 ingress:
   className: alb
