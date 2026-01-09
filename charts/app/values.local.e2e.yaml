@@ -17,7 +17,7 @@ redis:
   enabled: true
   image: "redis:7-bullseye"
 
-# 3. BACKEND API (Prod-Parity Mode)
+# 3. BACKEND API (Local-build mode: Skaffold builds + Kind loads)
 backend:
   enabled: true
   replicaCount: 1
@@ -53,7 +53,7 @@ backend:
     JETSCALE_REDIS_URL: "redis://jetscale-stack-test-redis-master:6379/0"
     JETSCALE_AWS_REGION: "us-east-1"
 
-# 4. FRONTEND WEB (Prod-Parity-ish)
+# 4. FRONTEND WEB (Local-build mode)
 frontend:
   enabled: true
   image:

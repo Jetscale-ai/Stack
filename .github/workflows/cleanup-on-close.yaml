@@ -42,6 +42,11 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with: { terraform_wrapper: false }
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Generate Terraform Vars
         working-directory: iac/clients
         run: |
@@ -102,6 +107,5 @@ jobs:
         if: always() && steps.tf_destroy.outcome == 'failure'
         run: |
           set -euo pipefail
-          test -x ./scripts/ephemeral-cleanup.sh
-          echo "⚠️ Terraform Destroy failed. Invoking shared cleanup script..."
-          ./scripts/ephemeral-cleanup.sh "fallback" "${{ env.ENV_ID }}" "us-east-1" "134051052096"
+          echo "⚠️ Terraform Destroy failed. Invoking shared Python cleanup..."
+          python3 ./scripts/ephemeral_cleanup.py apply "${{ env.ENV_ID }}" "us-east-1" "134051052096"
