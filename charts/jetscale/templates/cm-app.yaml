@@ -12,11 +12,6 @@ data:
   JETSCALE_DEBUG: "false"
   JETSCALE_ENVIRONMENT: "{{ .Values.global.env }}"
 
-  # Client Identification (for multi-tenant monitoring and metrics)
-  # CLIENT_NAME: {{ .Values.global.client_name }}
-  # CLIENT_ENVIRONMENT: "${ENVIRONMENT}"
-  # TENANT_ID: "${TENANT_ID}"
-
   # Database Configuration (External Secrets will provide missing values)
   JETSCALE_DB_PORT: "5432"
 

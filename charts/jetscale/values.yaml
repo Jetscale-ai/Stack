@@ -48,15 +48,6 @@ backend-api:
       echo "📦 Loading fixtures..."
       python3 load_fixtures.py
       echo "✅ Database initialization complete"
-    # envFrom:
-    # - configMapRef:
-    #     name: jetscale-config
-    # - secretRef:
-    #     name: jetscale-app-secrets
-    # - secretRef:
-    #     name: jetscale-db-secret
-    # - secretRef:
-    #     name: jetscale-aws-client-secret
     resources:
       requests:
         memory: "128Mi"
