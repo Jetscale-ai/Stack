@@ -35,3 +35,5 @@ values.local-secrets.yaml
 .env
 .env.local
 
+#Helm
+charts/**/renders/**
