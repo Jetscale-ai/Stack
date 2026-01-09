@@ -31,9 +31,9 @@ docker_build(
 # Helm: render umbrella chart
 # ---------------------------
 k8s_yaml(helm(
-    'charts/app',
+    'charts/jetscale',
     name='jetscale-stack-local',              # Helm release name
-    values=['charts/app/values.local.dev.yaml'],
+    values=['charts/jetscale/values.local.dev.yaml'],
 ))
 
 # ---------------------------

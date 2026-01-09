@@ -185,8 +185,8 @@ func (Validate) Envs() error {
 	_ = ensureHelmGhcrLogin()
 
 	// Ensure dependencies are ready (requires OCI access or local file://)
-	fmt.Println("   > helm dependency build charts/app")
-	depCmd := exec.Command("helm", "dependency", "build", "charts/app")
+	fmt.Println("   > helm dependency build charts/jetscale")
+	depCmd := exec.Command("helm", "dependency", "build", "charts/jetscale")
 	if out, err := depCmd.CombinedOutput(); err != nil {
 		// Provide a meaningful local-dev error when GHCR auth is missing.
 		msg := string(out)
@@ -215,7 +215,7 @@ func (Validate) Envs() error {
 		// Run Helm Template
 		// --dry-run: simulate install
 		// --debug: print generated manifest on failure
-		cmd := exec.Command("helm", "template", "jetscale-stack", "charts/app",
+		cmd := exec.Command("helm", "template", "jetscale-stack", "charts/jetscale",
 			"--values", valuesFile,
 			"--debug")
 

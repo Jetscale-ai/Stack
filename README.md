@@ -77,10 +77,11 @@ tilt up
 
 ## 📂 Repository Layout
 
-- `charts/app` — **The Definition (Sovereign).** The generic "Umbrella Chart". Dependencies are pinned to immutable OCI versions.
+- `charts/jetscale` — **The Definition (Sovereign).** The generic "Umbrella Chart". Dependencies are pinned to immutable OCI versions.
 - `envs/` — **The Instantiation.**
   - `envs/live/values.yaml` → Production (HA, replication).
   - `envs/preview/values.yaml` → Ephemeral (Cluster-per-PR settings).
+  - `envs/staging/*` → Staging Fixed Environment (ex. values-jetscale-staging.yaml).
 - `clients/` — **The Infrastructure (Terraform).**
   - Defines the AWS resources for both Live and Ephemeral tenants.
 

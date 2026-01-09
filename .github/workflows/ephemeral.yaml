@@ -86,9 +86,9 @@ jobs:
 
           # Pull private OCI chart deps from GHCR
           echo "${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}" | helm registry login ghcr.io --username jetscalebot --password-stdin
-          (cd charts/app && helm dependency build)
+          (cd charts/jetscale && helm dependency build)
 
-          helm upgrade --install jetscale-stack charts/app \
+          helm upgrade --install jetscale-stack charts/jetscale \
             --namespace "${{ env.K8S_NAMESPACE }}" \
             --create-namespace \
             --values envs/preview/values.yaml \

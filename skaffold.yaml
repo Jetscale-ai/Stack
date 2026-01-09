@@ -36,11 +36,11 @@ profiles:
       helm:
         releases:
           - name: jetscale-stack-test
-            chartPath: charts/app
+            chartPath: charts/jetscale
             namespace: jetscale-test-local
             createNamespace: true
             valuesFiles:
-              - charts/app/values.local.e2e.yaml
+              - charts/jetscale/values.local.e2e.yaml
 
   # --------------------------------------------------------
   # CI PROFILE (Kind on Runner)
@@ -53,12 +53,12 @@ profiles:
       helm:
         releases:
           - name: jetscale-stack-ci
-            chartPath: charts/app
+            chartPath: charts/jetscale
             namespace: jetscale-ci
             createNamespace: true
             valuesFiles:
               # Kind CI must be self-contained (no Terraform-managed Secrets/DB/Redis, no ALB)
-              - charts/app/values.ci.kind.yaml
+              - charts/jetscale/values.ci.kind.yaml
 
   # --------------------------------------------------------
   # NOTE:

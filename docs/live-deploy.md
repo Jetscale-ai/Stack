@@ -56,10 +56,10 @@ From the `stack/` directory:
 
 ```bash
 # Ensure chart dependencies are present (pulls pinned OCI subcharts)
-helm dependency build charts/app
+helm dependency build charts/jetscale
 
 # Deploy/upgrade Live into the Terraform-managed namespace
-helm upgrade --install jetscale-stack charts/app \
+helm upgrade --install jetscale-stack charts/jetscale \
   --namespace jetscale-prod \
   --create-namespace \
   --values envs/live/values.yaml

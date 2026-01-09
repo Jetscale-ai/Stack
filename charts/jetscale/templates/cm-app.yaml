@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: jetscale-config
+  name: {{ $.Release.Name }}-config
   labels:
     {{- include "jetscale.labels" $ | nindent 4 }}
 data:
@@ -52,7 +52,7 @@ data:
   USE_X_FORWARDED_PREFIX: "true"
 
   # CORS Configuration (Allow HTTPS domain and localhost)
-  JETSCALE_CORS_ALLOWED_ORIGINS: "{{ range .Values.ingress.hosts }}https://{{ .host }}{{ end }},http://localhost:3000"
+  JETSCALE_CORS_ALLOWED_ORIGINS: "{{ range $host,$v := .Values.ingress.hosts }}https://{{ $host }}{{ end }},http://localhost:3000"
   JETSCALE_CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,OPTIONS"
   JETSCALE_CORS_ALLOWED_HEADERS: "Content-Type,Authorization,X-Requested-With"
 
@@ -69,7 +69,7 @@ data:
   AWS_DEFAULT_REGION: "us-east-1"
 
   # Email/SMTP Configuration (sensitive values from External Secrets)
-  JETSCALE_FRONTEND_URL: "https://{{ (index .Values.ingress.hosts 0).host }}/"
+  JETSCALE_FRONTEND_URL: "https://{{ (index (keys .Values.ingress.hosts) 0) }}/"
   JETSCALE_EMAIL_FROM: "noreply@jetscale.ai"
   JETSCALE_EMAIL_FROM_NAME: "JetScale"
   JETSCALE_VERIFICATION_TOKEN_EXPIRE_MINUTES: "30"

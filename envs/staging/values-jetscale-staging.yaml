@@ -1,0 +1,33 @@
+# ==========================================================
+# JETSCALE STACK - DEFAULT INTERFACE
+# ==========================================================
+global:
+  env: "staging"
+  # Used for parity with Jetscale-IaC naming conventions and external entrypoints.
+  # Example: "jetscale" (live), "pr-123" (ephemeral)
+  client_name: "jetscale"
+  # tenant_id: ""
+
+# ----------------------------------------------------------
+# 1. CORE SERVICES
+# ----------------------------------------------------------
+backend-api:
+  image:
+    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend
+    tag: staging-jetscale-20260106-233532-d3d4f78
+    
+backend-ws:
+  image:
+    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend
+    tag: staging-jetscale-20260106-233532-d3d4f78
+  
+frontend:
+  image:
+    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-frontend
+    tag: staging-jetscale-20260106-233814-797dbe3
+
+ingress:
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:081373342681:certificate/ac554daa-f015-41c0-88f6-c41b147d53c6
+  hosts:
+    jetscale.staging.jetscale.ai:

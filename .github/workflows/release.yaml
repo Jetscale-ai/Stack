@@ -28,7 +28,7 @@ jobs:
   publish:
     uses: ./.github/workflows/reusable-release.yaml
     with:
-      chart_path: "charts/app"
+      chart_path: "charts/jetscale"
     secrets:
       token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
 

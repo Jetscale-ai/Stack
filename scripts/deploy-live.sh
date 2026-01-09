@@ -8,7 +8,7 @@ set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-jetscale-prod}"
 RELEASE="${RELEASE:-jetscale-stack}"
-CHART_PATH="${CHART_PATH:-charts/app}"
+CHART_PATH="${CHART_PATH:-charts/jetscale}"
 VALUES_FILE="${VALUES_FILE:-envs/live/values.yaml}"
 
 echo "[deploy-live] helm dependency build ${CHART_PATH}"

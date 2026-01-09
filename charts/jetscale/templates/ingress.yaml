@@ -5,8 +5,14 @@ metadata:
   name: {{ include "jetscale.fullname" . }}
   labels:
     {{- include "jetscale.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
   annotations:
+  {{- if .Values.ingress.albEncryptionRootAnnotations }}
+    alb.ingress.kubernetes.io/conditions.encrypted-root: >
+      [{"field":"http-header","httpHeaderConfig":{"httpHeaderName": "JetScale-Request-Encryption-Enabled", "values":["true", "True", "TRUE"]}}]
+    alb.ingress.kubernetes.io/actions.encrypted-root: >
+      {"type":"forward","forwardConfig":{"targetGroups":[{"serviceName":"{{ .Release.Name}}-backend-api","servicePort":"8000"}]}}
+  {{- end }}
+  {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
@@ -24,18 +30,22 @@ spec:
     {{- end }}
   {{- end }}
   rules:
-    {{- range .Values.ingress.hosts }}
-    - host: {{ .host | quote }}
+    {{- range $host,$paths := .Values.ingress.hosts }}
+    - host: {{ $host | quote }}
       http:
         paths:
-          {{- range .paths }}
+          {{- range ( $paths | default $.Values.ingress.ingressHostDefaultPaths ) }}
           - path: {{ .path }}
             {{- with .pathType }}
             pathType: {{ . }}
             {{- end }}
             backend:
               service:
+                {{- if .serviceName }}
+                name: {{ .serviceName }}
+                {{- else }}
                 name: {{ $.Release.Name }}-{{ .serviceNameSuffix }}
+                {{- end }}
                 port:
                 {{- if .servicePortNumber }}
                   number: {{ .servicePortNumber }}

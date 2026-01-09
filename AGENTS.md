@@ -25,7 +25,7 @@ We represent a shift from "Container Orchestration" (Docker Compose) to "Platfor
 ### 3.2. Structural Integrity (Vigor)
 
 - **Validation First:** No configuration shall be committed without passing `mage validate:envs`. This ensures `envs/` configurations always align with `charts/` schemas.
-- **Environment Parity:** The `charts/app` definition is universal. Environments (`envs/`) differ only in configuration (values), never in structure (templates).
+- **Environment Parity:** The `charts/jetscale` definition is universal. Environments (`envs/`) differ only in configuration (values), never in structure (templates).
 
 ### 3.3. Public by Default (Ethos)
 
