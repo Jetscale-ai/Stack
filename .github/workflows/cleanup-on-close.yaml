@@ -16,6 +16,12 @@ concurrency:
 jobs:
   destroy:
     runs-on: ubuntu-latest
+    # IMPORTANT: use the per-PR GitHub Environment so the OIDC `sub` claim matches
+    # the Live account trust policy (`repo:Jetscale-ai/Stack:environment:pr-*`).
+    # Without this, the job runs under a `ref:refs/pull/...` subject and STS denies
+    # AssumeRoleWithWebIdentity.
+    environment:
+      name: ${{ format('pr-{0}', github.event.number) }}
     steps:
       - uses: actions/checkout@v4
       
