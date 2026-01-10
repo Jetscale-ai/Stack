@@ -94,11 +94,14 @@ jobs:
           set -euo pipefail
           export KUBECONFIG="${HOME}/.kube/config"
 
-          # If the cluster still exists, ensure kubeconfig is present so kubectl/kubernetes
-          # providers do not default to http://localhost.
-          if aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
-            aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null
+          # If the cluster is already gone, skip TF destroy (k8s providers will fail) and
+          # rely on the shared AWS cleanup fallback.
+          if ! aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
+            echo "⚠️ Cluster ${{ env.ENV_ID }} not found. Skipping terraform destroy; using fallback cleanup."
+            exit 1
           fi
+
+          aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null
 
           terraform init \
             -backend-config="bucket=jetscale-terraform-state" \

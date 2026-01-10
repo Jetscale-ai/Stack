@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from .doer import Doer
 
 
@@ -15,56 +17,88 @@ def delete_elbv2_by_cluster_tag(doer: Doer) -> None:
     """
     ctx = doer.ctx
 
-    # 1) Load balancers (ALB/NLB)
-    lbs = doer.aws.json(
-        [
-            "resourcegroupstaggingapi",
-            "get-resources",
-            "--tag-filters",
-            f"Key=elbv2.k8s.aws/cluster,Values={ctx.env_id}",
-            "--resource-type-filters",
-            "elasticloadbalancing:loadbalancer",
-            "--query",
-            "ResourceTagMappingList[].ResourceARN",
-            "--region",
-            ctx.region,
-        ]
-    ) or []
+    def _list_lb_arns() -> list[str]:
+        return (
+            doer.aws.json(
+                [
+                    "resourcegroupstaggingapi",
+                    "get-resources",
+                    "--tag-filters",
+                    f"Key=elbv2.k8s.aws/cluster,Values={ctx.env_id}",
+                    "--resource-type-filters",
+                    "elasticloadbalancing:loadbalancer",
+                    "--query",
+                    "ResourceTagMappingList[].ResourceARN",
+                    "--region",
+                    ctx.region,
+                ]
+            )
+            or []
+        )
 
+    def _list_tg_arns() -> list[str]:
+        return (
+            doer.aws.json(
+                [
+                    "resourcegroupstaggingapi",
+                    "get-resources",
+                    "--tag-filters",
+                    f"Key=elbv2.k8s.aws/cluster,Values={ctx.env_id}",
+                    "--resource-type-filters",
+                    "elasticloadbalancing:targetgroup",
+                    "--query",
+                    "ResourceTagMappingList[].ResourceARN",
+                    "--region",
+                    ctx.region,
+                ]
+            )
+            or []
+        )
+
+    # 1) Load balancers (ALB/NLB)
+    lbs = _list_lb_arns()
     for arn in lbs:
         doer.run_allow_fail(
             f"elbv2 delete load balancer {arn}",
             ["elbv2", "delete-load-balancer", "--load-balancer-arn", arn, "--region", ctx.region],
         )
 
-    # Wait for deletion so target groups can be deleted.
+    # Wait/poll until LBs are truly gone before deleting target groups.
+    # NOTE: the AWS waiter can return before tag propagation catches up, so we poll tags too.
     if ctx.mode == "apply" and lbs:
-        doer.run_allow_fail(
-            f"elbv2 wait load-balancers-deleted ({len(lbs)})",
-            ["elbv2", "wait", "load-balancers-deleted", "--load-balancer-arns", *lbs, "--region", ctx.region],
-        )
+        start = time.time()
+        while True:
+            remaining = _list_lb_arns()
+            if not remaining:
+                break
+            if time.time() - start > 20 * 60:
+                # Best-effort: proceed; TG deletes will retry below.
+                break
+            print(f"--- elbv2: waiting for load balancers to disappear (remaining={len(remaining)})")
+            time.sleep(15)
 
     # 2) Target groups
-    tgs = doer.aws.json(
-        [
-            "resourcegroupstaggingapi",
-            "get-resources",
-            "--tag-filters",
-            f"Key=elbv2.k8s.aws/cluster,Values={ctx.env_id}",
-            "--resource-type-filters",
-            "elasticloadbalancing:targetgroup",
-            "--query",
-            "ResourceTagMappingList[].ResourceARN",
-            "--region",
-            ctx.region,
-        ]
-    ) or []
-
+    # Target group deletes can fail with ResourceInUse while listeners/rules are being torn down.
+    # Retry with backoff to converge.
+    tgs = _list_tg_arns()
     for arn in tgs:
-        doer.run_allow_fail(
-            f"elbv2 delete target group {arn}",
-            ["elbv2", "delete-target-group", "--target-group-arn", arn, "--region", ctx.region],
-        )
+        if ctx.mode in ("plan", "verify"):
+            doer.plan(f"aws elbv2 delete-target-group --target-group-arn {arn} --region {ctx.region}")
+            continue
+
+        for attempt in range(1, 41):  # ~10 minutes @ 15s
+            res = doer.run_allow_fail(
+                f"elbv2 delete target group {arn}",
+                ["elbv2", "delete-target-group", "--target-group-arn", arn, "--region", ctx.region],
+                ignore_stderr_substrings=["TargetGroupNotFound", "not found"],
+            )
+            if res.rc == 0:
+                break
+            if "resourceinuse" in (res.stderr or "").lower():
+                print(f"--- elbv2: target group still in use; retrying ({attempt}/40)")
+                time.sleep(15)
+                continue
+            break
 
 
 def delete_non_vpc_tagged(doer: Doer) -> None:
