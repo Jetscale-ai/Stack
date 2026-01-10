@@ -80,6 +80,28 @@ jobs:
                 exit 1
               fi
               PR_NUMBER="${ENV_ID#pr-}"
+
+              # HARDENING:
+              # Prevent accidental creation of arbitrary env IDs (e.g. pr-999) that are not tied to a real PR.
+              # For deploy actions, require:
+              # - PR exists
+              # - PR is open
+              # - PR has label "preview" (same gate used by automatic runs)
+              if [ "${{ inputs.action }}" != "destroy" ]; then
+                if ! gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.state' >/dev/null 2>&1; then
+                  echo "::error::No PR #${PR_NUMBER} exists in ${{ github.repository }}. Refusing to deploy env_id=${ENV_ID}."
+                  exit 1
+                fi
+                PR_STATE="$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.state')"
+                if [ "${PR_STATE}" != "open" ]; then
+                  echo "::error::PR #${PR_NUMBER} is not open (state=${PR_STATE}). Refusing to deploy env_id=${ENV_ID}."
+                  exit 1
+                fi
+                if ! gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/labels" --jq '.[].name' | grep -qx 'preview'; then
+                  echo "::error::PR #${PR_NUMBER} is not labeled 'preview'. Refusing to deploy env_id=${ENV_ID}."
+                  exit 1
+                fi
+              fi
             else
               echo "🔍 Manual Dispatch. Resolving PR for commit ${{ github.sha }}..."
 

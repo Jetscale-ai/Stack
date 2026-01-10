@@ -103,18 +103,28 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
 
             if ":natgateway/" in arn:
                 nat = arn.split(":natgateway/", 1)[-1]
-                ok = _ec2_simple_exists(
-                    ctx,
-                    aws,
-                    ["ec2", "describe-nat-gateways", "--nat-gateway-ids", nat],
-                    ["InvalidNatGatewayID.NotFound", "NatGatewayNotFound", "does not exist"],
-                )
-                if ok is True:
-                    existing.append(arn)
-                elif ok is False:
-                    stale.append(arn)
+                res = aws.run(["ec2", "describe-nat-gateways", "--nat-gateway-ids", nat, "--region", ctx.region, "--output", "json"])
+                if res.rc == 0:
+                    try:
+                        payload = json.loads(res.stdout) if res.stdout else {}
+                        ngs = payload.get("NatGateways", []) or []
+                        state = (ngs[0].get("State") if ngs else None) or ""
+                    except Exception:
+                        unknown.append(arn)
+                        continue
+                    # States include: pending, available, deleting, deleted, failed
+                    if state in ("deleting", "deleted"):
+                        eventual.append(arn)
+                    elif state:
+                        existing.append(arn)
+                    else:
+                        unknown.append(arn)
                 else:
-                    unknown.append(arn)
+                    err = (res.stderr or "").lower()
+                    if "invalidnatgatewayid.notfound" in err or "natgatewaynotfound" in err or "does not exist" in err:
+                        stale.append(arn)
+                    else:
+                        unknown.append(arn)
                 continue
 
             if ":internet-gateway/" in arn:
