@@ -9,7 +9,7 @@ from .awscli import AwsCli
 from .cleanup_elasticache import elasticache_serverless_delete
 from .cleanup_eks import eks_delete
 from .cleanup_iam import delete_tagged_oidc_providers, iam_cleanup_ephemeral_roles
-from .cleanup_misc import delete_non_vpc_tagged
+from .cleanup_misc import delete_elbv2_by_cluster_tag, delete_non_vpc_tagged
 from .cleanup_rds import rds_delete
 from .cleanup_vpc import (
     ec2_terminate_instances_in_vpc,
@@ -114,6 +114,7 @@ def main(argv: List[str]) -> int:
 
     # Root-cause order
     eks_delete(doer)
+    delete_elbv2_by_cluster_tag(doer)
     delete_tagged_oidc_providers(doer, summary.initial_tagged)
     elasticache_serverless_delete(doer)
     rds_delete(doer)

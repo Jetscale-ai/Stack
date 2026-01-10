@@ -1047,6 +1047,14 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
+          export KUBECONFIG="${HOME}/.kube/config"
+
+          # Best-effort: if the cluster still exists, ensure kubeconfig is present so
+          # Kubernetes/kubectl providers do not default to http://localhost.
+          if aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
+            aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null
+          fi
+
           terraform init \
             -backend-config="bucket=jetscale-terraform-state" \
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
