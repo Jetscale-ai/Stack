@@ -30,6 +30,13 @@ jobs:
   manage-env:
     name: "${{ inputs.action || 'deploy' }} Ephemeral Env"
     runs-on: ubuntu-latest
+    env:
+      # ✅ Justified Action: Disable pagers in automation
+      #
+      # Goal: Prevent AWS CLI output paging (which can hang CI logs and hide errors).
+      # Invariants: Prudence, Clarity
+      AWS_PAGER: ""
+      PAGER: "cat"
     outputs:
       env_id: ${{ steps.identity.outputs.env_id }}
       public_host: ${{ steps.identity.outputs.public_host }}
@@ -134,6 +141,11 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with: { terraform_wrapper: false }
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       # ✅ Justified Action: Deterministic toolchain install (avoid flaky curl)
       #
       # Goal: Avoid transient 503/404 from dl.k8s.io stable.txt and install tooling reproducibly.
@@ -205,9 +217,10 @@ jobs:
             exit 0
           fi
 
-          test -x ./scripts/ephemeral-cleanup.sh
-          echo "⚠️ No state found. Invoking shared cleanup script to purge orphans..."
-          ./scripts/ephemeral-cleanup.sh "preflight" "${{ env.ENV_ID }}" "us-east-1" "134051052096"
+          echo "⚠️ No state found. Running non-destructive orphan verification..."
+          # We prefer adoption (terraform import in State Reconciliation) over deletion.
+          # This step is informational only.
+          python3 ./scripts/ephemeral_cleanup.py verify "${{ env.ENV_ID }}" "us-east-1" "134051052096" || true
 
       # ==========================================================
       # PHASE 2: INFRASTRUCTURE (CONFIG & RECONCILE)
@@ -380,6 +393,53 @@ jobs:
               --access-scope type=cluster \
               >/dev/null 2>&1 || true
 
+            # 3b. ✅ Import access entry into Terraform state (prevents ResourceInUseException)
+            #
+            # Terraform manages these resources in Jetscale-IaC for ephemeral envs, but we also create them
+            # out-of-band here to ensure the Kubernetes provider can authenticate during apply.
+            #
+            # If the access entry already exists, import it; if it doesn't, import will say "non-existent" and we skip.
+            ENTRY_ID="${{ env.ENV_ID }}:${PRINCIPAL_ARN}"
+            ASSOC_ID="${{ env.ENV_ID }}#${PRINCIPAL_ARN}#arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+            if terraform state list 'aws_eks_access_entry.current_caller[0]' >/dev/null 2>&1; then
+              echo "✅ Access entry already in Terraform state: aws_eks_access_entry.current_caller[0]"
+            else
+              set +e
+              OUT="$(terraform import -input=false -no-color 'aws_eks_access_entry.current_caller[0]' "${ENTRY_ID}" 2>&1)"
+              RC=$?
+              set -e
+              if [ "$RC" -eq 0 ]; then
+                echo "$OUT"
+              elif echo "$OUT" | grep -qi "Cannot import non-existent remote object"; then
+                echo "EKS access entry not found; skipping import: ${ENTRY_ID}"
+              elif echo "$OUT" | grep -qi "Resource already managed by Terraform"; then
+                echo "✅ Access entry already managed by Terraform; skipping import"
+              else
+                echo "$OUT" >&2
+                exit "$RC"
+              fi
+            fi
+
+            if terraform state list 'aws_eks_access_policy_association.current_caller_admin[0]' >/dev/null 2>&1; then
+              echo "✅ Access policy association already in Terraform state: aws_eks_access_policy_association.current_caller_admin[0]"
+            else
+              set +e
+              OUT="$(terraform import -input=false -no-color 'aws_eks_access_policy_association.current_caller_admin[0]' "${ASSOC_ID}" 2>&1)"
+              RC=$?
+              set -e
+              if [ "$RC" -eq 0 ]; then
+                echo "$OUT"
+              elif echo "$OUT" | grep -qi "Cannot import non-existent remote object"; then
+                echo "EKS access policy association not found; skipping import: ${ASSOC_ID}"
+              elif echo "$OUT" | grep -qi "Resource already managed by Terraform"; then
+                echo "✅ Access policy association already managed by Terraform; skipping import"
+              else
+                echo "$OUT" >&2
+                exit "$RC"
+              fi
+            fi
+
             echo "🔗 Updating kubeconfig..."
             aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 || true
             
@@ -424,6 +484,9 @@ jobs:
         working-directory: iac/clients
         run: |
           set -euo pipefail
+          # Ensure all kubeconfig-reading tools/providers use the same config path.
+          export KUBECONFIG="${HOME}/.kube/config"
+
           terraform init \
             -backend-config="bucket=jetscale-terraform-state" \
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \
@@ -507,28 +570,213 @@ jobs:
             echo "::endgroup::"
           fi
 
-          # If the AWS LB Controller helm_release times out (or hits "name in use"), emit diagnostics and retry a few times.
-          # This accommodates slow cluster bring-up while still surfacing actionable debug info.
-          max_attempts=3
-          rc=0
-          for attempt in $(seq 1 "$max_attempts"); do
-            echo "::group::Terraform Apply (attempt ${attempt}/${max_attempts})"
+          # If we get Unauthorized from Terraform's kubernetes provider, it's almost always because
+          # EKS access entry/policy hasn't propagated yet OR doesn't actually grant the required verbs.
+          # Wait explicitly (bounded) for the *exact* permissions Terraform needs.
+          if aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
+            echo "::group::Wait: Kubernetes RBAC ready for Terraform (aws-auth / namespace / serviceaccounts)"
+            aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 || true
+
+            # Baseline diagnostics before we start waiting (high-signal snapshot).
+            ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
+            PRINCIPAL_ARN="arn:aws:iam::${ACCOUNT_ID}:role/github-actions-deployer"
+            echo "caller=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
+            echo "principal_arn=${PRINCIPAL_ARN}"
+            echo "kubectl_context=$(kubectl config current-context 2>/dev/null || true)"
+            echo "kubectl_version=$(kubectl version --client --short 2>/dev/null || true)"
+            aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 --query 'cluster.accessConfig.authenticationMode' --output text || true
+            aws eks describe-access-entry --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1 && echo "eks_access_entry=present" || echo "eks_access_entry=absent"
+            aws eks list-associated-access-policies --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1 && echo "eks_access_policies=list_ok" || echo "eks_access_policies=list_failed"
+
+            # These are the minimal permissions Terraform needs for the current failure class.
+            can_i_ok() {
+              kubectl auth can-i get configmap/aws-auth -n kube-system 2>/dev/null | grep -qi '^yes$' \
+                && kubectl auth can-i patch configmap/aws-auth -n kube-system 2>/dev/null | grep -qi '^yes$' \
+                && kubectl auth can-i create namespace 2>/dev/null | grep -qi '^yes$' \
+                && kubectl auth can-i create serviceaccounts -n kube-system 2>/dev/null | grep -qi '^yes$'
+            }
+
+            can_i_status_line() {
+              local get_cm patch_cm create_ns create_sa
+              get_cm="$(kubectl auth can-i get configmap/aws-auth -n kube-system 2>&1 | tr -d '\r' | tail -n 1)"
+              patch_cm="$(kubectl auth can-i patch configmap/aws-auth -n kube-system 2>&1 | tr -d '\r' | tail -n 1)"
+              create_ns="$(kubectl auth can-i create namespace 2>&1 | tr -d '\r' | tail -n 1)"
+              create_sa="$(kubectl auth can-i create serviceaccounts -n kube-system 2>&1 | tr -d '\r' | tail -n 1)"
+              echo "get_cm=${get_cm} patch_cm=${patch_cm} create_ns=${create_ns} create_sa=${create_sa}"
+            }
+
+            echo "::group::RBAC baseline (kubectl auth can-i)"
+            can_i_status_line || true
+            echo "::endgroup::"
+
+            # Also write the baseline to Step Summary so it’s easy to find in the GUI (even with noisy Terraform logs).
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              {
+                echo "## Ephemeral: Kubernetes RBAC baseline"
+                echo ""
+                echo "- env_id: \`${{ env.ENV_ID }}\`"
+                echo "- caller: \`$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)\`"
+                echo "- principal_arn: \`${PRINCIPAL_ARN}\`"
+                echo "- kubectl_context: \`$(kubectl config current-context 2>/dev/null || true)\`"
+                echo "- kubectl_version: \`$(kubectl version --client --short 2>/dev/null || true)\`"
+                echo "- eks_auth_mode: \`$(aws eks describe-cluster --name \"${{ env.ENV_ID }}\" --region us-east-1 --query 'cluster.accessConfig.authenticationMode' --output text 2>/dev/null || true)\`"
+                echo ""
+                echo "### kubectl auth can-i"
+                echo ""
+                echo '```text'
+                can_i_status_line || true
+                echo '```'
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+
+            # Bounded wait so the job stays stoppable.
+            for i in $(seq 1 60); do
+              if can_i_ok; then
+                echo "✅ RBAC is ready for Terraform (can-i checks passed)"
+                break
+              fi
+              echo "⏳ waiting for RBAC/auth propagation... [$i/60] $(can_i_status_line)"
+              sleep 10
+            done
+
+            if ! can_i_ok; then
+              echo "::error::Kubernetes RBAC is not ready for Terraform (can-i checks failing). This would cause Terraform 'Unauthorized'."
+              echo "caller=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
+              echo "principal_arn=${PRINCIPAL_ARN}"
+              echo "kubectl_context=$(kubectl config current-context 2>/dev/null || true)"
+
+              echo "::group::RBAC diagnostics (kubectl auth can-i)"
+              kubectl auth can-i get configmap/aws-auth -n kube-system || true
+              kubectl auth can-i patch configmap/aws-auth -n kube-system || true
+              kubectl auth can-i create namespace || true
+              kubectl auth can-i create serviceaccounts -n kube-system || true
+              echo "::endgroup::"
+
+              echo "::group::EKS access entry diagnostics"
+              aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 --query 'cluster.accessConfig.authenticationMode' --output text || true
+              aws eks describe-access-entry --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" || true
+              aws eks list-associated-access-policies --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" || true
+              echo "::endgroup::"
+
+              if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+                {
+                  echo "## Ephemeral: RBAC wait timed out"
+                  echo ""
+                  echo "Terraform will fail with \`Unauthorized\` until the following become **yes**:"
+                  echo ""
+                  echo '```text'
+                  can_i_status_line || true
+                  echo '```'
+                  echo ""
+                  echo "### EKS access entry (raw)"
+                  echo ""
+                  echo '```json'
+                  aws eks describe-access-entry --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" 2>/dev/null || true
+                  echo '```'
+                  echo ""
+                  echo "### EKS access policies (raw)"
+                  echo ""
+                  echo '```json'
+                  aws eks list-associated-access-policies --cluster-name "${{ env.ENV_ID }}" --region us-east-1 --principal-arn "${PRINCIPAL_ARN}" 2>/dev/null || true
+                  echo '```'
+                  echo ""
+                } >> "$GITHUB_STEP_SUMMARY"
+              fi
+
+              exit 1
+            fi
+
+            echo "::endgroup::"
+          fi
+
+          # Adopt pre-existing Helm releases into Terraform state (prevents "name still in use").
+          #
+          # We do this *after* RBAC wait so the helm provider can read the release secrets/configmaps.
+          #
+          # ✅ Justified Action: Drift adoption for idempotent CI
+          # Invariants: Prudence, Vigor, Concord
+          import_helm_release() {
+            local addr="$1"
+            local id="$2"
+
+            if terraform state list "$addr" >/dev/null 2>&1; then
+              echo "✅ already in state: $addr"
+              return 0
+            fi
+
+            echo "::group::Terraform Import (helm): $addr"
+            echo "import_id=${id}"
             set +e
-            terraform apply -auto-approve 2>&1 | tee /tmp/tf-apply.log
-            rc=${PIPESTATUS[0]}
+            out="$(terraform import -input=false -no-color "$addr" "$id" 2>&1)"
+            rc=$?
             set -e
+            echo "$out"
             echo "::endgroup::"
 
             if [ "$rc" -eq 0 ]; then
-              break
+              return 0
             fi
 
-            # Backend lockfile drift: cancelled/failed runs can leave an S3 lockfile behind.
-            # Because we already enforce per-env_id concurrency, it is safe to force-unlock and retry.
+            # Non-fatal: release genuinely doesn't exist (fresh install scenario).
+            # IMPORTANT: do NOT match generic "not found" here; auth/permission errors can include that text.
+            if echo "$out" | grep -Eqi "Cannot import non-existent remote object|release: not found"; then
+              echo "⚠️ import skipped (release not found): $addr ($id)"
+              return 0
+            fi
+
+            return "$rc"
+          }
+
+          import_helm_release 'helm_release.aws_load_balancer_controller[0]' 'kube-system/aws-load-balancer-controller'
+          import_helm_release 'helm_release.external_dns[0]' 'kube-system/external-dns'
+          import_helm_release 'helm_release.external_secrets[0]' 'external-secrets-system/external-secrets'
+
+          # We prefer failing fast with explicit waits over blind retries.
+          # Strategy:
+          # - Generate a saved planfile and apply that planfile (Atlantis-style safety)
+          # - If it fails with a known-transient class, wait for the dependency with a timeout and retry once
+          # - Otherwise, fail immediately with a clear error
+
+          PLANFILE="/tmp/tf.plan"
+
+          run_plan() {
+            local label="$1"
+            echo "::group::Terraform Plan (${label})"
+            set +e
+            terraform plan -out="$PLANFILE" -input=false -no-color 2>&1 | tee /tmp/tf-plan.log
+            local rc=${PIPESTATUS[0]}
+            set -e
+            echo "::endgroup::"
+            return "$rc"
+          }
+
+          run_apply_plan() {
+            local label="$1"
+            echo "::group::Terraform Apply (${label})"
+            set +e
+            terraform apply -input=false -auto-approve -no-color "$PLANFILE" 2>&1 | tee /tmp/tf-apply.log
+            local rc=${PIPESTATUS[0]}
+            set -e
+            echo "::endgroup::"
+            return "$rc"
+          }
+
+          run_plan "initial"
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::Terraform plan failed. See /tmp/tf-plan.log output above for details."
+            python3 "${{ github.workspace }}/scripts/gha/ephemeral/extract_tf_errors.py" /tmp/tf-plan.log || true
+            exit "$rc"
+          fi
+
+          run_apply_plan "initial"
+          rc=$?
+
+          if [ "$rc" -ne 0 ]; then
+            # Backend lockfile drift: cancelled/failed runs can leave a lock behind.
             if grep -Eq "Error acquiring the state lock|PreconditionFailed" /tmp/tf-apply.log; then
-              # Terraform output can include ANSI escape codes; strip them before parsing.
               clean_log="$(sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' /tmp/tf-apply.log | tr -d '\r')"
-              # Prefer extracting the UUID lock ID from the Lock Info block.
               lock_id="$(echo "$clean_log" | grep -oE '[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}' | head -n 1 || true)"
               echo "::group::Diagnostics: Terraform state lock"
               echo "Terraform failed to acquire the state lock."
@@ -536,70 +784,52 @@ jobs:
               if [ -n "${lock_id:-}" ]; then
                 terraform force-unlock -force "$lock_id" || true
               else
-                echo "⚠️ Could not parse lock ID; lock block (sanitized):"
+                echo "::error::Could not parse lock ID. Re-run the job to retry."
                 echo "$clean_log" | sed -n '/Lock Info:/,/^$/p' | head -n 60 || true
+                exit "$rc"
               fi
               echo "::endgroup::"
-              if [ "$attempt" -lt "$max_attempts" ]; then
-                sleep_for=$((30 * attempt))
-                echo "⏳ Waiting ${sleep_for}s before retry..."
-                sleep "$sleep_for"
-                continue
+
+              echo "🔁 Retrying once after clearing lock..."
+              run_plan "after-force-unlock"
+              rc=$?
+              if [ "$rc" -ne 0 ]; then
+                echo "::error::Terraform plan failed after force-unlock. See /tmp/tf-plan.log output above for details."
+                python3 "${{ github.workspace }}/scripts/gha/ephemeral/extract_tf_errors.py" /tmp/tf-plan.log || true
+                exit "$rc"
               fi
+              run_apply_plan "after-force-unlock"
+              rc=$?
             fi
-
-            if grep -Eq "helm_release\\.aws_load_balancer_controller|aws-load-balancer-controller|context deadline exceeded|cannot re-use a name that is still in use" /tmp/tf-apply.log; then
-              echo "::group::Diagnostics: aws-load-balancer-controller (attempt ${attempt})"
-              echo "Terraform apply failed while reconciling aws-load-balancer-controller. Collecting cluster diagnostics..."
-              aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 || true
-              kubectl get nodes -o wide || true
-              kubectl -n kube-system get pods -o wide || true
-              kubectl -n kube-system describe deployment aws-load-balancer-controller || true
-              kubectl -n kube-system logs deployment/aws-load-balancer-controller --tail=200 || true
-              kubectl -n kube-system get events --sort-by=.lastTimestamp | tail -n 120 || true
-              helm -n kube-system status aws-load-balancer-controller || true
-              helm -n kube-system history aws-load-balancer-controller || true
-
-              echo "::group::Network egress diagnostics (NAT/Routes)"
-              VPC_ID="$(aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 --query 'cluster.resourcesVpcConfig.vpcId' --output text 2>/dev/null || true)"
-              SUBNET_IDS="$(aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 --query 'cluster.resourcesVpcConfig.subnetIds' --output text 2>/dev/null || true)"
-              echo "vpc_id=${VPC_ID:-unknown}"
-              echo "cluster_subnets=${SUBNET_IDS:-unknown}"
-
-              # For each cluster subnet, show the 0.0.0.0/0 route (if any) and whether it targets a NAT or IGW.
-              for s in $SUBNET_IDS; do
-                [ -z "$s" ] && continue
-                echo "--- subnet: $s"
-                RT_IDS="$(aws ec2 describe-route-tables --filters "Name=association.subnet-id,Values=$s" \
-                  --query 'RouteTables[].RouteTableId' --output text 2>/dev/null || true)"
-                if [ -z "$RT_IDS" ]; then
-                  echo "no route table association found for subnet"
-                  continue
-                fi
-                for rt in $RT_IDS; do
-                  echo "route_table: $rt"
-                  aws ec2 describe-route-tables --route-table-ids "$rt" \
-                    --query 'RouteTables[0].Routes[?DestinationCidrBlock==`0.0.0.0/0`]' \
-                    --output json 2>/dev/null || true
-                done
-              done
-              echo "::endgroup::"
-
-              echo "::endgroup::"
-
-              if [ "$attempt" -lt "$max_attempts" ]; then
-                sleep_for=$((60 * attempt))
-                echo "⏳ Waiting ${sleep_for}s before retry..."
-                sleep "$sleep_for"
-                continue
-              fi
-            fi
-
-            # Non-ALB-controller failure, or ran out of retries.
-            exit "$rc"
-          done
+          fi
 
           if [ "$rc" -ne 0 ]; then
+            # ALB controller / Helm transient readiness: wait for the specific dependency and retry once.
+            if grep -Eq "helm_release\\.aws_load_balancer_controller|aws-load-balancer-controller|context deadline exceeded|cannot re-use a name that is still in use" /tmp/tf-apply.log; then
+              echo "::group::Wait: aws-load-balancer-controller readiness"
+              aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 || true
+              # Bounded wait to keep the job stoppable.
+              kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=10m || true
+              kubectl -n kube-system get pods -o wide || true
+              echo "::endgroup::"
+
+              echo "🔁 Retrying once after waiting for aws-load-balancer-controller..."
+              run_plan "after-alb-wait"
+              rc=$?
+              if [ "$rc" -ne 0 ]; then
+                echo "::error::Terraform plan failed after ALB wait. See /tmp/tf-plan.log output above for details."
+                python3 "${{ github.workspace }}/scripts/gha/ephemeral/extract_tf_errors.py" /tmp/tf-plan.log || true
+                exit "$rc"
+              fi
+              run_apply_plan "after-alb-wait"
+              rc=$?
+            fi
+          fi
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::Terraform apply failed. See /tmp/tf-apply.log output above for details."
+            # Emit a predictable, GUI-friendly summary of error blocks.
+            python3 "${{ github.workspace }}/scripts/gha/ephemeral/extract_tf_errors.py" /tmp/tf-apply.log || true
             exit "$rc"
           fi
 
@@ -694,13 +924,30 @@ jobs:
           echo "⏳ Waiting for AWS Load Balancer Controller..."
           kubectl wait --for=condition=available deployment -n kube-system aws-load-balancer-controller --timeout=5m
 
-          helm registry login ghcr.io --username jetscalebot --password "${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}"
+          # Precreate required Kubernetes primitives for Helm install:
+          # - GHCR pull secret expected by charts/pods (`jetscale-registry-secret`)
+          # - ServiceAccount expected by backend (`jetscale-service-account`)
+          #
+          # ✅ Justified Action: Deterministic prerequisites for atomic Helm installs
+          # Invariants: Prudence, Vigor, Concord
+          kubectl -n "${{ env.ENV_ID }}" create secret docker-registry jetscale-registry-secret \
+            --docker-server=ghcr.io \
+            --docker-username=jetscalebot \
+            --docker-password="${{ secrets.JETSCALEBOT_GHCR_PULL_TOKEN }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl -n "${{ env.ENV_ID }}" create serviceaccount jetscale-service-account \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Avoid leaking passwords in process args (and suppress Helm warning).
+          echo "${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}" | helm registry login ghcr.io --username jetscalebot --password-stdin
           (cd charts/app && helm dependency build)
 
+          # Run non-atomic so we can capture diagnostics on failure, then clean up explicitly.
+          set +e
           helm upgrade --install jetscale-stack charts/app \
             --namespace "${{ env.ENV_ID }}" \
             --create-namespace \
-            --atomic \
             --values envs/preview/values.yaml \
             --set-string global.env=ephemeral \
             --set-string global.client_name=${{ env.ENV_ID }} \
@@ -713,36 +960,54 @@ jobs:
             --set-string backend.envFrom[2].secretRef.name=${{ env.ENV_ID }}-common-secrets \
             --set-string backend.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
             --wait --timeout 15m
+          rc=$?
+          set -e
 
-      - name: Configure GHCR Image Pull Credentials
-        if: inputs.action != 'destroy'
-        run: |
-          set -euo pipefail
+          if [ "$rc" -ne 0 ]; then
+            echo "::group::Diagnostics: Helm install failed (jetscale-stack)"
+            echo "env_id=${{ env.ENV_ID }}"
+            echo "public_host=${{ env.PUBLIC_HOST }}"
+            helm -n "${{ env.ENV_ID }}" status jetscale-stack || true
+            helm -n "${{ env.ENV_ID }}" get all jetscale-stack || true
+            echo "--- kubectl: pods"
+            kubectl -n "${{ env.ENV_ID }}" get pods -o wide || true
+            echo "--- kubectl: all"
+            kubectl -n "${{ env.ENV_ID }}" get all -o wide || true
+            echo "--- kubectl: events (ns)"
+            kubectl -n "${{ env.ENV_ID }}" get events --sort-by=.metadata.creationTimestamp | tail -n 200 || true
+            echo "--- kubectl: describe pods (ns)"
+            kubectl -n "${{ env.ENV_ID }}" describe pods || true
+            echo "--- kubectl: logs (recent, ns)"
+            # IMPORTANT: Do not silence logs. Backend crashes are the #1 reason Helm times out.
+            kubectl -n "${{ env.ENV_ID }}" logs --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=15m || true
+            echo "--- kubectl: logs (previous, ns)"
+            kubectl -n "${{ env.ENV_ID }}" logs --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=60m --previous || true
+            echo "--- kubectl: backend logs (current + previous)"
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-stack-backend --all-containers=true --tail=400 --prefix=true --since=60m || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-stack-backend --all-containers=true --tail=400 --prefix=true --since=60m --previous || true
+            echo "--- kube-system: pods"
+            kubectl -n kube-system get pods -o wide || true
+            echo "--- kube-system: events"
+            kubectl -n kube-system get events --sort-by=.metadata.creationTimestamp | tail -n 120 || true
+            echo "::endgroup::"
 
-          echo "🔐 Creating GHCR image pull secret for namespace ${{ env.ENV_ID }}..."
+            echo "::group::Cleanup: uninstall failed helm release (best-effort)"
+            helm -n "${{ env.ENV_ID }}" uninstall jetscale-stack --wait --timeout 5m || true
+            echo "::endgroup::"
 
-          # Create docker-registry secret for GHCR authentication
-          kubectl create secret docker-registry ghcr-pull \
-            --namespace ${{ env.ENV_ID }} \
-            --docker-server=ghcr.io \
-            --docker-username=jetscalebot \
-            --docker-password="${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}" \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-          # Attach to default ServiceAccount so pods can pull images
-          kubectl patch serviceaccount default \
-            --namespace ${{ env.ENV_ID }} \
-            --type merge \
-            -p '{"imagePullSecrets":[{"name":"ghcr-pull"}]}'
-
-          echo "✅ GHCR image pull credentials configured"
+            exit "$rc"
+          fi
 
       - name: Verify Health
         if: inputs.action != 'destroy'
         run: |
-          echo "🔍 Checking https://${{ env.PUBLIC_HOST }}..."
+          set -euo pipefail
+
+          HOST="${{ env.PUBLIC_HOST }}"
+          echo "🔍 Checking https://${HOST}..."
+
           for i in {1..30}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.PUBLIC_HOST }}/docs || echo "000")
+            STATUS="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 8 "https://${HOST}/" || echo "000")"
             if [ "$STATUS" -eq 200 ]; then
               echo "✅ Endpoint is up!"
               exit 0
@@ -750,7 +1015,27 @@ jobs:
             echo "⏳ ($i/30) Waiting for DNS/ALB... (Status: $STATUS)"
             sleep 10
           done
-          echo "⚠️ Endpoint didn't respond in time, but deployment succeeded."
+
+          echo "::group::Diagnostics: public endpoint never became reachable"
+          echo "public_host=${HOST}"
+          echo "--- curl https /"
+          curl -sSIk --max-time 8 "https://${HOST}/" || true
+          echo "--- curl http / (expected to redirect to https in 80+443 mode)"
+          curl -sSIk --max-time 8 "http://${HOST}/" || true
+
+          echo "--- kubectl: ingress"
+          aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1 || true
+          kubectl -n "${{ env.ENV_ID }}" get ingress -o wide || true
+          kubectl -n "${{ env.ENV_ID }}" describe ingress || true
+
+          echo "--- kube-system: aws-load-balancer-controller logs (tail)"
+          kubectl -n kube-system logs deploy/aws-load-balancer-controller --since=30m | tail -n 200 || true
+          echo "--- kube-system: events (tail)"
+          kubectl -n kube-system get events --sort-by=.metadata.creationTimestamp | tail -n 200 || true
+          echo "::endgroup::"
+
+          echo "::error::Public endpoint did not become reachable within timeout: https://${HOST}/"
+          exit 1
 
       # ==========================================================
       # PHASE 5: DESTRUCTION
@@ -774,9 +1059,8 @@ jobs:
         if: inputs.action == 'destroy' && always() && steps.tf_destroy.outcome == 'failure'
         run: |
           set -euo pipefail
-          test -x ./scripts/ephemeral-cleanup.sh
-          echo "⚠️ Terraform Destroy failed. Invoking shared cleanup script..."
-          ./scripts/ephemeral-cleanup.sh "fallback" "${{ env.ENV_ID }}" "us-east-1" "134051052096"
+          echo "⚠️ Terraform Destroy failed. Invoking shared Python cleanup..."
+          python3 ./scripts/ephemeral_cleanup.py apply "${{ env.ENV_ID }}" "us-east-1" "134051052096"
 
   # ✅ USER EXPERIENCE: Separate Job for Commenting
   # This isolates the 'write' permission to a tiny job.

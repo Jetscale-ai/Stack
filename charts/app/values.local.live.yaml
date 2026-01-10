@@ -1,10 +1,10 @@
-global:
-  env: "local-dev"
+# Local Live-Parity mode:
+# - Pull published production images (no local builds)
+# - Useful to reproduce “works in dev, fails in CI/preview” issues
+# - Still runs on Kind with in-cluster Postgres/Redis (self-contained)
 
-# Local Dev inner-loop (Tilt):
-# - Build images locally (Tilt `docker_build`)
-# - live_update on source changes
-# - No GHCR pulls required
+global:
+  env: "local-live"
 
 # 1. DATABASE
 postgres:
@@ -22,7 +22,7 @@ redis:
   enabled: true
   image: "redis:7-bullseye"
 
-# 3. BACKEND API (Dev Image + Hot Reload)
+# 3. BACKEND API (Published Prod Image)
 backend:
   enabled: true
   replicaCount: 1
@@ -30,8 +30,8 @@ backend:
     create: true
     name: "jetscale-service-account"
   image:
-    repository: ghcr.io/jetscale-ai/backend-dev
-    tag: "tilt"
+    repository: ghcr.io/jetscale-ai/backend
+    tag: "1.2.4"
     pullPolicy: IfNotPresent
   imagePullSecrets: []
   service:
@@ -39,28 +39,26 @@ backend:
     port: 8000
     nodePort: 30000
   devMode:
-    enabled: true
-    command: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    enabled: false
+    command: []
   env:
-    JETSCALE_APP_NAME: "JetScale Backend (Tilt)"
-    JETSCALE_DEBUG: "true"
+    JETSCALE_APP_NAME: "JetScale Backend (Local Live-Parity)"
+    JETSCALE_DEBUG: "false"
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale-user"
     JETSCALE_DB_PASSWORD: "jetscale-password"
     JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-stack-local-postgres:5432/jetscale"
     JETSCALE_REDIS_URL: "redis://jetscale-stack-local-redis-master:6379/0"
     JETSCALE_AWS_REGION: "us-east-1"
-    PYTHONDONTWRITEBYTECODE: "1"
-    PYTHONUNBUFFERED: "1"
 
-# 4. FRONTEND WEB (Dev Image)
+# 4. FRONTEND WEB (Published Prod Image)
 frontend:
   enabled: true
   serviceAccount:
     create: false
   image:
-    repository: ghcr.io/jetscale-ai/frontend-dev
-    tag: "tilt"
+    repository: ghcr.io/jetscale-ai/frontend
+    tag: "2.0.4"
     pullPolicy: IfNotPresent
   imagePullSecrets: []
   service:
@@ -74,7 +72,7 @@ frontend:
       path: /
       port: 80
   devMode:
-    enabled: true
+    enabled: false
   env:
     VITE_API_BASE_URL: "http://localhost:8000"
 
@@ -83,3 +81,4 @@ ingress:
 
 apiExternal:
   enabled: false
+

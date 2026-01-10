@@ -5,10 +5,14 @@ version_settings(constraint='>=0.32.0')
 allow_k8s_contexts('kind-kind')
 
 # ---------------------------
-# Images (Dev variants)
+# Images
 # ---------------------------
+# We keep two modes:
+# - `charts/app/values.local.dev.yaml`: Tilt inner-loop (local builds + live_update)
+# - `charts/app/values.local.live.yaml`: Live-parity (pull published prod images)
+
 docker_build(
-    'ghcr.io/jetscale-ai/backend-dev',
+    'ghcr.io/jetscale-ai/backend-dev:tilt',
     '../backend',
     dockerfile='../backend/Dockerfile',
     target='backend-dev',
@@ -18,7 +22,7 @@ docker_build(
 )
 
 docker_build(
-    'ghcr.io/jetscale-ai/frontend-dev',
+    'ghcr.io/jetscale-ai/frontend-dev:tilt',
     '../frontend',
     dockerfile='../frontend/Dockerfile',
     target='frontend',  # dev stage in frontend Dockerfile
