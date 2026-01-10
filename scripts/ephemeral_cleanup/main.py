@@ -9,7 +9,7 @@ from .awscli import AwsCli
 from .cleanup_elasticache import elasticache_serverless_delete
 from .cleanup_eks import eks_delete
 from .cleanup_iam import delete_tagged_oidc_providers, iam_cleanup_ephemeral_roles
-from .cleanup_misc import delete_non_vpc_tagged
+from .cleanup_misc import delete_elbv2_by_cluster_tag, delete_non_vpc_tagged
 from .cleanup_rds import rds_delete
 from .cleanup_vpc import (
     ec2_terminate_instances_in_vpc,
@@ -37,6 +37,7 @@ def _print_summary(ctx: Ctx, summary: Summary) -> None:
     print(f"- **initial_tagged_count**: {len(summary.initial_tagged)}")
     print(f"- **final_tagged_count**: {len(summary.final_tagged)}")
     print(f"- **remaining_exists_count**: {len(summary.final_existing)}")
+    print(f"- **remaining_eventual_count**: {len(summary.final_eventual)}")
     print(f"- **remaining_unknown_count**: {len(summary.final_unknown)}")
     print(f"- **remaining_stale_count**: {len(summary.final_stale)}")
 
@@ -60,6 +61,10 @@ def _print_summary(ctx: Ctx, summary: Summary) -> None:
         print("- **still exists**:")
         for arn in summary.final_existing:
             print(f"  - {arn}")
+    if summary.final_eventual:
+        print("- **eventual (deleting / will disappear with time)**:")
+        for arn in summary.final_eventual:
+            print(f"  - {arn}")
     if summary.final_unknown:
         print("- **unknown (could not verify; likely AccessDenied)**:")
         for arn in summary.final_unknown:
@@ -68,7 +73,7 @@ def _print_summary(ctx: Ctx, summary: Summary) -> None:
         print("- **stale (verified not found)**:")
         for arn in summary.final_stale:
             print(f"  - {arn}")
-    if not (summary.final_existing or summary.final_unknown or summary.final_stale):
+    if not (summary.final_existing or summary.final_eventual or summary.final_unknown or summary.final_stale):
         print("- (none)")
 
 
@@ -109,11 +114,14 @@ def main(argv: List[str]) -> int:
         summary.final_existing = vr.existing
         summary.final_stale = vr.stale
         summary.final_unknown = vr.unknown
+        summary.final_eventual = vr.eventual
         _print_summary(ctx, summary)
+        # Success if nothing still exists or unknown; "eventual" is treated as success.
         return 1 if (summary.final_existing or summary.final_unknown) else 0
 
     # Root-cause order
     eks_delete(doer)
+    delete_elbv2_by_cluster_tag(doer)
     delete_tagged_oidc_providers(doer, summary.initial_tagged)
     elasticache_serverless_delete(doer)
     rds_delete(doer)
@@ -142,8 +150,11 @@ def main(argv: List[str]) -> int:
     summary.final_existing = vr.existing
     summary.final_stale = vr.stale
     summary.final_unknown = vr.unknown
+    summary.final_eventual = vr.eventual
     _print_summary(ctx, summary)
 
+    # In apply mode, only "existing" or "unknown" should fail the run.
+    # "eventual" means AWS reports it as present but it is demonstrably deleting.
     if ctx.mode == "apply" and (summary.final_existing or summary.final_unknown):
         return 1
     return 0

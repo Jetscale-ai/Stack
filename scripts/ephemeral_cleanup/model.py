@@ -28,6 +28,9 @@ class Summary:
     final_existing: List[str] = field(default_factory=list)
     final_stale: List[str] = field(default_factory=list)
     final_unknown: List[str] = field(default_factory=list)
+    # Resources that still show up in reads but are demonstrably in a deletion lifecycle
+    # (AWS eventual consistency / async delete). These should not fail the run.
+    final_eventual: List[str] = field(default_factory=list)
     actions: List[ActionRecord] = field(default_factory=list)
 
     def add_action(self, rec: ActionRecord) -> None:

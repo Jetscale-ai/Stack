@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import json
 from typing import Optional
 
 from .doer import Doer
@@ -8,31 +9,53 @@ from .doer import Doer
 
 def ec2_terminate_instances_in_vpc(doer: Doer, vpc_id: str) -> None:
     ctx = doer.ctx
-    data = doer.aws.json(
-        [
-            "ec2",
-            "describe-instances",
-            "--filters",
-            f"Name=vpc-id,Values={vpc_id}",
-            "Name=instance-state-name,Values=pending,running,stopping,stopped",
-            "--region",
-            ctx.region,
-        ]
-    ) or {}
-    ids = []
-    for r in data.get("Reservations", []) or []:
-        for inst in r.get("Instances", []) or []:
-            iid = inst.get("InstanceId")
-            if iid:
-                ids.append(iid)
+    if ctx.mode in ("plan", "verify"):
+        doer.plan(f"aws ec2 terminate-instances (all instances in vpc {vpc_id})")
+        return
+
+    def _list_instance_ids() -> list[str]:
+        data = doer.aws.json(
+            [
+                "ec2",
+                "describe-instances",
+                "--filters",
+                f"Name=vpc-id,Values={vpc_id}",
+                "Name=instance-state-name,Values=pending,running,stopping,stopped,shutting-down",
+                "--region",
+                ctx.region,
+                "--query",
+                "Reservations[].Instances[].InstanceId",
+            ]
+        )
+        ids: list[str] = []
+        for r in data or []:
+            if isinstance(r, list):
+                ids.extend([x for x in r if x])
+            elif r:
+                ids.append(r)
+        # de-dupe
+        return sorted(set(ids))
+
+    ids = _list_instance_ids()
     if not ids:
         return
+
     doer.run_allow_fail(
-        f"ec2 terminate instances in {vpc_id}",
+        f"ec2 terminate instances in {vpc_id} ({len(ids)})",
         ["ec2", "terminate-instances", "--instance-ids", *ids, "--region", ctx.region],
     )
-    if ctx.mode == "apply":
-        doer.aws.run(["ec2", "wait", "instance-terminated", "--instance-ids", *ids, "--region", ctx.region])
+
+    # Wait until the VPC is free of instances (stronger than the waiter, and avoids silent failures).
+    start = time.time()
+    while True:
+        remaining = _list_instance_ids()
+        if not remaining:
+            return
+        if time.time() - start > 20 * 60:
+            print(f"--- EC2: still present after timeout: {remaining}")
+            return
+        print(f"--- EC2: waiting for instances to terminate (remaining={len(remaining)})")
+        time.sleep(15)
 
 
 def vpc_endpoints_delete(doer: Doer, vpc_id: str) -> None:
@@ -70,6 +93,7 @@ def nat_delete(doer: Doer, vpc_id: str) -> None:
                 doer.run_allow_fail(
                     f"ec2 release address {a}",
                     ["ec2", "release-address", "--allocation-id", a, "--region", ctx.region],
+                    ignore_stderr_substrings=["InvalidAllocationID.NotFound", "does not exist"],
                 )
 
 
@@ -153,20 +177,79 @@ def security_groups_delete(doer: Doer, vpc_id: str) -> None:
         if sg.get("GroupName") == "default":
             default_sg = sg.get("GroupId")
             break
-    for sg in sgs:
+
+    if ctx.mode in ("plan", "verify"):
+        doer.plan(f"aws ec2 delete-security-group (all non-default SGs in vpc {vpc_id})")
+        return
+
+    def _refresh() -> list[dict]:
+        d = doer.aws.json(["ec2", "describe-security-groups", "--filters", f"Name=vpc-id,Values={vpc_id}", "--region", ctx.region]) or {}
+        return d.get("SecurityGroups", []) or []
+
+    # First, aggressively revoke rules to break SG->SG dependencies.
+    for sg in _refresh():
         sgid = sg.get("GroupId")
         if not sgid or sgid == default_sg:
             continue
-        doer.run_allow_fail(
-            f"ec2 delete security group {sgid}",
-            ["ec2", "delete-security-group", "--group-id", sgid, "--region", ctx.region],
-        )
+        ingress = sg.get("IpPermissions", []) or []
+        egress = sg.get("IpPermissionsEgress", []) or []
+        if ingress:
+            doer.run_allow_fail(
+                f"ec2 revoke sg ingress {sgid}",
+                ["ec2", "revoke-security-group-ingress", "--group-id", sgid, "--ip-permissions", json.dumps(ingress), "--region", ctx.region],
+                ignore_stderr_substrings=["InvalidPermission.NotFound"],
+            )
+        if egress:
+            doer.run_allow_fail(
+                f"ec2 revoke sg egress {sgid}",
+                ["ec2", "revoke-security-group-egress", "--group-id", sgid, "--ip-permissions", json.dumps(egress), "--region", ctx.region],
+                ignore_stderr_substrings=["InvalidPermission.NotFound"],
+            )
+
+    # Then delete with retries (AWS can lag in detaching SGs from now-deleted LBs/ENIs).
+    start = time.time()
+    while True:
+        remaining: list[str] = []
+        for sg in _refresh():
+            sgid = sg.get("GroupId")
+            if not sgid or sgid == default_sg:
+                continue
+            res = doer.run_allow_fail(
+                f"ec2 delete security group {sgid}",
+                ["ec2", "delete-security-group", "--group-id", sgid, "--region", ctx.region],
+                ignore_stderr_substrings=["InvalidGroup.NotFound", "does not exist"],
+            )
+            if res.rc != 0 and "dependencyviolation" in (res.stderr or "").lower():
+                remaining.append(sgid)
+        if not remaining:
+            return
+        if time.time() - start > 20 * 60:
+            print(f"--- SGs still not deletable (DependencyViolation): {remaining}")
+            return
+        print(f"--- waiting to delete security groups (remaining={len(remaining)})")
+        time.sleep(15)
 
 
 def vpc_delete(doer: Doer, vpc_id: str) -> None:
     ctx = doer.ctx
-    doer.run_allow_fail(
-        f"ec2 delete vpc {vpc_id}",
-        ["ec2", "delete-vpc", "--vpc-id", vpc_id, "--region", ctx.region],
-    )
+    if ctx.mode in ("plan", "verify"):
+        doer.plan(f"aws ec2 delete-vpc --vpc-id {vpc_id} --region {ctx.region}")
+        return
+
+    start = time.time()
+    while True:
+        res = doer.run_allow_fail(
+            f"ec2 delete vpc {vpc_id}",
+            ["ec2", "delete-vpc", "--vpc-id", vpc_id, "--region", ctx.region],
+            ignore_stderr_substrings=["InvalidVpcID.NotFound", "does not exist"],
+        )
+        if res.rc == 0:
+            return
+        if "dependencyviolation" in (res.stderr or "").lower():
+            if time.time() - start > 20 * 60:
+                return
+            print("--- VPC still has dependencies; waiting before retry")
+            time.sleep(20)
+            continue
+        return
 

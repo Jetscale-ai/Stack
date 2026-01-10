@@ -16,6 +16,12 @@ concurrency:
 jobs:
   destroy:
     runs-on: ubuntu-latest
+    # IMPORTANT: use the per-PR GitHub Environment so the OIDC `sub` claim matches
+    # the Live account trust policy (`repo:Jetscale-ai/Stack:environment:pr-*`).
+    # Without this, the job runs under a `ref:refs/pull/...` subject and STS denies
+    # AssumeRoleWithWebIdentity.
+    environment:
+      name: ${{ format('pr-{0}', github.event.number) }}
     steps:
       - uses: actions/checkout@v4
       
@@ -86,6 +92,17 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
+          export KUBECONFIG="${HOME}/.kube/config"
+
+          # If the cluster is already gone, skip TF destroy (k8s providers will fail) and
+          # rely on the shared AWS cleanup fallback.
+          if ! aws eks describe-cluster --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null 2>&1; then
+            echo "⚠️ Cluster ${{ env.ENV_ID }} not found. Skipping terraform destroy; using fallback cleanup."
+            exit 1
+          fi
+
+          aws eks update-kubeconfig --name "${{ env.ENV_ID }}" --region us-east-1 >/dev/null
+
           terraform init \
             -backend-config="bucket=jetscale-terraform-state" \
             -backend-config="key=ephemeral/${{ env.ENV_ID }}/terraform.tfstate" \

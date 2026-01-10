@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import List
 
 from .awscli import AwsCli
@@ -12,6 +13,7 @@ class VerificationResult:
     existing: List[str]
     stale: List[str]
     unknown: List[str]
+    eventual: List[str]
 
 
 def _ec2_instance_exists(ctx: Ctx, aws: AwsCli, instance_id: str) -> bool:
@@ -45,23 +47,84 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
     existing: List[str] = []
     stale: List[str] = []
     unknown: List[str] = []
+    eventual: List[str] = []
 
     for arn in arns:
         try:
+            # Secrets Manager secrets
+            # - If DeletedDate is present, AWS still returns it for some time after deletion requests.
+            # - We classify those as "eventual" to avoid failing the cleanup run on async deletion.
+            if ":secretsmanager:" in arn and ":secret:" in arn:
+                res = aws.run(["secretsmanager", "describe-secret", "--secret-id", arn, "--region", ctx.region, "--output", "json"])
+                if res.rc == 0:
+                    try:
+                        payload = json.loads(res.stdout) if res.stdout else {}
+                    except Exception:
+                        unknown.append(arn)
+                        continue
+                    if payload.get("DeletedDate"):
+                        eventual.append(arn)
+                    else:
+                        existing.append(arn)
+                else:
+                    err = (res.stderr or "").lower()
+                    if "resourcenotfoundexception" in err or "not found" in err:
+                        stale.append(arn)
+                    else:
+                        unknown.append(arn)
+                continue
+
+            # EBS volumes
+            if ":volume/" in arn:
+                vol = arn.split(":volume/", 1)[-1]
+                res = aws.run(["ec2", "describe-volumes", "--volume-ids", vol, "--region", ctx.region, "--output", "json"])
+                if res.rc == 0:
+                    try:
+                        payload = json.loads(res.stdout) if res.stdout else {}
+                        vols = payload.get("Volumes", []) or []
+                        state = (vols[0].get("State") if vols else None) or ""
+                    except Exception:
+                        unknown.append(arn)
+                        continue
+                    # States include: creating, available, in-use, deleting, deleted, error
+                    if state in ("deleting", "deleted"):
+                        eventual.append(arn)
+                    elif state:
+                        existing.append(arn)
+                    else:
+                        unknown.append(arn)
+                else:
+                    err = (res.stderr or "").lower()
+                    if "invalidvolume.notfound" in err or "not found" in err:
+                        stale.append(arn)
+                    else:
+                        unknown.append(arn)
+                continue
+
             if ":natgateway/" in arn:
                 nat = arn.split(":natgateway/", 1)[-1]
-                ok = _ec2_simple_exists(
-                    ctx,
-                    aws,
-                    ["ec2", "describe-nat-gateways", "--nat-gateway-ids", nat],
-                    ["InvalidNatGatewayID.NotFound", "NatGatewayNotFound", "does not exist"],
-                )
-                if ok is True:
-                    existing.append(arn)
-                elif ok is False:
-                    stale.append(arn)
+                res = aws.run(["ec2", "describe-nat-gateways", "--nat-gateway-ids", nat, "--region", ctx.region, "--output", "json"])
+                if res.rc == 0:
+                    try:
+                        payload = json.loads(res.stdout) if res.stdout else {}
+                        ngs = payload.get("NatGateways", []) or []
+                        state = (ngs[0].get("State") if ngs else None) or ""
+                    except Exception:
+                        unknown.append(arn)
+                        continue
+                    # States include: pending, available, deleting, deleted, failed
+                    if state in ("deleting", "deleted"):
+                        eventual.append(arn)
+                    elif state:
+                        existing.append(arn)
+                    else:
+                        unknown.append(arn)
                 else:
-                    unknown.append(arn)
+                    err = (res.stderr or "").lower()
+                    if "invalidnatgatewayid.notfound" in err or "natgatewaynotfound" in err or "does not exist" in err:
+                        stale.append(arn)
+                    else:
+                        unknown.append(arn)
                 continue
 
             if ":internet-gateway/" in arn:
@@ -195,5 +258,5 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
         except Exception:
             unknown.append(arn)
 
-    return VerificationResult(existing=existing, stale=stale, unknown=unknown)
+    return VerificationResult(existing=existing, stale=stale, unknown=unknown, eventual=eventual)
 
