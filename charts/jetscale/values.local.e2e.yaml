@@ -18,7 +18,7 @@ redis:
   image: "redis:7-bullseye"
 
 # 3. BACKEND API (Local-build mode: Skaffold builds + Kind loads)
-backend:
+backend-api:
   enabled: true
   replicaCount: 1
   image:
@@ -26,15 +26,6 @@ backend:
     repository: jetscale-backend-local
     pullPolicy: IfNotPresent
   imagePullSecrets: []
-
-  service:
-    type: ClusterIP
-    port: 8000
-
-  # No command override anymore – use Dockerfile CMD (uvicorn)
-  devMode:
-    enabled: false
-    command: []
 
   env:
     JETSCALE_APP_NAME: "JetScale Backend (E2E)"
@@ -59,18 +50,10 @@ frontend:
   image:
     repository: jetscale-frontend-local
     pullPolicy: IfNotPresent
-  imagePullSecrets: []
-  service:
-    port: 80
-  readinessProbe:
-    httpGet:
-      path: /
-      port: 80
-  livenessProbe:
-    httpGet:
-      path: /
-      port: 80
-  devMode:
-    enabled: false
   env:
     VITE_API_BASE_URL: "http://jetscale-stack-test-backend:8000"
+
+appConfigMap:
+  enabled: false
+ingress:
+  enabled: false
