@@ -22,12 +22,12 @@ profiles:
     build:
       artifacts:
         - image: jetscale-backend-local
-          context: ../backend
+          context: ../Backend
           docker:
             dockerfile: Dockerfile
             target: backend
         - image: jetscale-frontend-local
-          context: ../frontend
+          context: ../Frontend
           docker:
             dockerfile: Dockerfile
             target: frontend

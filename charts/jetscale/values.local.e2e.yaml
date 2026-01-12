@@ -57,3 +57,6 @@ appConfigMap:
   enabled: false
 ingress:
   enabled: false
+externalSecret:
+  app:
+    enabled: false
