@@ -11,9 +11,9 @@ echo "⏳ Waiting for AWS Load Balancer Controller..."
 kubectl wait --for=condition=available deployment -n kube-system aws-load-balancer-controller --timeout=5m
 
 helm registry login ghcr.io --username jetscalebot --password "${JETSCALEBOT_GITHUB_TOKEN:?JETSCALEBOT_GITHUB_TOKEN is required}"
-(cd charts/app && helm dependency build)
+(cd charts/jetscale && helm dependency build)
 
-helm upgrade --install jetscale-stack charts/app \
+helm upgrade --install jetscale-stack charts/jetscale \
   --namespace "${ENV_ID}" \
   --create-namespace \
   --atomic \

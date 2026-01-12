@@ -21,11 +21,6 @@ Outside of the default values defined in values.yaml, there are a few other valu
 | values.local.e2e.yaml     | E2E tests using newly built image (from local ref)     |      |
 | values.local.yaml |  |  |
 
-## Helm Github registry auth.
-To use the OCI published charts by our pipelines, an Helm auth is required:
-1. Create a classic PAT
-2. Login with your username: `helm registry login ghcr.io --username`
-
 ## Dev/Test
 
 If you are modifying the child chart at the same time, note that you can use the file ref in Chart.yaml. Exemple:

@@ -284,6 +284,14 @@ func (Validate) Envs() error {
 	// private OCI chart deps can be pulled without manual login steps.
 	_ = ensureHelmGhcrLogin()
 
+	// Ensure dependencies are updated (requires OCI access or local file://)
+	fmt.Println("   > helm dependency update charts/jetscale")
+	depUpCmd := exec.Command("helm", "dependency", "update", "charts/jetscale")
+	if out, err := depUpCmd.CombinedOutput(); err != nil {
+		msg := string(out)
+		return fmt.Errorf("helm dependency update failed:\n%s", msg)
+	}
+
 	// Ensure dependencies are ready (requires OCI access or local file://)
 	fmt.Println("   > helm dependency build charts/jetscale")
 	depCmd := exec.Command("helm", "dependency", "build", "charts/jetscale")
@@ -307,7 +315,8 @@ func (Validate) Envs() error {
 		// Generic failure
 		return fmt.Errorf("helm dependency build failed:\n%s", msg)
 	}
-
+	
+	jetscaleValuesFile  := fmt.Sprintf("charts/jetscale/values.jetscale.yaml")
 	for _, env := range envs {
 		valuesFile := fmt.Sprintf("envs/%s/values.yaml", env)
 		fmt.Printf("   > Checking %s...", valuesFile)
@@ -316,6 +325,7 @@ func (Validate) Envs() error {
 		// --dry-run: simulate install
 		// --debug: print generated manifest on failure
 		cmd := exec.Command("helm", "template", "jetscale-stack", "charts/jetscale",
+			"--values", jetscaleValuesFile,	
 			"--values", valuesFile,
 			"--debug")
 

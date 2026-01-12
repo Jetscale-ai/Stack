@@ -8,26 +8,26 @@ allow_k8s_contexts('kind-kind')
 # Images
 # ---------------------------
 # We keep two modes:
-# - `charts/app/values.local.dev.yaml`: Tilt inner-loop (local builds + live_update)
-# - `charts/app/values.local.live.yaml`: Live-parity (pull published prod images)
+# - `charts/jetscale/values.local.dev.yaml`: Tilt inner-loop (local builds + live_update)
+# - `charts/jetscale/values.local.live.yaml`: Live-parity (pull published prod images)
 
 docker_build(
     'ghcr.io/jetscale-ai/backend-dev:tilt',
-    '../backend',
-    dockerfile='../backend/Dockerfile',
+    '../Backend',
+    dockerfile='../Backend/Dockerfile',
     target='backend-dev',
     live_update=[
-        sync('../backend', '/app'),
+        sync('../Backend', '/app'),
     ],
 )
 
 docker_build(
     'ghcr.io/jetscale-ai/frontend-dev:tilt',
-    '../frontend',
-    dockerfile='../frontend/Dockerfile',
-    target='frontend',  # dev stage in frontend Dockerfile
+    '../Frontend',
+    dockerfile='../Frontend/Dockerfile',
+    target='Frontend',  # dev stage in frontend Dockerfile
     live_update=[
-        sync('../frontend', '/app'),
+        sync('../Frontend', '/app'),
     ],
 )
 
@@ -43,10 +43,16 @@ k8s_yaml(helm(
 # ---------------------------
 # Port-forwards per resource
 # ---------------------------
-# backend (FastAPI /docs)
+# backend-api (FastAPI /docs)
 k8s_resource(
-    'jetscale-stack-local-backend',
+    'jetscale-stack-local-backend-api',
     port_forwards=[port_forward(8000, 8000)],  # local: 8000 -> container: 8000
+)
+
+# backend-ws
+k8s_resource(
+    'jetscale-stack-local-backend-ws',
+    port_forwards=[port_forward(8001, 8001)],  # local: 8000 -> container: 8000
 )
 
 # frontend (Nginx serving SPA)

@@ -5,8 +5,13 @@ ingress:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=3600
     alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=60
+    # ALB stickiness is for external/public clients -> Pod's IP
+    # K8s svc stickiness if for internal K8s traffic
+    # alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=10800
+    # TODO decide duration
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/ssl-policy: "ELBSecurityPolicy-TLS13-1-2-2021-06"
   albEncryptionRootAnnotations: true #Inject extra annotations for checking http header
     # Where targetGroups serviceName is based on Release Name
     # alb.ingress.kubernetes.io/conditions.encrypted-root: >

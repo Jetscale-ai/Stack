@@ -69,7 +69,18 @@ Skaffold is intentionally scoped to **Kind** workflows (local + CI E2E).
 
 ### 2. Boot the Local Dev Platform (Inner Loop)
 
-Run these commands from the `stack/` directory:
+#### Helm/Container Registry Github auth.
+
+Documentation: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry
+
+To use the OCI published Helm charts and GHCR images by our pipelines, we need to auth. our CLIs
+1. Create a classic PAT with those minimal permissions:
+  - read:packages
+2. [HELM] Login with your username: `helm registry login ghcr.io --username <USERNAME>`
+3. [Docker] Login with your username: `docker login ghcr.io --username <USERNAME>`
+
+#### How-tos
+Run these commands from the `Stack/` directory (root of this repo):
 
 ```bash
 # 1. Create the local cluster

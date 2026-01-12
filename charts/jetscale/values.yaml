@@ -10,7 +10,10 @@ global:
 
 appConfigMap:
   enabled: true
-
+externalSecret:
+  app:
+    enabled: true
+    
 # ----------------------------------------------------------
 # 1. CORE SERVICES
 # ----------------------------------------------------------
