@@ -5,10 +5,14 @@ version_settings(constraint='>=0.32.0')
 allow_k8s_contexts('kind-kind')
 
 # ---------------------------
-# Images (Dev variants)
+# Images
 # ---------------------------
+# We keep two modes:
+# - `charts/app/values.local.dev.yaml`: Tilt inner-loop (local builds + live_update)
+# - `charts/app/values.local.live.yaml`: Live-parity (pull published prod images)
+
 docker_build(
-    'ghcr.io/jetscale-ai/backend-dev',
+    'ghcr.io/jetscale-ai/backend-dev:tilt',
     '../backend',
     dockerfile='../backend/Dockerfile',
     target='backend-dev',
@@ -18,7 +22,7 @@ docker_build(
 )
 
 docker_build(
-    'ghcr.io/jetscale-ai/frontend-dev',
+    'ghcr.io/jetscale-ai/frontend-dev:tilt',
     '../frontend',
     dockerfile='../frontend/Dockerfile',
     target='frontend',  # dev stage in frontend Dockerfile
@@ -39,16 +43,16 @@ k8s_yaml(helm(
 # ---------------------------
 # Port-forwards per resource
 # ---------------------------
-# backend-api (FastAPI /docs)
+# backend (FastAPI /docs)
 k8s_resource(
-    'jetscale-stack-local-backend-api',
+    'jetscale-stack-local-backend',
     port_forwards=[port_forward(8000, 8000)],  # local: 8000 -> container: 8000
 )
 
-# frontend-web (Nginx serving SPA)
+# frontend (Nginx serving SPA)
 k8s_resource(
-    'jetscale-stack-local-frontend-web',
-    port_forwards=[port_forward(3000, 80)],    # local: 3000 -> container: 80
+    'jetscale-stack-local-frontend',
+    port_forwards=[port_forward(3002, 80)],    # local: 3002 -> container: 80
 )
 
 # postgres

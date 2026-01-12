@@ -73,7 +73,7 @@ kubectl -n jetscale-prod get secret jetscale-aws-client-secret
 
 # Verify backend pods are not blocked by missing secrets
 kubectl -n jetscale-prod get pods
-kubectl -n jetscale-prod describe pod -l app.kubernetes.io/name=backend-api | sed -n '1,160p'
+kubectl -n jetscale-prod describe pod -l app.kubernetes.io/name=backend | sed -n '1,160p'
 ```
 
 

@@ -1,0 +1,84 @@
+# ==========================================================
+# LIVE TENANT — imaginaryclient.jetscale.ai (prototype)
+# ==========================================================
+global:
+  env: "prod"
+  client_name: "imaginaryclient"
+  tenant_id: "imaginaryclient"
+
+# 1. INFRA (Managed by Terraform in AWS)
+postgres:
+  enabled: false
+
+redis:
+  enabled: false
+
+# 2. BACKEND
+backend:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ghcr.io/jetscale-ai/backend
+    tag: "1.2.4"
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  # Example schedules (can be customized per tenant)
+  cronJobs:
+    - name: discovery
+      schedule: "0 */4 * * *"
+      command: ["python3", "jobs/aws/discover_aws_resources.py"]
+
+  externalSecrets:
+    enabled: false
+
+  # ESO-created secrets are tenant-prefixed by client_name in the namespace.
+  envFrom:
+    - secretRef:
+        name: "imaginaryclient-db-secret"
+    - secretRef:
+        name: "imaginaryclient-redis-secret"
+    - secretRef:
+        name: "imaginaryclient-common-secrets"
+    - secretRef:
+        name: "imaginaryclient-aws-client-secret"
+
+# 3. FRONTEND
+frontend:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ghcr.io/jetscale-ai/frontend
+    tag: "2.0.4"
+  service:
+    port: 80
+  env:
+    VITE_API_BASE_URL: "https://imaginaryclient.jetscale.ai"
+
+# 4. ROUTING (Ingress-first)
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # NOTE: Wildcard cert in the Live account/region (same pattern as console.jetscale.ai)
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:134051052096:certificate/6e3e7f72-af8e-457d-a397-8f13728dd06c"
+    alb.ingress.kubernetes.io/ssl-policy: "ELBSecurityPolicy-TLS13-1-2-2021-06"
+    external-dns.alpha.kubernetes.io/hostname: "imaginaryclient.jetscale.ai"
+  hosts:
+    - host: "imaginaryclient.jetscale.ai"
+      paths:
+        - path: /api
+          pathType: Prefix
+        - path: /
+          pathType: Prefix
+
+# 5. EXTERNAL ENTRYPOINT (Terraform legacy discovery) — keep disabled for ingress-first.
+apiExternal:
+  enabled: false
+

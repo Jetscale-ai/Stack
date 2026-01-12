@@ -3,9 +3,9 @@
 # ==========================================================
 global:
   # Overridden by CI (e.g., pr-123)
-  env: "preview"
-  client_name: "preview" # overwritten by workflow
-  tenant_id: "preview"   # overwritten by workflow
+  env: "ephemeral"
+  client_name: "ephemeral" # overwritten by workflow
+  tenant_id: "ephemeral"   # overwritten by workflow
 
 # 1. INFRA (Managed by Terraform in AWS)
 postgres:
@@ -15,12 +15,12 @@ redis:
   enabled: false
 
 # 2. BACKEND
-backend-api:
+backend:
   enabled: true
   replicaCount: 1
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "1.2.3" # Overridden by CI if needed
+    tag: "1.2.4" # Match live (known-good)
     pullPolicy: Always
   
   # Prefer Terraform-managed ESO targets (Jetscale-IaC creates these Secrets)
@@ -44,7 +44,7 @@ backend-api:
     # DB/Redis/JWT are injected via envFrom Secrets
 
 # 3. FRONTEND
-frontend-web:
+frontend:
   enabled: true
   image:
     repository: ghcr.io/jetscale-ai/frontend
@@ -60,6 +60,12 @@ ingress:
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
+    # TLS (match live): expose 80 but redirect all traffic to HTTPS.
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # Wildcard cert for *.jetscale.ai in the Live AWS account (us-east-1)
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:134051052096:certificate/6e3e7f72-af8e-457d-a397-8f13728dd06c"
+    alb.ingress.kubernetes.io/ssl-policy: "ELBSecurityPolicy-TLS13-1-2-2021-06"
   hosts:
     - host: "preview.jetscale.ai"
       paths:

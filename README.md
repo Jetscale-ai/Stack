@@ -29,8 +29,24 @@ To ensure our Helm chart remains **Cloud Agnostic** (deployable on AWS, Azure, o
 | **1** | **Inner Loop** | Tilt | Kind (Local) | **Speed.** Hot reload, fat images. |
 | **2** | **Outer Loop** | Skaffold | Kind (Local) | **Parity.** Builds local code -> Alpine images. |
 | **3** | **CI Loop** | Skaffold | Kind (CI Runner) | **Gating.** Deploys remote OCI artifacts. |
-| **4** | **Preview Loop** | TF + Helm | **Ephemeral EKS** | **Isolation.** "Cluster-per-PR". Fresh infra, fresh data, destroy on close. |
-| **5** | **Live Verify** | TF + Helm | **Live EKS** | **Availability.** Persistent infra, rolling updates, schema migrations. |
+| **4** | **Preview Loop** | TF + Helm | **Ephemeral EKS** | **Sovereignty.** Full "Cluster-per-PR" in Live AWS Account. |
+| **5** | **Live Verify** | TF + Helm | **Live EKS** | **Availability.** Persistent infra, rolling updates. |
+
+## 🚀 Pull Request Workflows
+
+### Launching an Ephemeral Environment
+To save costs, Preview environments are **manual-trigger only**.
+
+1. **Open a Pull Request.**
+2. **Add the label:** `preview`.
+3. **Wait (~15m):** The `Ephemeral Fleet` action will provision a full EKS cluster.
+4. **Access:** A bot will comment with the link: `https://pr-123-feat-x-unstable.jetscale.ai`.
+
+> **Note:** This check is a **Mandatory Gate** for merging to `main`.
+
+### The Janitor (Auto-Cleanup)
+When a PR is **closed** or **merged**, the `Janitor` workflow automatically destroys the cluster.
+* **Manual Fallback:** If the Janitor fails, you can manually trigger the `Ephemeral Fleet` workflow with **Action: destroy**.
 
 ## Live deployment (Helm-only; ArgoCD later)
 

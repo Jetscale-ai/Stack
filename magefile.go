@@ -141,6 +141,106 @@ func ensureHelmGhcrLogin() error {
 	return cmd.Run()
 }
 
+// ensureK8sGhcrPullSecret ensures the Kind cluster can pull GHCR images by creating a docker-registry
+// secret in the given namespace and patching the default ServiceAccount to reference it.
+//
+// This mirrors the CI workflow behavior (see `.github/workflows/pipeline.yaml`).
+//
+// Required env:
+// - GITHUB_TOKEN (or GH_TOKEN): token with `read:packages`
+// Optional env:
+// - GITHUB_USER: username (if unset, we derive it from the token)
+func ensureK8sGhcrPullSecret(namespace, secretName string) error {
+	token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("GH_TOKEN"))
+	}
+	if token == "" {
+		// No token: can't create pull secret. Caller decides whether to fail or proceed.
+		return nil
+	}
+
+	username := strings.TrimSpace(os.Getenv("GITHUB_USER"))
+	if username == "" {
+		// Reuse the same GitHub API lookup as Helm login.
+		req, err := http.NewRequest("GET", "https://api.github.com/user", nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "token "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("failed to resolve GitHub username from token: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		}
+		var payload struct {
+			Login string `json:"login"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			return err
+		}
+		username = payload.Login
+	}
+	if username == "" {
+		return fmt.Errorf("could not determine GitHub username for GHCR pull secret; set GITHUB_USER")
+	}
+
+	fmt.Printf("🔐 Ensuring GHCR pull secret %q in namespace %q...\n", secretName, namespace)
+
+	// Namespace (idempotent)
+	nsCreate := exec.Command("kubectl", "create", "ns", namespace, "--dry-run=client", "-o", "yaml")
+	nsYAML, err := nsCreate.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("failed to create namespace yaml: %s", strings.TrimSpace(string(ee.Stderr)))
+		}
+		return err
+	}
+	nsApply := exec.Command("kubectl", "apply", "-f", "-")
+	nsApply.Stdin = bytes.NewReader(nsYAML)
+	nsApply.Stdout = os.Stdout
+	nsApply.Stderr = os.Stderr
+	if err := nsApply.Run(); err != nil {
+		return err
+	}
+
+	// Create secret via kubectl dry-run+apply (idempotent)
+	create := exec.Command("kubectl", "create", "secret", "docker-registry", secretName,
+		"--docker-server=ghcr.io",
+		"--docker-username="+username,
+		"--docker-password="+token,
+		"--namespace="+namespace,
+		"--dry-run=client", "-o", "yaml",
+	)
+	out, err := create.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("failed to create docker-registry secret yaml: %s", strings.TrimSpace(string(ee.Stderr)))
+		}
+		return err
+	}
+	apply := exec.Command("kubectl", "apply", "-f", "-")
+	apply.Stdin = bytes.NewReader(out)
+	apply.Stdout = os.Stdout
+	apply.Stderr = os.Stderr
+	if err := apply.Run(); err != nil {
+		return err
+	}
+
+	// Patch default SA so pods can pull
+	patch := exec.Command("kubectl", "patch", "serviceaccount", "default",
+		"-n", namespace,
+		"-p", fmt.Sprintf(`{"imagePullSecrets":[{"name":"%s"}]}`, secretName),
+	)
+	patch.Stdout = os.Stdout
+	patch.Stderr = os.Stderr
+	return patch.Run()
+}
+
 // -----------------------------------------------------------------------------
 // LOCAL DEVELOPMENT (The Inner Loop)
 // -----------------------------------------------------------------------------
@@ -249,7 +349,7 @@ func (Test) LocalE2E() error {
 		return err
 	}
 
-	stopPF, localPort, err := startPortForward("jetscale-test-local", "svc/jetscale-stack-test-backend-api", 8000)
+	stopPF, localPort, err := startPortForward("jetscale-test-local", "svc/jetscale-stack-test-backend", 8000)
 	if err != nil {
 		return fmt.Errorf("failed to port-forward: %w", err)
 	}
@@ -262,6 +362,11 @@ func (Test) LocalE2E() error {
 func (Test) CI() error {
 	fmt.Println("🧪 [E2E] Target: Kind CI (Artifacts)")
 
+	// Local parity: CI pipeline provisions the regcred secret before running mage test:ci.
+	// For local runs, do the same if a GH token is available.
+	_, _ = loadDotEnvIfPresent(".env")
+	_ = ensureK8sGhcrPullSecret("jetscale-ci", "regcred")
+
 	if err := runSkaffoldDeploy("ci-kind", "jetscale-ci"); err != nil {
 		return err
 	}
@@ -272,7 +377,7 @@ func (Test) CI() error {
 	waitCmd := exec.Command("kubectl", "wait",
 		"--namespace", "jetscale-ci",
 		"--for=condition=available",
-		"deployment/jetscale-stack-ci-backend-api",
+		"deployment/jetscale-stack-ci-backend",
 		"--timeout=120s")
 	waitCmd.Stdout = os.Stdout
 	waitCmd.Stderr = os.Stderr
@@ -280,7 +385,7 @@ func (Test) CI() error {
 		return fmt.Errorf("backend deployment failed to become available: %w", err)
 	}
 
-	stopPF, localPort, err := startPortForward("jetscale-ci", "svc/jetscale-stack-ci-backend-api", 8000)
+	stopPF, localPort, err := startPortForward("jetscale-ci", "svc/jetscale-stack-ci-backend", 8000)
 	if err != nil {
 		return fmt.Errorf("failed to port-forward: %w", err)
 	}
