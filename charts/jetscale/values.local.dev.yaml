@@ -36,24 +36,29 @@ backend-api:
     tag: "tilt"
     pullPolicy: Always
   imagePullSecrets: []
-  service:
-    type: NodePort
-    port: 8000
-    nodePort: 30000
-  command: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+  # service:
+  #   type: NodePort
+  #   port: 8000
+  #   nodePort: 30000
+  # args: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+  envFrom: null
   env:
     JETSCALE_APP_NAME: "JetScale Backend (Tilt)"
     JETSCALE_DEBUG: "true"
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale-user"
     JETSCALE_DB_PASSWORD: "jetscale-password"
-    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-stack-local-postgres:5432/jetscale"
-    JETSCALE_REDIS_URL: "redis://jetscale-stack-local-redis-master:6379/0"
+    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-local-postgres:5432/jetscale"
+    # JETSCALE_REDIS_URL: "redis://jetscale-local-redis-master:6379/0"
+    JETSCALE_REDIS_HOST: jetscale-local-redis-master
     JETSCALE_AWS_REGION: "us-east-1"
+    JETSCALE_DEFAULT_ADMIN_EMAIL: admin@jetscale.ai
+    JETSCALE_DEFAULT_ADMIN_USERNAME: admin
+    JETSCALE_DEFAULT_ADMIN_PASSWORD: admin
     PYTHONDONTWRITEBYTECODE: "1"
     PYTHONUNBUFFERED: "1"
   # Background Jobs Configuration
-  cronJobs: {}
+  cronJobs: null
 
 # 4. BACKEND WS (Dev Image + Hot Reload)
 backend-ws:
@@ -65,19 +70,21 @@ backend-ws:
     tag: "tilt"
     pullPolicy: Always
   imagePullSecrets: []
-  service:
-    type: NodePort
-    port: 8001
-    nodePort: 30001
+  # service:
+  #   type: NodePort
+  #   port: 8001
+  #   nodePort: 30001
   # command: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+  envFrom: null
   env:
     JETSCALE_APP_NAME: "JetScale Backend (Tilt)"
     JETSCALE_DEBUG: "true"
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale-user"
     JETSCALE_DB_PASSWORD: "jetscale-password"
-    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-stack-local-postgres:5432/jetscale"
-    JETSCALE_REDIS_URL: "redis://jetscale-stack-local-redis-master:6379/0"
+    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-postgres:5432/jetscale"
+    # JETSCALE_REDIS_URL: "redis://jetscale-local-redis-master:6379/0"
+    JETSCALE_REDIS_HOST: jetscale-local-redis-master
     JETSCALE_AWS_REGION: "us-east-1"
     PYTHONDONTWRITEBYTECODE: "1"
     PYTHONUNBUFFERED: "1"
@@ -89,10 +96,10 @@ frontend:
     tag: "tilt"
     pullPolicy: Always
   imagePullSecrets: []
-  service:
-    type: NodePort
-    port: 80
-    nodePort: 30002
+  # service:
+  #   type: NodePort
+  #   port: 80
+  #   nodePort: 30002
   env:
     VITE_API_BASE_URL: "http://localhost:8000"
 

@@ -324,7 +324,7 @@ func (Validate) Envs() error {
 		// Run Helm Template
 		// --dry-run: simulate install
 		// --debug: print generated manifest on failure
-		cmd := exec.Command("helm", "template", "jetscale-stack", "charts/jetscale",
+		cmd := exec.Command("helm", "template", "jetscale", "charts/jetscale",
 			"--values", jetscaleValuesFile,	
 			"--values", valuesFile,
 			"--debug")
@@ -359,7 +359,7 @@ func (Test) LocalE2E() error {
 		return err
 	}
 
-	stopPF, localPort, err := startPortForward("jetscale-test-local", "svc/jetscale-stack-test-backend", 8000)
+	stopPF, localPort, err := startPortForward("jetscale-test-local", "svc/jetscale-test-backend-api", 8000)
 	if err != nil {
 		return fmt.Errorf("failed to port-forward: %w", err)
 	}
@@ -387,7 +387,7 @@ func (Test) CI() error {
 	waitCmd := exec.Command("kubectl", "wait",
 		"--namespace", "jetscale-ci",
 		"--for=condition=available",
-		"deployment/jetscale-stack-ci-backend",
+		"deployment/jetscale-ci-backend-api",
 		"--timeout=120s")
 	waitCmd.Stdout = os.Stdout
 	waitCmd.Stderr = os.Stderr
@@ -395,7 +395,7 @@ func (Test) CI() error {
 		return fmt.Errorf("backend deployment failed to become available: %w", err)
 	}
 
-	stopPF, localPort, err := startPortForward("jetscale-ci", "svc/jetscale-stack-ci-backend", 8000)
+	stopPF, localPort, err := startPortForward("jetscale-ci", "svc/jetscale-ci-backend-api", 8000)
 	if err != nil {
 		return fmt.Errorf("failed to port-forward: %w", err)
 	}

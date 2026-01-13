@@ -256,11 +256,11 @@ jobs:
           # If the release is already in a failed state, `helm upgrade --atomic` cannot roll back
           # (there is no previously successful revision). Reset to a clean install.
           set +e
-          STATUS="$(helm status jetscale-stack --namespace jetscale-prod 2>/dev/null | awk '/^STATUS:/ {print $2}')"
+          STATUS="$(helm status jetscale --namespace jetscale-prod 2>/dev/null | awk '/^STATUS:/ {print $2}')"
           set -e
           if [ "$STATUS" = "failed" ]; then
             echo "Helm release is failed; uninstalling to reset before install/upgrade..."
-            helm uninstall jetscale-stack --namespace jetscale-prod || true
+            helm uninstall jetscale --namespace jetscale-prod || true
           else
             echo "Helm release status: ${STATUS:-not-installed}"
           fi
@@ -301,7 +301,7 @@ jobs:
         run: |
           echo "🔥 Promoting Version $VERSION to Live..."
           # Match Jetscale-IaC namespace convention: {client}-{environment}
-          helm upgrade --install jetscale-stack oci://ghcr.io/jetscale-ai/charts/jetscale-stack \
+          helm upgrade --install jetscale oci://ghcr.io/jetscale-ai/charts/jetscale \
             --version "$VERSION" \
             --namespace "${{ steps.target.outputs.namespace }}" \
             --create-namespace \
@@ -314,9 +314,9 @@ jobs:
         run: |
           set +e
           echo "=== Helm status ==="
-          helm status jetscale-stack --namespace jetscale-prod
+          helm status jetscale --namespace jetscale-prod
           echo "=== Helm history ==="
-          helm history jetscale-stack --namespace jetscale-prod || true
+          helm history jetscale --namespace jetscale-prod || true
           echo "=== K8s resources (jetscale-prod) ==="
           kubectl get all -n jetscale-prod || true
           echo "=== K8s pods (wide) ==="

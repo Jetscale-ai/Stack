@@ -967,7 +967,7 @@ jobs:
 
           # Run non-atomic so we can capture diagnostics on failure, then clean up explicitly.
           set +e
-          helm upgrade --install jetscale-stack charts/jetscale \
+          helm upgrade --install jetscale charts/jetscale \
             --namespace "${{ env.ENV_ID }}" \
             --create-namespace \
             --values envs/preview/values.yaml \
@@ -977,20 +977,21 @@ jobs:
             --set-string frontend.env.VITE_API_BASE_URL=https://${{ env.PUBLIC_HOST }} \
             --set-string ingress.hosts[0].host=${{ env.PUBLIC_HOST }} \
             --set-string ingress.annotations."external-dns\.alpha\.kubernetes\.io/hostname"=${{ env.PUBLIC_HOST }} \
-            --set-string backend.envFrom[0].secretRef.name=${{ env.ENV_ID }}-db-secret \
-            --set-string backend.envFrom[1].secretRef.name=${{ env.ENV_ID }}-redis-secret \
-            --set-string backend.envFrom[2].secretRef.name=${{ env.ENV_ID }}-common-secrets \
-            --set-string backend.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
+            --set-string backend-api.envFrom[0].secretRef.name=${{ env.ENV_ID }}-db-secret \
+            --set-string backend-api.envFrom[1].secretRef.name=${{ env.ENV_ID }}-redis-secret \
+            --set-string backend-api.envFrom[2].secretRef.name=${{ env.ENV_ID }}-common-secrets \
+            --set-string backend-api.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
+            # MISSING MORE ?
             --wait --timeout 15m
           rc=$?
           set -e
 
           if [ "$rc" -ne 0 ]; then
-            echo "::group::Diagnostics: Helm install failed (jetscale-stack)"
+            echo "::group::Diagnostics: Helm install failed (jetscale)"
             echo "env_id=${{ env.ENV_ID }}"
             echo "public_host=${{ env.PUBLIC_HOST }}"
-            helm -n "${{ env.ENV_ID }}" status jetscale-stack || true
-            helm -n "${{ env.ENV_ID }}" get all jetscale-stack || true
+            helm -n "${{ env.ENV_ID }}" status jetscale || true
+            helm -n "${{ env.ENV_ID }}" get all jetscale || true
             echo "--- kubectl: pods"
             kubectl -n "${{ env.ENV_ID }}" get pods -o wide || true
             echo "--- kubectl: all"
@@ -1004,9 +1005,12 @@ jobs:
             kubectl -n "${{ env.ENV_ID }}" logs --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=15m || true
             echo "--- kubectl: logs (previous, ns)"
             kubectl -n "${{ env.ENV_ID }}" logs --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=60m --previous || true
-            echo "--- kubectl: backend logs (current + previous)"
-            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-stack-backend --all-containers=true --tail=400 --prefix=true --since=60m || true
-            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-stack-backend --all-containers=true --tail=400 --prefix=true --since=60m --previous || true
+            echo "--- kubectl: backend-api logs (current + previous)"
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-backend-api --all-containers=true --tail=400 --prefix=true --since=60m || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-backend-api --all-containers=true --tail=400 --prefix=true --since=60m --previous || true
+            echo "--- kubectl: backend-ws logs (current + previous)"
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-backend-ws --all-containers=true --tail=400 --prefix=true --since=60m || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-backend-ws --all-containers=true --tail=400 --prefix=true --since=60m --previous || true
             echo "--- kube-system: pods"
             kubectl -n kube-system get pods -o wide || true
             echo "--- kube-system: events"
@@ -1014,7 +1018,7 @@ jobs:
             echo "::endgroup::"
 
             echo "::group::Cleanup: uninstall failed helm release (best-effort)"
-            helm -n "${{ env.ENV_ID }}" uninstall jetscale-stack --wait --timeout 5m || true
+            helm -n "${{ env.ENV_ID }}" uninstall jetscale --wait --timeout 5m || true
             echo "::endgroup::"
 
             exit "$rc"

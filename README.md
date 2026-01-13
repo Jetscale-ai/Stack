@@ -85,6 +85,7 @@ Run these commands from the `Stack/` directory (root of this repo):
 ```bash
 # 1. Create the local cluster
 kind create cluster --config kind/kind-config.yaml --name kind
+# If you already have a customized .kube/config, you can pass the argument --kubeconfig string for a specific location.
 
 # 2. Authenticate to GHCR (Required for private OCI chart dependencies)
 # Option A (recommended): create a gitignored `.env` with:

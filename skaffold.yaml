@@ -1,7 +1,7 @@
 apiVersion: skaffold/v4beta7
 kind: Config
 metadata:
-  name: jetscale-stack
+  name: jetscale
 
 # ------------------------------------------------------------------------------
 # GLOBAL BUILD: Options Only (No Artifacts)
@@ -35,7 +35,7 @@ profiles:
       kubeContext: kind-kind
       helm:
         releases:
-          - name: jetscale-stack-test
+          - name: jetscale-test
             chartPath: charts/jetscale
             namespace: jetscale-test-local
             createNamespace: true
@@ -52,7 +52,7 @@ profiles:
       kubeContext: kind-kind
       helm:
         releases:
-          - name: jetscale-stack-ci
+          - name: jetscale-ci
             chartPath: charts/jetscale
             namespace: jetscale-ci
             createNamespace: true

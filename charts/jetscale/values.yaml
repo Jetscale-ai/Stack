@@ -60,7 +60,7 @@ backend-api:
         cpu: "200m"
   # Background Jobs Configuration
   cronJobs:
-    pull-coh-recommendations:
+    pull-coh:
       schedule: "30 2 * * *"
       command: ["python3", "jobs/aws/action_pull_coh.py"]
       resources:
@@ -70,7 +70,7 @@ backend-api:
         limits:
           memory: "512Mi"
           cpu: "300m"
-    pull-co-recommendations:
+    pull-co:
       schedule: "45 2 * * *"
       command: ["python3", "jobs/aws/action_pull_co.py"]
       resources:
@@ -80,7 +80,7 @@ backend-api:
         limits:
           memory: "512Mi"
           cpu: "300m"
-    discover-aws-resources:
+    discover-aws:
       schedule: "0 3 * * *"
       activeDeadlineSeconds: 1800
       command: ["python3", "jobs/aws/discover_aws_resources.py"]
@@ -91,7 +91,7 @@ backend-api:
         limits:
           memory: "1Gi"
           cpu: "500m"
-    generate-custom-reco-from-coh:
+    generate-from-coh:
       suspend: true  # Suspended by default - enable per client as needed
       schedule: "30 2 * * *"
       command: ["python3", "jobs/aws/generate_custom_reco_from_coh.py"]
@@ -103,7 +103,7 @@ backend-api:
         limits:
           memory: "1Gi"
           cpu: "500m"
-    generate-custom-reco-from-discovery:
+    generate-from-discovery:
       schedule: "30 3 * * *"
       activeDeadlineSeconds: 1800
       command: ["python3", "jobs/aws/generate_custom_reco_from_discovery.py"]

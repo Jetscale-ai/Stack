@@ -36,7 +36,7 @@ docker_build(
 # ---------------------------
 k8s_yaml(helm(
     'charts/jetscale',
-    name='jetscale-stack-local',              # Helm release name
+    name='jetscale-local',              # Helm release name
     values=['charts/jetscale/values.local.dev.yaml'],
 ))
 
@@ -45,30 +45,30 @@ k8s_yaml(helm(
 # ---------------------------
 # backend-api (FastAPI /docs)
 k8s_resource(
-    'jetscale-stack-local-backend-api',
+    'jetscale-local-backend-api',
     port_forwards=[port_forward(8000, 8000)],  # local: 8000 -> container: 8000
 )
 
 # backend-ws
 k8s_resource(
-    'jetscale-stack-local-backend-ws',
+    'jetscale-local-backend-ws',
     port_forwards=[port_forward(8001, 8001)],  # local: 8000 -> container: 8000
 )
 
 # frontend (Nginx serving SPA)
 k8s_resource(
-    'jetscale-stack-local-frontend',
-    port_forwards=[port_forward(3002, 80)],    # local: 3002 -> container: 80
+    'jetscale-local-frontend',
+    port_forwards=[port_forward(8080, 80)],    # local: 3002 -> container: 80
 )
 
 # postgres
 k8s_resource(
-    'jetscale-stack-local-postgres',
-    port_forwards=[port_forward(5433, 5432)],  # local: 5433 -> container: 5432
+    'jetscale-local-postgres',
+    port_forwards=[port_forward(5432, 5432)],  # local: 5433 -> container: 5432
 )
 
 # redis
 k8s_resource(
-    'jetscale-stack-local-redis',
+    'jetscale-local-redis',
     port_forwards=[port_forward(6379, 6379)],  # local: 6379 -> container: 6379
 )

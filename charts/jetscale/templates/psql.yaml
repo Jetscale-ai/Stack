@@ -54,6 +54,8 @@ spec:
           emptyDir: {}
       {{- end }}
   {{- if .Values.postgres.persistence.enabled }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
   volumeClaimTemplates:
     - metadata:
         name: data

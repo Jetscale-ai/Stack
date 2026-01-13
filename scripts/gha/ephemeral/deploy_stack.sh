@@ -13,7 +13,7 @@ kubectl wait --for=condition=available deployment -n kube-system aws-load-balanc
 helm registry login ghcr.io --username jetscalebot --password "${JETSCALEBOT_GITHUB_TOKEN:?JETSCALEBOT_GITHUB_TOKEN is required}"
 (cd charts/jetscale && helm dependency build)
 
-helm upgrade --install jetscale-stack charts/jetscale \
+helm upgrade --install jetscale charts/jetscale \
   --namespace "${ENV_ID}" \
   --create-namespace \
   --atomic \
@@ -24,8 +24,9 @@ helm upgrade --install jetscale-stack charts/jetscale \
   --set-string frontend.env.VITE_API_BASE_URL="https://${PUBLIC_HOST}" \
   --set-string ingress.hosts[0].host="${PUBLIC_HOST}" \
   --set-string ingress.annotations."external-dns\.alpha\.kubernetes\.io/hostname"="${PUBLIC_HOST}" \
-  --set-string backend.envFrom[0].secretRef.name="${ENV_ID}-db-secret" \
-  --set-string backend.envFrom[1].secretRef.name="${ENV_ID}-redis-secret" \
-  --set-string backend.envFrom[2].secretRef.name="${ENV_ID}-common-secrets" \
-  --set-string backend.envFrom[3].secretRef.name="${ENV_ID}-aws-client-secret" \
+  --set-string backend-api.envFrom[0].secretRef.name="${ENV_ID}-db-secret" \
+  --set-string backend-api.envFrom[1].secretRef.name="${ENV_ID}-redis-secret" \
+  --set-string backend-api.envFrom[2].secretRef.name="${ENV_ID}-common-secrets" \
+  --set-string backend-api.envFrom[3].secretRef.name="${ENV_ID}-aws-client-secret" \
+  #Missing more?
   --wait --timeout 15m

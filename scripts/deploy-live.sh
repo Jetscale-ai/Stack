@@ -7,7 +7,7 @@ set -euo pipefail
 # Invariants: Prudence, Clarity, Concord
 
 NAMESPACE="${NAMESPACE:-jetscale-prod}"
-RELEASE="${RELEASE:-jetscale-stack}"
+RELEASE="${RELEASE:-jetscale}"
 CHART_PATH="${CHART_PATH:-charts/jetscale}"
 VALUES_FILE="${VALUES_FILE:-envs/live/values.yaml}"
 

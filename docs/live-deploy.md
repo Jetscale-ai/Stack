@@ -59,7 +59,7 @@ From the `stack/` directory:
 helm dependency build charts/jetscale
 
 # Deploy/upgrade Live into the Terraform-managed namespace
-helm upgrade --install jetscale-stack charts/jetscale \
+helm upgrade --install jetscale charts/jetscale \
   --namespace jetscale-prod \
   --create-namespace \
   --values envs/live/values.yaml

@@ -15,8 +15,15 @@ nodes:
   - containerPort: 443
     hostPort: 443
     protocol: TCP
-  # Map the Backend port directly for easy access during transition
+  # Backend API
   - containerPort: 30000
     hostPort: 8000
     protocol: TCP
-
+  # Backend WS
+  - containerPort: 30001
+    hostPort: 8001
+    protocol: TCP
+  # Frontend
+  - containerPort: 30002
+    hostPort: 80
+    protocol: TCP
