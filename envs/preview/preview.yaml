@@ -5,7 +5,6 @@ global:
   # Overridden by CI (e.g., pr-123)
   env: "ephemeral"
   client_name: "ephemeral" # overwritten by workflow
-  tenant_id: "ephemeral"   # overwritten by workflow
 
 # 1. INFRA (Managed by Terraform in AWS)
 postgres:
@@ -72,8 +71,6 @@ frontend:
 
 # 4. ROUTING
 ingress:
-  enabled: true
-  className: "alb" # Fulfilled by AWS LB Controller
   annotations:
     # Wildcard cert for *.jetscale.ai in the Live AWS account (us-east-1)
     alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:134051052096:certificate/6e3e7f72-af8e-457d-a397-8f13728dd06c"

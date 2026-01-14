@@ -5,7 +5,6 @@ global:
   # Align with Jetscale-IaC `clients/variables/jetscale.tfvars`
   env: "prod"
   client_name: "jetscale"
-  tenant_id: "jetscale-console"
 
 # 1. INFRA (Managed by Terraform in AWS)
 postgres:

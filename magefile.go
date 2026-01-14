@@ -271,10 +271,26 @@ type Validate mg.Namespace
 // Envs runs 'helm template' against all environment configurations.
 // This proves that values.yaml + templates = Valid Kubernetes YAML.
 // It does NOT require a cluster.
-func (Validate) Envs() error {
-	envs := []string{"live", "preview"}
-
+//
+// USAGE: mage validate:envs <cloudName>
+// Examples: mage validate:envs aws | mage validate:envs gcp | mage validate:envs azure
+//
+// The cloudName parameter specifies which cloud provider values file to use (envs/<cloudName>.yaml)
+func (Validate) Envs(cloudName string) error {
 	fmt.Println("🔍 Validating Environment Configurations...")
+
+	// Validate cloudName is provided
+	if cloudName == "" {
+		return fmt.Errorf(
+			"cloudName argument is required.\n\n" +
+				"Usage: mage validate:envs <cloudName>\n" +
+				"Examples:\n" +
+				"  mage validate:envs aws\n" +
+				"  mage validate:envs gcp\n" +
+				"  mage validate:envs azure\n\n" +
+				"This will use the cloud-specific values file: envs/<cloudName>.yaml",
+		)
+	}
 
 	// Local Dev QoL: load `.env` if present so devs don't need to export vars in their shell.
 	// (Safe: `.env` should be gitignored; we never print secrets.)
@@ -315,26 +331,105 @@ func (Validate) Envs() error {
 		// Generic failure
 		return fmt.Errorf("helm dependency build failed:\n%s", msg)
 	}
+		
+	// Check for cloud-specific values file
+	cloudValuesFile := filepath.Join("envs", cloudName+".yaml")
+	if _, err := os.Stat(cloudValuesFile); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf(
+				"cloud values file not found: %s\n\n"+
+				"Please ensure the file exists for cloud provider: %s\n"+
+				"Expected file: envs/%s.yaml",
+				cloudValuesFile, cloudName, cloudName,
+			)
+		}
+		return fmt.Errorf("failed to check cloud values file: %w", err)
+	}
+	fmt.Printf("   > Using cloud values file: %s\n", cloudValuesFile)
 	
-	jetscaleValuesFile  := fmt.Sprintf("charts/jetscale/values.jetscale.yaml")
-	for _, env := range envs {
-		valuesFile := fmt.Sprintf("envs/%s/values.yaml", env)
-		fmt.Printf("   > Checking %s...", valuesFile)
+	// Discover all YAML files in envs/ subdirectories
+	var valuesFiles []string
+	envsDir := "envs"
+	
+	err := filepath.Walk(envsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		// Skip directories and non-YAML files
+		if info.IsDir() {
+			return nil
+		}
+		// Match .yaml and .yml files
+		if strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml") {
+			// Skip default.yaml and envs/ top-level files
+			if strings.TrimSuffix(info.Name(), ".yaml") != "default" && filepath.Dir(path) != envsDir {
+				valuesFiles = append(valuesFiles, path)
+			}
+		}
+		return nil
+	})
+	
+	if err != nil {
+		return fmt.Errorf("failed to discover environment files: %w", err)
+	}
+	
+	if len(valuesFiles) == 0 {
+		return fmt.Errorf("no YAML files found in %s directory", envsDir)
+	}
+	
+	fmt.Printf("   > Found %d environment configuration(s)\n", len(valuesFiles))
+	
+	// Validate each discovered values file
+	for _, valuesFile := range valuesFiles {
+		fmt.Printf("   > Checking %s\n", valuesFile)
 
 		// Run Helm Template
 		// --dry-run: simulate install
 		// --debug: print generated manifest on failure
-		cmd := exec.Command("helm", "template", "jetscale", "charts/jetscale",
-			"--values", jetscaleValuesFile,	
-			"--values", valuesFile,
-			"--debug")
+		args := []string{"template", "jetscale", "charts/jetscale"}
+		var usedFiles []string
+		
+		// Add cloud-specific values file
+		args = append(args, "--values", cloudValuesFile)
+		usedFiles = append(usedFiles, cloudValuesFile)
+		
+		// Check for default.yaml or default.yml in the same directory as valuesFile
+		envDir := filepath.Dir(valuesFile)
+		var defaultValuesFile string
+		for _, defaultName := range []string{"default.yaml", "default.yml"} {
+			defaultPath := filepath.Join(envDir, defaultName)
+			if _, err := os.Stat(defaultPath); err == nil {
+				defaultValuesFile = defaultPath
+				break
+			}
+		}
+		if defaultValuesFile != "" {
+			args = append(args, "--values", defaultValuesFile)
+			usedFiles = append(usedFiles, defaultValuesFile)
+		}
+		
+		// Add environment-specific values file
+		args = append(args, "--values", valuesFile, "--debug")
+		usedFiles = append(usedFiles, valuesFile)
+		
+		// Print the files being used in order
+		fmt.Printf("     Values files (in order): ")
+		for i, f := range usedFiles {
+			if i > 0 {
+				fmt.Printf(" → ")
+			}
+			fmt.Printf("%s", f)
+		}
+		fmt.Println()
+		
+		cmd := exec.Command("helm", args...)
 
 		if out, err := cmd.CombinedOutput(); err != nil {
-			fmt.Printf("❌ FAILED\n")
+			fmt.Printf("     ❌ FAILED\n")
 			fmt.Println(string(out))
-			return fmt.Errorf("validation failed for %s", env)
+			return fmt.Errorf("validation failed for %s", valuesFile)
 		}
-		fmt.Printf("✅ Valid Syntax\n")
+		fmt.Printf("     ✅ Valid Syntax\n")
 	}
 	return nil
 }

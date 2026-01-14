@@ -981,7 +981,10 @@ jobs:
             --set-string backend-api.envFrom[1].secretRef.name=${{ env.ENV_ID }}-redis-secret \
             --set-string backend-api.envFrom[2].secretRef.name=${{ env.ENV_ID }}-common-secrets \
             --set-string backend-api.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
-            # MISSING MORE ?
+            --set-string backend-ws.envFrom[0].secretRef.name=${{ env.ENV_ID }}-db-secret \
+            --set-string backend-ws.envFrom[1].secretRef.name=${{ env.ENV_ID }}-redis-secret \
+            --set-string backend-ws.envFrom[2].secretRef.name=${{ env.ENV_ID }}-common-secrets \
+            --set-string backend-ws.envFrom[3].secretRef.name=${{ env.ENV_ID }}-aws-client-secret \
             --wait --timeout 15m
           rc=$?
           set -e
