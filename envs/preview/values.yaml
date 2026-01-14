@@ -20,7 +20,7 @@ backend-api:
   replicaCount: 1
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "1.2.4" # Match live (known-good)
+    tag: "3.1.0" # Match live (known-good)
     pullPolicy: Always
 
   # NOTE: Secret names are tenant-specific (e.g., pr-123-db-secret).
@@ -65,7 +65,7 @@ frontend:
   enabled: true
   image:
     repository: ghcr.io/jetscale-ai/frontend
-    tag: "2.0.4" # Overridden by CI if needed
+    tag: "2.1.0" # Overridden by CI if needed
   env:
     # The workflow injects the correct host (e.g., https://pr-123.jetscale.ai)
     VITE_API_BASE_URL: "https://preview.jetscale.ai"
