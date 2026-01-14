@@ -17,5 +17,8 @@ frontend:
     tag: staging-jetscale-20260106-233814-797dbe3
 
 ingress:
+  annotations:
+    # ExternalDNS (explicit intent)
+    external-dns.alpha.kubernetes.io/hostname: "jetscale.staging.jetscale.ai"
   hosts:
     jetscale.staging.jetscale.ai:
