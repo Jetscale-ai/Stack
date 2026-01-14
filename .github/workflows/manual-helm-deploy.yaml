@@ -1,0 +1,238 @@
+name: Manual Helm Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment_type:
+        description: 'Environment type (staging, live)'
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - live
+      client_name:
+        description: 'Client name (e.g., jetscale, console)'
+        required: true
+        default: jetscale
+        type: string
+      cloud_provider:
+        description: 'Cloud provider'
+        required: true
+        type: choice
+        default: 'aws'
+        options:
+          - aws
+      aws_region:
+        description: 'Client/Cluster AWS Region'
+        required: true
+        type: choice
+        default: 'us-east-1'
+        options:
+          - us-east-1
+          - us-west-2
+          - eu-west-1
+
+# Required for OIDC
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Configuration
+    runs-on: ubuntu-latest
+    outputs:
+      values_files: ${{ steps.build_values.outputs.files }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build values file list
+        id: build_values
+        run: |
+          # Build the list of values files based on the tiered structure
+          # Order: base -> cloud provider -> environment defaults -> client-specific
+          
+          VALUES_FILES=""
+          
+          # 1. Cloud provider values (required)
+          CLOUD_VALUES="envs/${{ inputs.cloud_provider }}.yaml"
+          if [ ! -f "$CLOUD_VALUES" ]; then
+            echo "❌ Cloud provider values file not found: $CLOUD_VALUES"
+            exit 1
+          fi
+          VALUES_FILES="$CLOUD_VALUES"
+          
+          # 2. Environment defaults (optional)
+          ENV_DEFAULTS="envs/${{ inputs.environment_type }}/default.yaml"
+          if [ -f "$ENV_DEFAULTS" ]; then
+            VALUES_FILES="$VALUES_FILES,$ENV_DEFAULTS"
+          fi
+          
+          # 3. Client-specific values (required)
+          CLIENT_VALUES="envs/${{ inputs.environment_type }}/${{ inputs.client_name }}.yaml"
+          if [ ! -f "$CLIENT_VALUES" ]; then
+            echo "❌ Client values file not found: $CLIENT_VALUES"
+            exit 1
+          fi
+          VALUES_FILES="$VALUES_FILES,$CLIENT_VALUES"
+          
+          echo "files=$VALUES_FILES" >> $GITHUB_OUTPUT
+          
+          echo "✅ Values files to be applied (in order):"
+          echo "$VALUES_FILES" | tr ',' '\n' | sed 's/^/  - /'
+
+  helm-diff:
+    name: Helm Diff
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deployer
+          aws-region: ${{ inputs.aws_region }}
+          role-session-name: github-actions-helm-diff
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+
+      - name: Install Helm Diff Plugin
+        run: |
+          helm plugin install https://github.com/databus23/helm-diff || true
+          helm plugin list
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ inputs.aws_region }} \
+            --name ${{ inputs.client_name }}-${{ inputs.environment_type }}
+          
+          # Verify connection
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Login to GHCR (Helm)
+        env:
+          BOT_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+        run: |
+          echo "$BOT_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
+
+      - name: Update Helm Dependencies
+        run: |
+          cd charts/jetscale
+          helm dependency update
+
+      - name: Run Helm Diff
+        id: helm_diff
+        run: |
+          # Build values flags from comma-separated list
+          VALUES_FLAGS=""
+          IFS=',' read -ra FILES <<< "${{ needs.validate.outputs.values_files }}"
+          for file in "${FILES[@]}"; do
+            VALUES_FLAGS="$VALUES_FLAGS --values $file"
+          done
+          
+          echo "📊 Running Helm diff..."
+          echo "Release: ${{ inputs.client_name }}"
+          echo "Namespace: ${{ inputs.client_name }}-${{ inputs.environment_type }}"
+          echo "Values files: ${{ needs.validate.outputs.values_files }}"
+          
+          # Run diff and capture output
+          set +e
+          helm diff upgrade ${{ inputs.client_name }} ./charts/jetscale \
+            --namespace ${{ inputs.client_name }}-${{ inputs.environment_type }} \
+            --allow-unreleased \
+            $VALUES_FLAGS \
+            --context 5 \
+            --color
+          DIFF_EXIT_CODE=$?
+          set -e
+          
+          # Check if there are changes
+          if [ $DIFF_EXIT_CODE -eq 0 ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "📋 No changes detected"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "📋 Changes detected"
+          fi
+
+      - name: Check for changes
+        if: steps.helm_diff.outputs.has_changes == 'false'
+        run: |
+          echo "⚠️ No changes detected. Deployment would be a no-op."
+          echo "If you expected changes, verify your values files."
+
+  helm-deploy:
+    name: Helm Deploy
+    needs: [validate, helm-diff]
+    runs-on: ubuntu-latest
+    # Use GitHub environment for manual approval
+    # This will require manual approval before proceeding
+    environment: ${{ inputs.environment_type }}-${{ inputs.client_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deployer
+          aws-region: ${{ inputs.aws_region }}
+          role-session-name: github-actions-helm-deploy
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ inputs.aws_region }} \
+            --name ${{ inputs.client_name }}-${{ inputs.environment_type }}
+          
+          # Verify connection
+          kubectl cluster-info
+
+      - name: Login to GHCR (Helm)
+        env:
+          BOT_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+        run: |
+          echo "$BOT_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
+
+      - name: Update Helm Dependencies
+        run: |
+          cd charts/jetscale
+          helm dependency update
+
+      - name: Deploy with Helm
+        run: |
+          # Build values flags from comma-separated list
+          VALUES_FLAGS=""
+          IFS=',' read -ra FILES <<< "${{ needs.validate.outputs.values_files }}"
+          for file in "${FILES[@]}"; do
+            VALUES_FLAGS="$VALUES_FLAGS --values $file"
+          done
+          
+          echo "🚀 Deploying Helm release..."
+          echo "Release: ${{ inputs.client_name }}"
+          echo "Namespace: ${{ inputs.client_name }}-${{ inputs.environment_type }}"
+          
+          helm upgrade --install ${{ inputs.client_name }} ./charts/jetscale \
+            --namespace ${{ inputs.client_name }}-${{ inputs.environment_type }} \
+            --create-namespace \
+            $VALUES_FLAGS \
+            --wait \
+            --timeout 10m \
+            --atomic \
+            --cleanup-on-fail
+          
+          echo "✅ Deployment completed successfully"
