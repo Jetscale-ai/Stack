@@ -29,11 +29,55 @@ terraform init \
   -backend-config="key=ephemeral/${ENV_ID}/terraform.tfstate" \
   -backend-config="region=${REGION}"
 
+terraform_import_with_lock_retry() {
+  # Terraform import is lock-protected. In CI we occasionally inherit a stale S3 lock
+  # (e.g. previous runner crashed). If we hit a lock error, force-unlock and retry once.
+  local addr="$1"
+  local import_id="$2"
+
+  echo "::group::Terraform Import: ${addr}"
+  echo "import_id=${import_id}"
+
+  set +e
+  local out rc
+  out="$(terraform import -input=false -no-color "${addr}" "${import_id}" 2>&1)"
+  rc=$?
+  set -e
+  echo "${out}"
+
+  if [[ "${rc}" -eq 0 ]]; then
+    echo "::endgroup::"
+    return 0
+  fi
+
+  if echo "${out}" | grep -Eq "Error acquiring the state lock|PreconditionFailed"; then
+    # Extract lock UUID from output.
+    local lock_id
+    lock_id="$(echo "${out}" | grep -oE '[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}' | head -n 1 || true)"
+    echo "lock_error=true"
+    echo "parsed_lock_id=${lock_id:-unknown}"
+    if [[ -n "${lock_id:-}" ]]; then
+      echo "🔓 Forcing unlock for stale lock: ${lock_id}"
+      terraform force-unlock -force "${lock_id}" || true
+
+      echo "🔁 Retrying terraform import after force-unlock..."
+      set +e
+      out="$(terraform import -input=false -no-color "${addr}" "${import_id}" 2>&1)"
+      rc=$?
+      set -e
+      echo "${out}"
+    fi
+  fi
+
+  echo "::endgroup::"
+  return "${rc}"
+}
+
 VPC_ID="$(aws ec2 describe-vpcs --filters "Name=tag:jetscale.env_id,Values=${ENV_ID}" --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "None")"
 if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
   if ! terraform state list aws_vpc.main >/dev/null 2>&1; then
     echo "📥 Importing existing VPC: ${VPC_ID}"
-    terraform import aws_vpc.main "${VPC_ID}" || echo "⚠️ VPC import failed (ignoring)"
+    terraform_import_with_lock_retry aws_vpc.main "${VPC_ID}" || echo "⚠️ VPC import failed (ignoring)"
   else
     echo "✅ VPC already in state"
   fi
@@ -42,7 +86,7 @@ if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
   if [[ "${IGW_ID}" != "None" && -n "${IGW_ID}" ]]; then
     if ! terraform state list aws_internet_gateway.main >/dev/null 2>&1; then
       echo "📥 Importing IGW: ${IGW_ID}"
-      terraform import aws_internet_gateway.main "${IGW_ID}" || echo "⚠️ IGW import failed (ignoring)"
+      terraform_import_with_lock_retry aws_internet_gateway.main "${IGW_ID}" || echo "⚠️ IGW import failed (ignoring)"
     fi
   fi
 
@@ -78,7 +122,7 @@ if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
       return 0
     fi
     echo "📥 Importing route table: ${addr} -> ${rtb_id}"
-    terraform import "${addr}" "${rtb_id}" || echo "⚠️ route table import failed (ignoring)"
+    terraform_import_with_lock_retry "${addr}" "${rtb_id}" || echo "⚠️ route table import failed (ignoring)"
   }
 
   import_route_table 'aws_route_table.public' "${PUBLIC_RT_ID}"
@@ -108,7 +152,7 @@ if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
         return 0
       fi
       echo "📥 Importing subnet: ${addr} -> ${subnet_id} (name=${name_tag} az=${az})"
-      terraform import "${addr}" "${subnet_id}" || echo "⚠️ subnet import failed (ignoring)"
+      terraform_import_with_lock_retry "${addr}" "${subnet_id}" || echo "⚠️ subnet import failed (ignoring)"
     }
 
     get_subnet_id_by_name_az() {
@@ -153,7 +197,7 @@ if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
         echo "⚠️ subnet ${subnet_id} associated to ${current_rtb_id} (expected ${expected_rtb_id}); importing current association for replacement."
       fi
       echo "📥 Importing route table association: ${addr} -> ${subnet_id}/${current_rtb_id}"
-      terraform import "${addr}" "${subnet_id}/${current_rtb_id}" || echo "⚠️ route table association import failed (ignoring)"
+      terraform_import_with_lock_retry "${addr}" "${subnet_id}/${current_rtb_id}" || echo "⚠️ route table association import failed (ignoring)"
     }
 
     import_route_table_assoc 'aws_route_table_association.public[0]' "${PUBLIC_SUBNET_1_ID}" "${PUBLIC_RT_ID}"
@@ -293,7 +337,7 @@ if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
   if [[ "${NAT_ID}" != "None" && -n "${NAT_ID}" ]]; then
     if ! terraform state list 'aws_nat_gateway.main[0]' >/dev/null 2>&1; then
       echo "📥 Importing NAT Gateway: ${NAT_ID}"
-      terraform import 'aws_nat_gateway.main[0]' "${NAT_ID}" || echo "⚠️ NAT import failed (ignoring)"
+      terraform_import_with_lock_retry 'aws_nat_gateway.main[0]' "${NAT_ID}" || echo "⚠️ NAT import failed (ignoring)"
     fi
   else
     if [[ "${ENABLE_NAT}" == "true" && "${EIP_ALLOC_ID}" != "None" && -n "${EIP_ALLOC_ID}" ]]; then
@@ -303,7 +347,7 @@ if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
       if [[ "${NAT_ID}" != "None" && -n "${NAT_ID}" ]]; then
         if ! terraform state list 'aws_nat_gateway.main[0]' >/dev/null 2>&1; then
           echo "📥 Importing NAT Gateway (from EIP association): ${NAT_ID}"
-          terraform import 'aws_nat_gateway.main[0]' "${NAT_ID}" || echo "⚠️ NAT import failed (ignoring)"
+          terraform_import_with_lock_retry 'aws_nat_gateway.main[0]' "${NAT_ID}" || echo "⚠️ NAT import failed (ignoring)"
         fi
       else
       wait_for_eip_free "${EIP_ALLOC_ID}"
@@ -323,7 +367,7 @@ if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
         echo "⚠️ NAT EIP not found for ${NAME_PREFIX}; Terraform may allocate a new EIP."
       else
         echo "📥 Importing NAT EIP: aws_eip.nat[0] -> ${EIP_ALLOC_ID}"
-        terraform import 'aws_eip.nat[0]' "${EIP_ALLOC_ID}" || echo "⚠️ EIP import failed (ignoring)"
+        terraform_import_with_lock_retry 'aws_eip.nat[0]' "${EIP_ALLOC_ID}" || echo "⚠️ EIP import failed (ignoring)"
       fi
     fi
   fi
