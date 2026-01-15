@@ -2,6 +2,8 @@ name: "Ephemeral Cluster per PR"
 
 on:
   pull_request:
+    types: [labeled, opened, reopened, synchronize, ready_for_review]
+  issues:
     types: [labeled]
   workflow_dispatch:
     inputs:
@@ -23,7 +25,7 @@ permissions:
 
 concurrency:
   # Include inputs.env_id for workflow_dispatch to avoid parallel runs fighting for the same TF state.
-  group: ephemeral-${{ inputs.env_id || github.event.pull_request.number || github.sha }}
+  group: ephemeral-${{ inputs.env_id || github.event.pull_request.number || github.event.issue.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -44,7 +46,8 @@ jobs:
     # Guard: Run if Manual OR (PR Label == 'preview')
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.label.name == 'preview')
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'preview')) ||
+      (github.event_name == 'issues' && github.event.issue.pull_request && contains(github.event.issue.labels.*.name, 'preview'))
 
     environment:
       # Allow per-PR environment secrets (e.g. env `pr-123`) to override defaults without clobbering
@@ -54,7 +57,7 @@ jobs:
       # 1) workflow_dispatch inputs.env_id (already in form pr-123)
       # 2) pull_request number -> pr-<n>
       # 3) fallback: "ephemeral" (no per-PR secret isolation)
-      name: ${{ inputs.env_id || format('pr-{0}', github.event.pull_request.number) || 'ephemeral' }}
+      name: ${{ inputs.env_id || format('pr-{0}', github.event.pull_request.number || github.event.issue.number) || 'ephemeral' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -72,6 +75,8 @@ jobs:
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             PR_NUMBER="${{ github.event.number }}"
+          elif [ "${{ github.event_name }}" = "issues" ]; then
+            PR_NUMBER="${{ github.event.issue.number }}"
           else
             if [ -n "${{ inputs.env_id }}" ]; then
               ENV_ID="${{ inputs.env_id }}"
