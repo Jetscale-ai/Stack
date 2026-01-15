@@ -287,6 +287,73 @@ if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2
   echo "::endgroup::"
 fi
 
+# -------------------------------------------------------------------
+# ✅ Justified Action: Import pre-existing EKS access entry into TF state
+# -------------------------------------------------------------------
+#
+# Goal:
+# - The EKS cluster creator path (and/or our bootstrap safety calls) can create an EKS access entry
+#   for the GitHub Actions deployer role before Terraform reaches `aws_eks_access_entry.current_caller`.
+# - On fresh bootstraps where state was pruned/recreated, that access entry can exist in AWS while
+#   missing from Terraform state, causing a hard failure:
+#     ResourceInUseException: access entry resource is already in use
+#
+# Invariants: Prudence, Vigor, Concord
+#
+import_tf_resource_best_effort() {
+  local addr="$1"
+  local id="$2"
+
+  if terraform state list "${addr}" >/dev/null 2>&1; then
+    echo "✅ already in state: ${addr}"
+    return 0
+  fi
+
+  echo "::group::Terraform Import: ${addr}"
+  echo "import_id=${id}"
+  set +e
+  out="$(terraform import -input=false -no-color "${addr}" "${id}" 2>&1)"
+  rc=$?
+  set -e
+  echo "${out}"
+  echo "::endgroup::"
+
+  if [[ "${rc}" -eq 0 ]]; then
+    return 0
+  fi
+
+  if echo "${out}" | grep -Eqi "Cannot import non-existent remote object|Resource already managed by Terraform"; then
+    echo "⚠️ import skipped: ${addr}"
+    return 0
+  fi
+
+  return "${rc}"
+}
+
+if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1; then
+  echo "::group::Bootstrap: Import EKS access entry into Terraform state"
+
+  ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
+  PRINCIPAL_ARN="arn:aws:iam::${ACCOUNT_ID}:role/github-actions-deployer"
+  POLICY_ARN="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  ENTRY_ID="${ENV_ID}:${PRINCIPAL_ARN}"
+  ASSOC_ID="${ENV_ID}#${PRINCIPAL_ARN}#${POLICY_ARN}"
+
+  if aws eks describe-access-entry --cluster-name "${ENV_ID}" --region "${REGION}" --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1; then
+    import_tf_resource_best_effort 'aws_eks_access_entry.current_caller[0]' "${ENTRY_ID}"
+  else
+    echo "ℹ️ EKS access entry not present yet; Terraform will create it."
+  fi
+
+  # The policy association may or may not exist yet; import if present, otherwise let Terraform create it.
+  if aws eks list-associated-access-policies --cluster-name "${ENV_ID}" --region "${REGION}" --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1; then
+    import_tf_resource_best_effort 'aws_eks_access_policy_association.current_caller_admin[0]' "${ASSOC_ID}"
+  fi
+
+  echo "::endgroup::"
+fi
+
 import_helm_release() {
   local addr="$1"
   local id="$2"
