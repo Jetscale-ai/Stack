@@ -9,20 +9,28 @@ REGION="${AWS_REGION:-us-east-1}"
 # Ensure all kubeconfig-reading tools/providers use the same config path.
 export KUBECONFIG="${HOME}/.kube/config"
 
-ensure_kubeconfig() {
+ensure_kubeconfig_required() {
   # Terraform's kubernetes/helm providers will fail with:
   #   "Kubernetes cluster unreachable: invalid configuration: no configuration has been provided"
   # unless a kubeconfig file exists and points at the cluster.
   mkdir -p "${HOME}/.kube"
 
-  # Only attempt kubeconfig generation if cluster exists.
-  if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1; then
-    # If a previous step left a placeholder kubeconfig (non-empty but invalid), remove it.
-    rm -f "${KUBECONFIG}"
-
-    # This MUST succeed; otherwise Helm/Kubernetes providers cannot talk to the cluster.
-    aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}"
+  if ! command -v kubectl >/dev/null 2>&1; then
+    echo "::error::kubectl is not available on PATH; cannot run Helm/Kubernetes provider operations."
+    exit 1
   fi
+
+  # At points we call this, the cluster is expected to exist.
+  if ! aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1; then
+    echo "::error::EKS cluster ${ENV_ID} not found yet; cannot run Helm/Kubernetes provider operations."
+    exit 1
+  fi
+
+  # If a previous step left a placeholder kubeconfig (non-empty but invalid), remove it.
+  rm -f "${KUBECONFIG}"
+
+  # This MUST succeed; otherwise Helm/Kubernetes providers cannot talk to the cluster.
+  aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}"
 
   if [[ ! -s "${KUBECONFIG}" ]]; then
     echo "::error::kubeconfig is missing/empty at ${KUBECONFIG}. Helm/Kubernetes providers will be unable to connect."
@@ -57,9 +65,6 @@ if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2
   aws eks create-access-entry --cluster-name "${ENV_ID}" --region "${REGION}" --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1 || true
   aws eks associate-access-policy --cluster-name "${ENV_ID}" --region "${REGION}" --principal-arn "${PRINCIPAL_ARN}" --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster >/dev/null 2>&1 || true
 fi
-
-# Ensure kubeconfig exists before any helm/kubernetes provider operations (imports, plans, applies).
-ensure_kubeconfig
 
 # ✅ Justified Action: Prevent destructive replacement on reruns
 BUCKET="jetscale-terraform-state"
@@ -133,7 +138,7 @@ fi
 # Wait explicitly for RBAC to propagate.
 if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1; then
   echo "::group::Wait: Kubernetes RBAC ready for Terraform (aws-auth / namespace / serviceaccounts)"
-  aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}" || true
+  ensure_kubeconfig_required
 
   ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
   PRINCIPAL_ARN="arn:aws:iam::${ACCOUNT_ID}:role/github-actions-deployer"
@@ -274,6 +279,7 @@ import_helm_release() {
   return "${rc}"
 }
 
+ensure_kubeconfig_required
 import_helm_release 'helm_release.aws_load_balancer_controller[0]' 'kube-system/aws-load-balancer-controller'
 import_helm_release 'helm_release.external_dns[0]' 'kube-system/external-dns'
 import_helm_release 'helm_release.external_secrets[0]' 'external-secrets-system/external-secrets'
