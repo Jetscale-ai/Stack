@@ -7,10 +7,11 @@ REGION="${AWS_REGION:-us-east-1}"
 
 echo "🔧 Starting State Reconciliation..."
 
-# Reconciliation must NOT poison the runner's default kubeconfig.
-# Historically we wrote an empty placeholder to ~/.kube/config which caused later
-# Helm/Kubernetes provider operations to fail with "no configuration provided".
-# Use an isolated kubeconfig for this step only.
+# Reconciliation uses an isolated kubeconfig for kubectl operations.
+#
+# Note: Jetscale-IaC's *ephemeral* Terraform providers validate `~/.kube/config` explicitly via
+# `config_path`, so we also materialize a kubeconfig at that path (copy of the isolated file or
+# an empty placeholder when the cluster doesn't exist yet).
 KUBECONFIG_DIR="${RUNNER_TEMP:-/tmp}"
 export KUBECONFIG="${KUBECONFIG_DIR}/kubeconfig-${ENV_ID}.yaml"
 
@@ -20,11 +21,20 @@ if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2
     --region "${REGION}" \
     --kubeconfig "${KUBECONFIG}" \
     >/dev/null 2>&1 || true
-else
+fi
+
+# Ensure a kubeconfig file exists for Terraform provider validation.
+#
+# Jetscale-IaC's ephemeral provider configuration sets:
+#   config_path = "~/.kube/config"
+# and Terraform will error (or cause imports to fail) if that file does not exist.
+#
+# We keep reconciliation's operational kubeconfig isolated, but we also copy it into
+# ~/.kube/config so Terraform can validate provider configuration reliably.
+if [[ ! -s "${KUBECONFIG}" ]]; then
   # Keep Terraform providers from trying localhost when EKS doesn't exist yet,
-  # but do it in our isolated kubeconfig file (never in ~/.kube/config).
-  if [[ ! -s "${KUBECONFIG}" ]]; then
-    cat > "${KUBECONFIG}" <<'EOF'
+  # but do it in our isolated kubeconfig file (never in ~/.kube/config directly).
+  cat > "${KUBECONFIG}" <<'EOF'
 apiVersion: v1
 kind: Config
 clusters: []
@@ -32,8 +42,10 @@ contexts: []
 users: []
 current-context: ""
 EOF
-  fi
 fi
+
+mkdir -p "${HOME}/.kube"
+cp -f "${KUBECONFIG}" "${HOME}/.kube/config"
 
 terraform init \
   -backend-config="bucket=jetscale-terraform-state" \
