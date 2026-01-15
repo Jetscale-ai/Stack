@@ -169,6 +169,48 @@ if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
   NAT_STATE="unknown"
   EIP_ALLOC_ID="None"
 
+  adopt_nat_from_eip_association() {
+    # If the EIP is already associated to a NAT Gateway ENI, treat that as "good enough"
+    # and adopt the NATGW + EIP into Terraform state rather than waiting for disassociation.
+    #
+    # This prevents reruns from timing out when the EIP is correctly in-use by the env's NATGW.
+    local alloc_id="$1"
+    if [[ "${alloc_id}" == "None" || -z "${alloc_id}" ]]; then
+      return 1
+    fi
+
+    local eni_id assoc_id iface_type desc inferred_nat_id inferred_state
+    eni_id="$(aws ec2 describe-addresses --allocation-ids "${alloc_id}" \
+      --query 'Addresses[0].NetworkInterfaceId' --output text 2>/dev/null || echo "None")"
+    assoc_id="$(aws ec2 describe-addresses --allocation-ids "${alloc_id}" \
+      --query 'Addresses[0].AssociationId' --output text 2>/dev/null || echo "None")"
+
+    if [[ "${eni_id}" == "None" || -z "${eni_id}" ]]; then
+      return 1
+    fi
+
+    iface_type="$(aws ec2 describe-network-interfaces --network-interface-ids "${eni_id}" \
+      --query 'NetworkInterfaces[0].InterfaceType' --output text 2>/dev/null || echo "None")"
+    if [[ "${iface_type}" != "nat_gateway" ]]; then
+      return 1
+    fi
+
+    desc="$(aws ec2 describe-network-interfaces --network-interface-ids "${eni_id}" \
+      --query 'NetworkInterfaces[0].Description' --output text 2>/dev/null || echo "")"
+    inferred_nat_id="$(echo "${desc}" | grep -oE 'nat-[0-9a-f]+' | head -n 1 || true)"
+    if [[ -z "${inferred_nat_id}" ]]; then
+      return 1
+    fi
+
+    inferred_state="$(aws ec2 describe-nat-gateways --nat-gateway-ids "${inferred_nat_id}" \
+      --query 'NatGateways[0].State' --output text 2>/dev/null || echo "unknown")"
+
+    echo "ℹ️ EIP ${alloc_id} is already associated (association=${assoc_id}) to NAT gateway ${inferred_nat_id} (state=${inferred_state}). Adopting instead of waiting for 'free'."
+    NAT_ID="${inferred_nat_id}"
+    NAT_STATE="${inferred_state}"
+    return 0
+  }
+
   wait_for_eip_free() {
     local alloc_id="$1"
     if [[ "${alloc_id}" == "None" || -z "${alloc_id}" ]]; then
@@ -182,6 +224,13 @@ if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
         echo "✅ EIP ${alloc_id} is free"
         return 0
       fi
+
+      # If the association is to a NAT Gateway ENI, do not wait forever for "free" on reruns.
+      # Instead, adopt the NATGW and proceed (Terraform will keep the association stable).
+      if adopt_nat_from_eip_association "${alloc_id}"; then
+        return 0
+      fi
+
       echo "⏳ Waiting for EIP ${alloc_id} to be free (association=${assoc_id}) [${i}/60]"
       sleep 10
     done
@@ -248,7 +297,17 @@ if [[ "${VPC_ID}" != "None" && -n "${VPC_ID}" ]]; then
     fi
   else
     if [[ "${ENABLE_NAT}" == "true" && "${EIP_ALLOC_ID}" != "None" && -n "${EIP_ALLOC_ID}" ]]; then
+      # If we couldn't find the NATGW through filters, but the EIP is already associated to a NATGW ENI,
+      # adopt that NATGW instead of waiting for the EIP to become "free".
+      adopt_nat_from_eip_association "${EIP_ALLOC_ID}" || true
+      if [[ "${NAT_ID}" != "None" && -n "${NAT_ID}" ]]; then
+        if ! terraform state list 'aws_nat_gateway.main[0]' >/dev/null 2>&1; then
+          echo "📥 Importing NAT Gateway (from EIP association): ${NAT_ID}"
+          terraform import 'aws_nat_gateway.main[0]' "${NAT_ID}" || echo "⚠️ NAT import failed (ignoring)"
+        fi
+      else
       wait_for_eip_free "${EIP_ALLOC_ID}"
+      fi
     fi
   fi
 
