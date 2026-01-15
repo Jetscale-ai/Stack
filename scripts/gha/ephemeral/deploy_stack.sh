@@ -5,6 +5,8 @@ set -euo pipefail
 : "${PUBLIC_HOST:?PUBLIC_HOST is required}"
 : "${CLUSTER_NAME:?CLUSTER_NAME is required}"
 
+RELEASE="${ENV_ID}"
+
 aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region us-east-1
 
 echo "⏳ Waiting for AWS Load Balancer Controller..."
@@ -37,7 +39,13 @@ global:
   client_name: "${ENV_ID}"
   tenant_id: "${ENV_ID}"
 
+externalSecret:
+  app:
+    enabled: false
+
 frontend:
+  imagePullSecrets:
+    - name: jetscale-registry-secret
   env:
     VITE_API_BASE_URL: "https://${PUBLIC_HOST}"
 
@@ -48,29 +56,48 @@ ingress:
     ${PUBLIC_HOST}:
 
 backend-api:
+  imagePullSecrets:
+    - name: jetscale-registry-secret
+  serviceAccount:
+    create: false
+    name: "${ENV_ID}-service-account"
   envFrom:
-    - secretRef:
-        name: "${ENV_ID}-db-secret"
-    - secretRef:
-        name: "${ENV_ID}-redis-secret"
-    - secretRef:
-        name: "${ENV_ID}-common-secrets"
-    - secretRef:
-        name: "${ENV_ID}-aws-client-secret"
+    config: configMapRef
+    db-secret: secretRef
+    redis-secret: secretRef
+    common-secrets: secretRef
+    aws-client-secret: secretRef
+  cronJobs: null
 
 backend-ws:
+  imagePullSecrets:
+    - name: jetscale-registry-secret
+  serviceAccount:
+    create: false
+    name: "${ENV_ID}-service-account"
   envFrom:
-    - secretRef:
-        name: "${ENV_ID}-db-secret"
-    - secretRef:
-        name: "${ENV_ID}-redis-secret"
-    - secretRef:
-        name: "${ENV_ID}-common-secrets"
-    - secretRef:
-        name: "${ENV_ID}-aws-client-secret"
+    config: configMapRef
+    db-secret: secretRef
+    redis-secret: secretRef
+    common-secrets: secretRef
+    aws-client-secret: secretRef
 EOF
 
-helm upgrade --install jetscale charts/jetscale \
+# Reset legacy/failed releases to avoid name drift across iterations.
+echo "🧹 Reset Helm releases (best-effort)"
+if helm -n "${ENV_ID}" status jetscale >/dev/null 2>&1; then
+  echo "Found legacy release 'jetscale' in namespace; uninstalling..."
+  helm -n "${ENV_ID}" uninstall jetscale --wait --timeout 5m || true
+fi
+set +e
+STATUS="$(helm -n "${ENV_ID}" status "${RELEASE}" 2>/dev/null | awk '/^STATUS:/ {print $2}')"
+set -e
+if [[ "${STATUS:-}" == "failed" ]]; then
+  echo "Release ${RELEASE} is failed; uninstalling to reset before install/upgrade..."
+  helm -n "${ENV_ID}" uninstall "${RELEASE}" --wait --timeout 5m || true
+fi
+
+helm upgrade --install "${RELEASE}" charts/jetscale \
   --namespace "${ENV_ID}" \
   --create-namespace \
   --atomic \

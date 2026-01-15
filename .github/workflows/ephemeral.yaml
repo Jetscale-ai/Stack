@@ -424,6 +424,7 @@ jobs:
         if: inputs.action != 'destroy'
         run: |
           set -euo pipefail
+          RELEASE="${{ env.ENV_ID }}"
 
           # Use the authoritative Terraform output
           aws eks update-kubeconfig --name ${{ env.CLUSTER_NAME }} --region us-east-1
@@ -433,7 +434,6 @@ jobs:
 
           # Precreate required Kubernetes primitives for Helm install:
           # - GHCR pull secret expected by charts/pods (`jetscale-registry-secret`)
-          # - ServiceAccount expected by backend (`jetscale-service-account`)
           #
           # ✅ Justified Action: Deterministic prerequisites for atomic Helm installs
           # Invariants: Prudence, Vigor, Concord
@@ -441,9 +441,6 @@ jobs:
             --docker-server=ghcr.io \
             --docker-username=jetscalebot \
             --docker-password="${{ secrets.JETSCALEBOT_GHCR_PULL_TOKEN }}" \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-          kubectl -n "${{ env.ENV_ID }}" create serviceaccount jetscale-service-account \
             --dry-run=client -o yaml | kubectl apply -f -
 
           # Avoid leaking passwords in process args (and suppress Helm warning).
@@ -474,7 +471,15 @@ jobs:
             client_name: "${{ env.ENV_ID }}"
             tenant_id: "${{ env.ENV_ID }}"
 
+          # Ephemeral: the IaC does not manage `${client_name}-${env}/application/config` by default.
+          # Disable this ExternalSecret so backend pods don't hard-fail on a missing secret.
+          externalSecret:
+            app:
+              enabled: false
+
           frontend:
+            imagePullSecrets:
+              - name: jetscale-registry-secret
             env:
               VITE_API_BASE_URL: "https://${{ env.PUBLIC_HOST }}"
 
@@ -485,31 +490,54 @@ jobs:
               ${{ env.PUBLIC_HOST }}:
 
           backend-api:
+            imagePullSecrets:
+              - name: jetscale-registry-secret
+            serviceAccount:
+              create: false
+              name: "${{ env.ENV_ID }}-service-account"
+            # IMPORTANT: backend chart expects envFrom as a map (name -> secretRef/configMapRef).
+            # It prefixes the Helm release name to build the actual ref name:
+            #   <release>-db-secret, <release>-redis-secret, etc.
             envFrom:
-              - secretRef:
-                  name: "${{ env.ENV_ID }}-db-secret"
-              - secretRef:
-                  name: "${{ env.ENV_ID }}-redis-secret"
-              - secretRef:
-                  name: "${{ env.ENV_ID }}-common-secrets"
-              - secretRef:
-                  name: "${{ env.ENV_ID }}-aws-client-secret"
+              config: configMapRef
+              db-secret: secretRef
+              redis-secret: secretRef
+              common-secrets: secretRef
+              aws-client-secret: secretRef
+            # Preview safety: disable background cronjobs in ephemeral.
+            cronJobs: null
 
           backend-ws:
+            imagePullSecrets:
+              - name: jetscale-registry-secret
+            serviceAccount:
+              create: false
+              name: "${{ env.ENV_ID }}-service-account"
             envFrom:
-              - secretRef:
-                  name: "${{ env.ENV_ID }}-db-secret"
-              - secretRef:
-                  name: "${{ env.ENV_ID }}-redis-secret"
-              - secretRef:
-                  name: "${{ env.ENV_ID }}-common-secrets"
-              - secretRef:
-                  name: "${{ env.ENV_ID }}-aws-client-secret"
+              config: configMapRef
+              db-secret: secretRef
+              redis-secret: secretRef
+              common-secrets: secretRef
+              aws-client-secret: secretRef
           EOF
+
+          # Reset legacy/failed releases to avoid name drift across iterations.
+          echo "🧹 Reset Helm releases (best-effort)"
+          if helm -n "${{ env.ENV_ID }}" status jetscale >/dev/null 2>&1; then
+            echo "Found legacy release 'jetscale' in namespace; uninstalling..."
+            helm -n "${{ env.ENV_ID }}" uninstall jetscale --wait --timeout 5m || true
+          fi
+          set +e
+          STATUS="$(helm -n "${{ env.ENV_ID }}" status "${RELEASE}" 2>/dev/null | awk '/^STATUS:/ {print $2}')"
+          set -e
+          if [ "${STATUS:-}" = "failed" ]; then
+            echo "Release ${RELEASE} is failed; uninstalling to reset before install/upgrade..."
+            helm -n "${{ env.ENV_ID }}" uninstall "${RELEASE}" --wait --timeout 5m || true
+          fi
 
           # Run non-atomic so we can capture diagnostics on failure, then clean up explicitly.
           set +e
-          helm upgrade --install jetscale charts/jetscale \
+          helm upgrade --install "${RELEASE}" charts/jetscale \
             --namespace "${{ env.ENV_ID }}" \
             --create-namespace \
             --values envs/aws.yaml \
@@ -521,11 +549,11 @@ jobs:
           set -e
 
           if [ "$rc" -ne 0 ]; then
-            echo "::group::Diagnostics: Helm install failed (jetscale)"
+            echo "::group::Diagnostics: Helm install failed (${RELEASE})"
             echo "env_id=${{ env.ENV_ID }}"
             echo "public_host=${{ env.PUBLIC_HOST }}"
-            helm -n "${{ env.ENV_ID }}" status jetscale || true
-            helm -n "${{ env.ENV_ID }}" get all jetscale || true
+            helm -n "${{ env.ENV_ID }}" status "${RELEASE}" || true
+            helm -n "${{ env.ENV_ID }}" get all "${RELEASE}" || true
             echo "--- kubectl: pods"
             kubectl -n "${{ env.ENV_ID }}" get pods -o wide || true
             echo "--- kubectl: all"
@@ -536,15 +564,19 @@ jobs:
             kubectl -n "${{ env.ENV_ID }}" describe pods || true
             echo "--- kubectl: logs (recent, ns)"
             # IMPORTANT: Do not silence logs. Backend crashes are the #1 reason Helm times out.
-            kubectl -n "${{ env.ENV_ID }}" logs --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=15m || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/"${RELEASE}"-backend-api --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=15m || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/"${RELEASE}"-backend-ws --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=15m || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/"${RELEASE}"-frontend --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=15m || true
             echo "--- kubectl: logs (previous, ns)"
-            kubectl -n "${{ env.ENV_ID }}" logs --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=60m --previous || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/"${RELEASE}"-backend-api --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=60m --previous || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/"${RELEASE}"-backend-ws --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=60m --previous || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/"${RELEASE}"-frontend --all-containers=true --tail=200 --prefix=true --ignore-errors=true --since=60m --previous || true
             echo "--- kubectl: backend-api logs (current + previous)"
-            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-backend-api --all-containers=true --tail=400 --prefix=true --since=60m || true
-            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-backend-api --all-containers=true --tail=400 --prefix=true --since=60m --previous || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/"${RELEASE}"-backend-api --all-containers=true --tail=400 --prefix=true --since=60m || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/"${RELEASE}"-backend-api --all-containers=true --tail=400 --prefix=true --since=60m --previous || true
             echo "--- kubectl: backend-ws logs (current + previous)"
-            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-backend-ws --all-containers=true --tail=400 --prefix=true --since=60m || true
-            kubectl -n "${{ env.ENV_ID }}" logs deploy/jetscale-backend-ws --all-containers=true --tail=400 --prefix=true --since=60m --previous || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/"${RELEASE}"-backend-ws --all-containers=true --tail=400 --prefix=true --since=60m || true
+            kubectl -n "${{ env.ENV_ID }}" logs deploy/"${RELEASE}"-backend-ws --all-containers=true --tail=400 --prefix=true --since=60m --previous || true
             echo "--- kube-system: pods"
             kubectl -n kube-system get pods -o wide || true
             echo "--- kube-system: events"
@@ -552,7 +584,7 @@ jobs:
             echo "::endgroup::"
 
             echo "::group::Cleanup: uninstall failed helm release (best-effort)"
-            helm -n "${{ env.ENV_ID }}" uninstall jetscale --wait --timeout 5m || true
+            helm -n "${{ env.ENV_ID }}" uninstall "${RELEASE}" --wait --timeout 5m || true
             echo "::endgroup::"
 
             exit "$rc"
