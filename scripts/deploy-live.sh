@@ -9,16 +9,37 @@ set -euo pipefail
 NAMESPACE="${NAMESPACE:-jetscale-prod}"
 RELEASE="${RELEASE:-jetscale}"
 CHART_PATH="${CHART_PATH:-charts/jetscale}"
-VALUES_FILE="${VALUES_FILE:-envs/live/values.yaml}"
+
+# Values inheritance (recommended):
+# - envs/aws.yaml (cloud)
+# - envs/live/default.yaml (env defaults)
+# - envs/live/console.yaml (deployment-specific)
+#
+# Legacy override:
+# - VALUES_FILE=<single values file>
+VALUES_FILE="${VALUES_FILE:-}"
+VALUES_CLOUD="${VALUES_CLOUD:-envs/aws.yaml}"
+VALUES_ENV_DEFAULT="${VALUES_ENV_DEFAULT:-envs/live/default.yaml}"
+VALUES_ENV="${VALUES_ENV:-envs/live/console.yaml}"
 
 echo "[deploy-live] helm dependency build ${CHART_PATH}"
 helm dependency build "${CHART_PATH}"
 
-echo "[deploy-live] helm upgrade --install ${RELEASE} ${CHART_PATH} -n ${NAMESPACE} -f ${VALUES_FILE}"
+if [[ -n "${VALUES_FILE}" ]]; then
+  VALUES_ARGS=(--values "${VALUES_FILE}")
+else
+  VALUES_ARGS=(--values "${VALUES_CLOUD}")
+  if [[ -f "${VALUES_ENV_DEFAULT}" ]]; then
+    VALUES_ARGS+=(--values "${VALUES_ENV_DEFAULT}")
+  fi
+  VALUES_ARGS+=(--values "${VALUES_ENV}")
+fi
+
+echo "[deploy-live] helm upgrade --install ${RELEASE} ${CHART_PATH} -n ${NAMESPACE} ${VALUES_ARGS[*]}"
 helm upgrade --install "${RELEASE}" "${CHART_PATH}" \
   --namespace "${NAMESPACE}" \
   --create-namespace \
-  --values "${VALUES_FILE}"
+  "${VALUES_ARGS[@]}"
 
 echo "[deploy-live] done"
 

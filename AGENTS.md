@@ -63,7 +63,9 @@ OIDC subject mismatch, missing ALB TLS annotations, green-but-dead workflows, an
 
 ### 6.1. Parity Rule (Preview ↔ Live)
 
-- **Rule:** `envs/preview/values.yaml` must match `envs/live/values.yaml` for DNS/TLS semantics:
+- **Rule:** Preview + Live must match for DNS/TLS semantics via the `envs/` inheritance model:
+  - Shared ALB behavior lives in `envs/aws.yaml`
+  - Wildcard cert ARN must be consistent between `envs/preview/preview.yaml` and `envs/live/console.yaml`
   - `alb.ingress.kubernetes.io/listen-ports` includes 80+443
   - `alb.ingress.kubernetes.io/ssl-redirect: "443"`
   - `alb.ingress.kubernetes.io/certificate-arn` points at the wildcard cert

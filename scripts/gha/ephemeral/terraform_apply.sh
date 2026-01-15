@@ -135,6 +135,44 @@ if [[ "${ENABLE_NAT}" == "true" ]]; then
   echo "::endgroup::"
 fi
 
+# -------------------------------------------------------------------
+# ✅ Justified Action: Day-0 EKS bootstrap (cluster before kubeconfig-dependent providers)
+# -------------------------------------------------------------------
+#
+# Goal:
+# - After "Zombie State" pruning and State Reconciliation, we can legitimately have a VPC in state
+#   while the EKS cluster does not yet exist (fresh ephemeral bootstrap).
+# - Our ephemeral provider strategy relies on kubeconfig at plan-time (to avoid unknown provider
+#   config), so we must create the EKS control plane *before* any Helm/Kubernetes provider operations.
+#
+# Invariants: Prudence, Vigor, Concord
+#
+if ! aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1; then
+  echo "::group::Bootstrap: EKS cluster (Day 0)"
+
+  # EKS may auto-create this log group when control-plane logging is enabled. Create it first to
+  # avoid a later "ResourceAlreadyExistsException" during the full apply.
+  terraform apply -auto-approve -refresh=false \
+    -target=aws_cloudwatch_log_group.eks_cluster
+
+  # Bootstrap the control plane (AWS-only resources; avoids kubeconfig dependency).
+  terraform apply -auto-approve -refresh=false \
+    -target=aws_eks_cluster.main
+
+  # Best-effort: ensure the runner role has EKS API access (helps avoid transient Unauthorized).
+  ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
+  PRINCIPAL_ARN="arn:aws:iam::${ACCOUNT_ID}:role/github-actions-deployer"
+  aws eks create-access-entry --cluster-name "${ENV_ID}" --region "${REGION}" --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1 || true
+  aws eks associate-access-policy --cluster-name "${ENV_ID}" --region "${REGION}" --principal-arn "${PRINCIPAL_ARN}" --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster >/dev/null 2>&1 || true
+
+  if ! aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1; then
+    echo "::error::EKS cluster ${ENV_ID} still not found after bootstrap apply; aborting."
+    exit 1
+  fi
+
+  echo "::endgroup::"
+fi
+
 # Wait explicitly for RBAC to propagate.
 if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1; then
   echo "::group::Wait: Kubernetes RBAC ready for Terraform (aws-auth / namespace / serviceaccounts)"
