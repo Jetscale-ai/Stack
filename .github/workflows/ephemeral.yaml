@@ -515,8 +515,33 @@ jobs:
                   return 0
                 fi
 
-                echo "📥 Importing route table association: $addr -> ${subnet_id}/${rtb_id}"
-                terraform import "$addr" "${subnet_id}/${rtb_id}" || echo "⚠️ route table association import failed (ignoring)"
+                # Check the subnet's current explicit association (if any).
+                local current_rtb_id
+                local current_assoc_id
+                current_rtb_id="$(aws ec2 describe-route-tables \
+                  --filters "Name=association.subnet-id,Values=${subnet_id}" \
+                  --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "None")"
+                current_assoc_id="$(aws ec2 describe-route-tables \
+                  --filters "Name=association.subnet-id,Values=${subnet_id}" \
+                  --query "RouteTables[0].Associations[?SubnetId=='${subnet_id}'].RouteTableAssociationId | [0]" \
+                  --output text 2>/dev/null || echo "None")"
+
+                if [ "$current_rtb_id" = "None" ] || [ -z "$current_rtb_id" ]; then
+                  echo "ℹ️ no explicit association for ${subnet_id}; Terraform will create it."
+                  return 0
+                fi
+
+                if [ "$current_rtb_id" = "$rtb_id" ]; then
+                  echo "📥 Importing route table association: $addr -> ${subnet_id}/${rtb_id}"
+                  terraform import "$addr" "${subnet_id}/${rtb_id}" || echo "⚠️ route table association import failed (ignoring)"
+                  return 0
+                fi
+
+                # If associated to a different route table, disassociate it so Terraform can re-associate.
+                if [ "$current_assoc_id" != "None" ] && [ -n "$current_assoc_id" ]; then
+                  echo "⚠️ subnet ${subnet_id} associated to ${current_rtb_id} (expected ${rtb_id}); disassociating ${current_assoc_id}"
+                  aws ec2 disassociate-route-table --association-id "$current_assoc_id" >/dev/null 2>&1 || true
+                fi
               }
 
               import_route_table_assoc 'aws_route_table_association.public[0]'  "$PUBLIC_SUBNET_1_ID"  "$PUBLIC_RT_ID"
@@ -529,6 +554,7 @@ jobs:
 
             # Import NAT Gateway + EIP if they exist
             NAT_ID="None"
+            NAT_STATE="unknown"
             EIP_ALLOC_ID="None"
 
             if [ "$ENABLE_NAT" = "true" ]; then
@@ -541,19 +567,42 @@ jobs:
                   --query 'Addresses[0].AllocationId' --output text 2>/dev/null || echo "None")"
               fi
 
-              # If we have an allocation ID, find the NAT gateway already using it (available or pending).
+              # If we have an allocation ID, find the NAT gateway already using it (any state).
               if [ "$EIP_ALLOC_ID" != "None" ] && [ -n "$EIP_ALLOC_ID" ]; then
-                NAT_ID="$(aws ec2 describe-nat-gateways \
-                  --filter "Name=nat-gateway-address.allocation-id,Values=${EIP_ALLOC_ID}" "Name=state,Values=available,pending" \
-                  --query 'NatGateways[0].NatGatewayId' --output text 2>/dev/null || echo "None")"
+                NAT_INFO="$(aws ec2 describe-nat-gateways \
+                  --filter "Name=nat-gateway-address.allocation-id,Values=${EIP_ALLOC_ID}" \
+                  --query 'NatGateways[0].[NatGatewayId,State]' --output text 2>/dev/null || echo "None")"
+                if [ "$NAT_INFO" != "None" ] && [ -n "$NAT_INFO" ]; then
+                  NAT_ID="$(echo "$NAT_INFO" | awk '{print $1}')"
+                  NAT_STATE="$(echo "$NAT_INFO" | awk '{print $2}')"
+                fi
               fi
             fi
 
-            # Fallback: any NAT in this VPC (available or pending)
+            # Fallback: any NAT in this VPC (any state except deleted)
             if [ "$NAT_ID" = "None" ] || [ -z "$NAT_ID" ]; then
-              NAT_ID="$(aws ec2 describe-nat-gateways \
-                --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available,pending" \
-                --query 'NatGateways[0].NatGatewayId' --output text 2>/dev/null || echo "None")"
+              NAT_INFO="$(aws ec2 describe-nat-gateways \
+                --filter "Name=vpc-id,Values=$VPC_ID" \
+                --query 'NatGateways[?State!=`deleted`][0].[NatGatewayId,State]' --output text 2>/dev/null || echo "None")"
+              if [ "$NAT_INFO" != "None" ] && [ -n "$NAT_INFO" ]; then
+                NAT_ID="$(echo "$NAT_INFO" | awk '{print $1}')"
+                NAT_STATE="$(echo "$NAT_INFO" | awk '{print $2}')"
+              fi
+            fi
+
+            # If NAT is failed, delete it to release the EIP (ephemeral recovery).
+            if [ "$NAT_STATE" = "failed" ] && [ "$NAT_ID" != "None" ] && [ -n "$NAT_ID" ]; then
+              echo "⚠️ NAT gateway ${NAT_ID} is in failed state; deleting to release EIP."
+              aws ec2 delete-nat-gateway --nat-gateway-id "$NAT_ID" >/dev/null 2>&1 || true
+              for i in $(seq 1 30); do
+                STATE="$(aws ec2 describe-nat-gateways --nat-gateway-ids "$NAT_ID" --query 'NatGateways[0].State' --output text 2>/dev/null || echo "deleted")"
+                if [ "$STATE" = "deleted" ] || [ "$STATE" = "None" ]; then
+                  break
+                fi
+                sleep 10
+              done
+              NAT_ID="None"
+              NAT_STATE="deleted"
             fi
 
             if [ "$NAT_ID" != "None" ] && [ -n "$NAT_ID" ]; then
