@@ -356,14 +356,17 @@ jobs:
               fi
             fi
 
-            # Import Subnets if they exist (prevents CIDR conflicts on reruns / partial state).
+            # Import Subnets / Route Tables / Associations if they exist (prevents drift conflicts on reruns).
             #
-            # ✅ Justified Action: Adopt existing subnets before targeted bootstrap
+            # ✅ Justified Action: Adopt existing network primitives before targeted bootstrap
             #
             # Goal:
-            # - The workflow runs a targeted bootstrap apply (NAT + routes) that includes `-target=aws_subnet.*`.
-            # - If subnets exist in AWS but are missing from state (e.g. after a failed run / state drift),
-            #   Terraform will attempt to create them and AWS will fail with InvalidSubnet.Conflict.
+            # - The workflow runs a targeted bootstrap apply (NAT + routes) that includes:
+            #   - aws_subnet.*
+            #   - aws_route_table.*
+            #   - aws_route_table_association.*
+            # - If these exist in AWS but are missing from state (e.g. after a failed run / state drift),
+            #   Terraform will attempt to create them and AWS will fail with conflicts.
             # - We prefer adoption (import) over deletion to keep reruns idempotent.
             #
             # Invariants: Prudence, Vigor, Concord
@@ -373,7 +376,51 @@ jobs:
             # - subnet Name tags:
             #   - ${name_prefix}-public-subnet-1/2
             #   - ${name_prefix}-private-subnet-1/2
+            # - route table Name tags:
+            #   - ${name_prefix}-public-rt
+            #   - ${name_prefix}-private-rt OR ${name_prefix}-private-rt-isolated
             NAME_PREFIX="${{ env.ENV_ID }}-ephemeral"
+            ENABLE_NAT="$(python -c "import json; data = json.load(open('ephemeral.auto.tfvars.json')); print('true' if data.get('enable_nat_gateway') else 'false')" 2>/dev/null || echo "false")"
+            PUBLIC_RT_NAME="${NAME_PREFIX}-public-rt"
+            if [ "$ENABLE_NAT" = "true" ]; then
+              PRIVATE_RT_NAME="${NAME_PREFIX}-private-rt"
+            else
+              PRIVATE_RT_NAME="${NAME_PREFIX}-private-rt-isolated"
+            fi
+
+            get_route_table_id_by_name() {
+              local name_tag="$1"
+              aws ec2 describe-route-tables \
+                --filters \
+                  "Name=vpc-id,Values=${VPC_ID}" \
+                  "Name=tag:Name,Values=${name_tag}" \
+                --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "None"
+            }
+
+            PUBLIC_RT_ID="$(get_route_table_id_by_name "$PUBLIC_RT_NAME")"
+            PRIVATE_RT_ID="$(get_route_table_id_by_name "$PRIVATE_RT_NAME")"
+
+            import_route_table() {
+              local addr="$1"
+              local rtb_id="$2"
+
+              if terraform state list "$addr" >/dev/null 2>&1; then
+                echo "✅ already in state: $addr"
+                return 0
+              fi
+
+              if [ "$rtb_id" = "None" ] || [ -z "$rtb_id" ]; then
+                echo "⚠️ route table not found (skip import): $addr"
+                return 0
+              fi
+
+              echo "📥 Importing route table: $addr -> $rtb_id"
+              terraform import "$addr" "$rtb_id" || echo "⚠️ route table import failed (ignoring)"
+            }
+
+            import_route_table 'aws_route_table.public' "$PUBLIC_RT_ID"
+            import_route_table 'aws_route_table.private' "$PRIVATE_RT_ID"
+
             AZS="$(aws ec2 describe-availability-zones \
               --filters "Name=opt-in-status,Values=opt-in-not-required" \
               --query 'AvailabilityZones[].ZoneName' --output text 2>/dev/null | tr '\t' '\n' | sort | head -n 2 || true)"
@@ -407,20 +454,95 @@ jobs:
                 terraform import "$addr" "$subnet_id" || echo "⚠️ subnet import failed (ignoring)"
               }
 
+              get_subnet_id_by_name_az() {
+                local name_tag="$1"
+                local az="$2"
+                aws ec2 describe-subnets \
+                  --filters \
+                    "Name=vpc-id,Values=${VPC_ID}" \
+                    "Name=tag:Name,Values=${name_tag}" \
+                    "Name=availability-zone,Values=${az}" \
+                  --query 'Subnets[0].SubnetId' --output text 2>/dev/null || echo "None"
+              }
+
               import_subnet_by_name 'aws_subnet.public[0]'  "${NAME_PREFIX}-public-subnet-1"  "$AZ1"
               import_subnet_by_name 'aws_subnet.public[1]'  "${NAME_PREFIX}-public-subnet-2"  "$AZ2"
               import_subnet_by_name 'aws_subnet.private[0]' "${NAME_PREFIX}-private-subnet-1" "$AZ1"
               import_subnet_by_name 'aws_subnet.private[1]' "${NAME_PREFIX}-private-subnet-2" "$AZ2"
+
+              PUBLIC_SUBNET_1_ID="$(get_subnet_id_by_name_az "${NAME_PREFIX}-public-subnet-1" "$AZ1")"
+              PUBLIC_SUBNET_2_ID="$(get_subnet_id_by_name_az "${NAME_PREFIX}-public-subnet-2" "$AZ2")"
+              PRIVATE_SUBNET_1_ID="$(get_subnet_id_by_name_az "${NAME_PREFIX}-private-subnet-1" "$AZ1")"
+              PRIVATE_SUBNET_2_ID="$(get_subnet_id_by_name_az "${NAME_PREFIX}-private-subnet-2" "$AZ2")"
+
+              import_route_table_assoc() {
+                local addr="$1"
+                local subnet_id="$2"
+
+                if terraform state list "$addr" >/dev/null 2>&1; then
+                  echo "✅ already in state: $addr"
+                  return 0
+                fi
+
+                if [ "$subnet_id" = "None" ] || [ -z "$subnet_id" ]; then
+                  echo "⚠️ route table association not found (skip import): $addr"
+                  return 0
+                fi
+
+                local assoc_id
+                assoc_id="$(aws ec2 describe-route-tables \
+                  --filters "Name=association.subnet-id,Values=${subnet_id}" \
+                  --query "RouteTables[0].Associations[?SubnetId=='${subnet_id}'].RouteTableAssociationId | [0]" \
+                  --output text 2>/dev/null || echo "None")"
+
+                if [ "$assoc_id" = "None" ] || [ -z "$assoc_id" ]; then
+                  echo "⚠️ association not found (skip import): $addr"
+                  return 0
+                fi
+
+                echo "📥 Importing route table association: $addr -> $assoc_id"
+                terraform import "$addr" "$assoc_id" || echo "⚠️ route table association import failed (ignoring)"
+              }
+
+              import_route_table_assoc 'aws_route_table_association.public[0]'  "$PUBLIC_SUBNET_1_ID"
+              import_route_table_assoc 'aws_route_table_association.public[1]'  "$PUBLIC_SUBNET_2_ID"
+              import_route_table_assoc 'aws_route_table_association.private[0]' "$PRIVATE_SUBNET_1_ID"
+              import_route_table_assoc 'aws_route_table_association.private[1]' "$PRIVATE_SUBNET_2_ID"
             else
-              echo "::warning::Could not determine 2 availability zones; skipping subnet adoption."
+              echo "::warning::Could not determine 2 availability zones; skipping subnet/association adoption."
             fi
 
-            # Import NAT Gateway if it exists
+            # Import NAT Gateway + EIP if they exist
             NAT_ID=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available" --query 'NatGateways[0].NatGatewayId' --output text 2>/dev/null || echo "None")
             if [ "$NAT_ID" != "None" ] && [ -n "$NAT_ID" ]; then
               if ! terraform state list 'aws_nat_gateway.main[0]' >/dev/null 2>&1; then
                 echo "📥 Importing NAT Gateway: $NAT_ID"
                 terraform import 'aws_nat_gateway.main[0]' "$NAT_ID" || echo "⚠️ NAT import failed (ignoring)"
+              fi
+            fi
+
+            # If NAT is enabled, attempt to adopt an existing EIP to avoid AddressLimitExceeded.
+            if [ "$ENABLE_NAT" = "true" ]; then
+              if ! terraform state list 'aws_eip.nat[0]' >/dev/null 2>&1; then
+                EIP_ALLOC_ID="None"
+                if [ "$NAT_ID" != "None" ] && [ -n "$NAT_ID" ]; then
+                  EIP_ALLOC_ID="$(aws ec2 describe-nat-gateways --nat-gateway-ids "$NAT_ID" \
+                    --query 'NatGateways[0].NatGatewayAddresses[0].AllocationId' --output text 2>/dev/null || echo "None")"
+                fi
+                if [ "$EIP_ALLOC_ID" = "None" ] || [ -z "$EIP_ALLOC_ID" ]; then
+                  EIP_ALLOC_ID="$(aws ec2 describe-addresses \
+                    --filters \
+                      "Name=tag:Name,Values=${NAME_PREFIX}-nat-eip" \
+                      "Name=tag:jetscale.env_id,Values=${{ env.ENV_ID }}" \
+                    --query 'Addresses[0].AllocationId' --output text 2>/dev/null || echo "None")"
+                fi
+
+                if [ "$EIP_ALLOC_ID" = "None" ] || [ -z "$EIP_ALLOC_ID" ]; then
+                  echo "⚠️ NAT EIP not found for ${NAME_PREFIX}; Terraform may allocate a new EIP."
+                else
+                  echo "📥 Importing NAT EIP: aws_eip.nat[0] -> ${EIP_ALLOC_ID}"
+                  terraform import 'aws_eip.nat[0]' "$EIP_ALLOC_ID" || echo "⚠️ EIP import failed (ignoring)"
+                fi
               fi
             fi
           fi
