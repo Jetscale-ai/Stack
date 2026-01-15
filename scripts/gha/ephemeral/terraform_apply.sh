@@ -15,15 +15,32 @@ ensure_kubeconfig() {
   # unless a kubeconfig file exists and points at the cluster.
   mkdir -p "${HOME}/.kube"
 
-  # Best-effort: only update kubeconfig if cluster exists.
+  # Only attempt kubeconfig generation if cluster exists.
   if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1; then
-    aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1 || true
+    # If a previous step left a placeholder kubeconfig (non-empty but invalid), remove it.
+    rm -f "${KUBECONFIG}"
+
+    # This MUST succeed; otherwise Helm/Kubernetes providers cannot talk to the cluster.
+    aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}"
   fi
 
   if [[ ! -s "${KUBECONFIG}" ]]; then
     echo "::error::kubeconfig is missing/empty at ${KUBECONFIG}. Helm/Kubernetes providers will be unable to connect."
     echo "caller=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
     aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" --query 'cluster.status' --output text 2>/dev/null || true
+    exit 1
+  fi
+
+  # Validate kubeconfig is actually usable (non-empty current-context).
+  local ctx
+  ctx="$(kubectl config current-context 2>/dev/null || true)"
+  if [[ -z "${ctx}" ]]; then
+    echo "::error::kubeconfig at ${KUBECONFIG} is present but has no current-context; Helm/Kubernetes providers will be unable to connect."
+    echo "caller=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
+    echo "kubectl_version=$(kubectl version --client --short 2>/dev/null || true)"
+    echo "::group::kubeconfig (redacted-ish)"
+    sed -n '1,120p' "${KUBECONFIG}" || true
+    echo "::endgroup::"
     exit 1
   fi
 }
