@@ -557,6 +557,26 @@ jobs:
             NAT_STATE="unknown"
             EIP_ALLOC_ID="None"
 
+            wait_for_eip_free() {
+              local alloc_id="$1"
+              if [ "$alloc_id" = "None" ] || [ -z "$alloc_id" ]; then
+                return 0
+              fi
+              for i in $(seq 1 60); do
+                local assoc_id
+                assoc_id="$(aws ec2 describe-addresses --allocation-ids "$alloc_id" \
+                  --query 'Addresses[0].AssociationId' --output text 2>/dev/null || echo "None")"
+                if [ "$assoc_id" = "None" ] || [ "$assoc_id" = "null" ] || [ -z "$assoc_id" ]; then
+                  echo "✅ EIP ${alloc_id} is free"
+                  return 0
+                fi
+                echo "⏳ Waiting for EIP ${alloc_id} to be free (association=${assoc_id}) [$i/60]"
+                sleep 10
+              done
+              echo "::error::EIP ${alloc_id} is still associated after wait; aborting to avoid NAT create failure."
+              exit 1
+            }
+
             if [ "$ENABLE_NAT" = "true" ]; then
               # Prefer an existing EIP tagged for this env (or from an existing NAT) to avoid new allocation.
               if ! terraform state list 'aws_eip.nat[0]' >/dev/null 2>&1; then
@@ -603,6 +623,9 @@ jobs:
               done
               NAT_ID="None"
               NAT_STATE="deleted"
+
+              # Ensure EIP is actually free before proceeding.
+              wait_for_eip_free "$EIP_ALLOC_ID"
             fi
 
             if [ "$NAT_ID" != "None" ] && [ -n "$NAT_ID" ]; then
