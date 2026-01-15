@@ -7,14 +7,24 @@ REGION="${AWS_REGION:-us-east-1}"
 
 echo "🔧 Starting State Reconciliation..."
 
-# Ensure kubeconfig exists for provider init (even if we only touch AWS resources here).
-KUBECONFIG_PATH="${HOME}/.kube/config"
-mkdir -p "${HOME}/.kube"
+# Reconciliation must NOT poison the runner's default kubeconfig.
+# Historically we wrote an empty placeholder to ~/.kube/config which caused later
+# Helm/Kubernetes provider operations to fail with "no configuration provided".
+# Use an isolated kubeconfig for this step only.
+KUBECONFIG_DIR="${RUNNER_TEMP:-/tmp}"
+export KUBECONFIG="${KUBECONFIG_DIR}/kubeconfig-${ENV_ID}.yaml"
+
 if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1; then
-  aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1 || true
-fi
-if [ ! -s "${KUBECONFIG_PATH}" ]; then
-  cat > "${KUBECONFIG_PATH}" <<'EOF'
+  aws eks update-kubeconfig \
+    --name "${ENV_ID}" \
+    --region "${REGION}" \
+    --kubeconfig "${KUBECONFIG}" \
+    >/dev/null 2>&1 || true
+else
+  # Keep Terraform providers from trying localhost when EKS doesn't exist yet,
+  # but do it in our isolated kubeconfig file (never in ~/.kube/config).
+  if [[ ! -s "${KUBECONFIG}" ]]; then
+    cat > "${KUBECONFIG}" <<'EOF'
 apiVersion: v1
 kind: Config
 clusters: []
@@ -22,6 +32,7 @@ contexts: []
 users: []
 current-context: ""
 EOF
+  fi
 fi
 
 terraform init \
