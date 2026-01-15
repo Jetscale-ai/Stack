@@ -578,8 +578,11 @@ jobs:
             }
 
             if [ "$ENABLE_NAT" = "true" ]; then
-              # Prefer an existing EIP tagged for this env (or from an existing NAT) to avoid new allocation.
-              if ! terraform state list 'aws_eip.nat[0]' >/dev/null 2>&1; then
+              # Prefer an existing EIP tagged for this env (or from existing state) to avoid new allocation.
+              if terraform state list 'aws_eip.nat[0]' >/dev/null 2>&1; then
+                EIP_ALLOC_ID="$(terraform state show -no-color 'aws_eip.nat[0]' 2>/dev/null | awk -F'=' '/allocation_id/ {gsub(/^[ \t"]+|[ \t"]+$/, "", $2); print $2; exit}')"
+              fi
+              if [ "$EIP_ALLOC_ID" = "None" ] || [ -z "$EIP_ALLOC_ID" ]; then
                 EIP_ALLOC_ID="$(aws ec2 describe-addresses \
                   --filters \
                     "Name=tag:Name,Values=${NAME_PREFIX}-nat-eip" \
@@ -626,6 +629,14 @@ jobs:
 
               # Ensure EIP is actually free before proceeding.
               wait_for_eip_free "$EIP_ALLOC_ID"
+            fi
+
+            # If NAT is deleting, wait for EIP to be free before creating a new one.
+            if [ "$NAT_STATE" = "deleting" ]; then
+              echo "⏳ NAT gateway is deleting; waiting for EIP to be free before proceeding."
+              wait_for_eip_free "$EIP_ALLOC_ID"
+              NAT_ID="None"
+              NAT_STATE="deleted"
             fi
 
             if [ "$NAT_ID" != "None" ] && [ -n "$NAT_ID" ]; then
