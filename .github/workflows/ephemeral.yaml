@@ -239,7 +239,8 @@ jobs:
           set -euo pipefail
 
           # Only run if state is missing
-          if aws s3 ls "s3://jetscale-terraform-state/ephemeral/${{ env.ENV_ID }}/terraform.tfstate" >/dev/null 2>&1; then
+          # IMPORTANT: `aws s3 ls s3://bucket/key` can exit 0 even if the key doesn't exist.
+          if aws s3api head-object --bucket "jetscale-terraform-state" --key "ephemeral/${{ env.ENV_ID }}/terraform.tfstate" >/dev/null 2>&1; then
             echo "✅ Terraform state exists. Skipping orphan cleanup."
             exit 0
           fi
@@ -273,7 +274,8 @@ jobs:
           STATE_PATH="/tmp/${{ env.ENV_ID }}.tfstate.json"
 
           VPC_CIDR=""
-          if aws s3 ls "s3://${BUCKET}/${STATE_KEY}" >/dev/null 2>&1; then
+          # IMPORTANT: `aws s3 ls s3://bucket/key` can exit 0 even if the key doesn't exist.
+          if aws s3api head-object --bucket "${BUCKET}" --key "${STATE_KEY}" >/dev/null 2>&1; then
             echo "🔒 State exists for ${{ env.ENV_ID }}; reusing VPC CIDR from state to prevent replacement."
             aws s3 cp "s3://${BUCKET}/${STATE_KEY}" "$STATE_PATH" >/dev/null
             VPC_CIDR="$(jq -r '
