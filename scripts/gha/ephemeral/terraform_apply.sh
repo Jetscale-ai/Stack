@@ -26,7 +26,14 @@ fi
 BUCKET="jetscale-terraform-state"
 STATE_KEY="ephemeral/${ENV_ID}/terraform.tfstate"
 STATE_PATH="/tmp/${ENV_ID}.tfstate.json"
-if aws s3 ls "s3://${BUCKET}/${STATE_KEY}" >/dev/null 2>&1; then
+# IMPORTANT: `aws s3 ls s3://bucket/key` can exit 0 even if the key doesn't exist.
+# Use an exact HEAD check so we don't fail later with a 404 (HeadObject).
+set +e
+aws s3api head-object --bucket "${BUCKET}" --key "${STATE_KEY}" >/dev/null 2>&1
+STATE_EXISTS_RC=$?
+set -e
+if [[ "${STATE_EXISTS_RC}" -eq 0 ]]; then
+  echo "🔒 State exists for ${ENV_ID}; reusing VPC CIDR from state to prevent replacement."
   aws s3 cp "s3://${BUCKET}/${STATE_KEY}" "${STATE_PATH}" >/dev/null
   STATE_VPC_CIDR="$(jq -r '
     .resources[]
@@ -47,6 +54,8 @@ if aws s3 ls "s3://${BUCKET}/${STATE_KEY}" >/dev/null 2>&1; then
     echo "::error::Refusing to proceed: vpc_cidr mismatch for ${ENV_ID} (state=${STATE_VPC_CIDR}, vars=${VARS_VPC_CIDR}). This would force VPC replacement."
     exit 1
   fi
+else
+  echo "ℹ️ No existing state object at s3://${BUCKET}/${STATE_KEY}; proceeding as a fresh env."
 fi
 
 # If NAT is enabled, bootstrap egress first so Helm releases can pull public images.
