@@ -356,6 +356,65 @@ jobs:
               fi
             fi
 
+            # Import Subnets if they exist (prevents CIDR conflicts on reruns / partial state).
+            #
+            # ✅ Justified Action: Adopt existing subnets before targeted bootstrap
+            #
+            # Goal:
+            # - The workflow runs a targeted bootstrap apply (NAT + routes) that includes `-target=aws_subnet.*`.
+            # - If subnets exist in AWS but are missing from state (e.g. after a failed run / state drift),
+            #   Terraform will attempt to create them and AWS will fail with InvalidSubnet.Conflict.
+            # - We prefer adoption (import) over deletion to keep reruns idempotent.
+            #
+            # Invariants: Prudence, Vigor, Concord
+            #
+            # Match Jetscale-IaC naming:
+            # - local.name_prefix = "${client_name}-${environment}" => "${ENV_ID}-ephemeral"
+            # - subnet Name tags:
+            #   - ${name_prefix}-public-subnet-1/2
+            #   - ${name_prefix}-private-subnet-1/2
+            NAME_PREFIX="${{ env.ENV_ID }}-ephemeral"
+            AZS="$(aws ec2 describe-availability-zones \
+              --filters "Name=opt-in-status,Values=opt-in-not-required" \
+              --query 'AvailabilityZones[].ZoneName' --output text 2>/dev/null | tr '\t' '\n' | sort | head -n 2 || true)"
+            AZ1="$(echo "$AZS" | sed -n '1p' || true)"
+            AZ2="$(echo "$AZS" | sed -n '2p' || true)"
+            if [ -n "${AZ1:-}" ] && [ -n "${AZ2:-}" ]; then
+              import_subnet_by_name() {
+                local addr="$1"
+                local name_tag="$2"
+                local az="$3"
+
+                if terraform state list "$addr" >/dev/null 2>&1; then
+                  echo "✅ already in state: $addr"
+                  return 0
+                fi
+
+                local subnet_id
+                subnet_id="$(aws ec2 describe-subnets \
+                  --filters \
+                    "Name=vpc-id,Values=${VPC_ID}" \
+                    "Name=tag:Name,Values=${name_tag}" \
+                    "Name=availability-zone,Values=${az}" \
+                  --query 'Subnets[0].SubnetId' --output text 2>/dev/null || echo "None")"
+
+                if [ "$subnet_id" = "None" ] || [ -z "$subnet_id" ]; then
+                  echo "⚠️ subnet not found (skip import): name=${name_tag} az=${az}"
+                  return 0
+                fi
+
+                echo "📥 Importing subnet: $addr -> $subnet_id (name=${name_tag} az=${az})"
+                terraform import "$addr" "$subnet_id" || echo "⚠️ subnet import failed (ignoring)"
+              }
+
+              import_subnet_by_name 'aws_subnet.public[0]'  "${NAME_PREFIX}-public-subnet-1"  "$AZ1"
+              import_subnet_by_name 'aws_subnet.public[1]'  "${NAME_PREFIX}-public-subnet-2"  "$AZ2"
+              import_subnet_by_name 'aws_subnet.private[0]' "${NAME_PREFIX}-private-subnet-1" "$AZ1"
+              import_subnet_by_name 'aws_subnet.private[1]' "${NAME_PREFIX}-private-subnet-2" "$AZ2"
+            else
+              echo "::warning::Could not determine 2 availability zones; skipping subnet adoption."
+            fi
+
             # Import NAT Gateway if it exists
             NAT_ID=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available" --query 'NatGateways[0].NatGatewayId' --output text 2>/dev/null || echo "None")
             if [ "$NAT_ID" != "None" ] && [ -n "$NAT_ID" ]; then
