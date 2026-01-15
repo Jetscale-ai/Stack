@@ -9,6 +9,25 @@ REGION="${AWS_REGION:-us-east-1}"
 # Ensure all kubeconfig-reading tools/providers use the same config path.
 export KUBECONFIG="${HOME}/.kube/config"
 
+ensure_kubeconfig() {
+  # Terraform's kubernetes/helm providers will fail with:
+  #   "Kubernetes cluster unreachable: invalid configuration: no configuration has been provided"
+  # unless a kubeconfig file exists and points at the cluster.
+  mkdir -p "${HOME}/.kube"
+
+  # Best-effort: only update kubeconfig if cluster exists.
+  if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1; then
+    aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}" >/dev/null 2>&1 || true
+  fi
+
+  if [[ ! -s "${KUBECONFIG}" ]]; then
+    echo "::error::kubeconfig is missing/empty at ${KUBECONFIG}. Helm/Kubernetes providers will be unable to connect."
+    echo "caller=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
+    aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" --query 'cluster.status' --output text 2>/dev/null || true
+    exit 1
+  fi
+}
+
 terraform init \
   -backend-config="bucket=jetscale-terraform-state" \
   -backend-config="key=ephemeral/${ENV_ID}/terraform.tfstate" \
@@ -21,6 +40,9 @@ if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2
   aws eks create-access-entry --cluster-name "${ENV_ID}" --region "${REGION}" --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1 || true
   aws eks associate-access-policy --cluster-name "${ENV_ID}" --region "${REGION}" --principal-arn "${PRINCIPAL_ARN}" --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster >/dev/null 2>&1 || true
 fi
+
+# Ensure kubeconfig exists before any helm/kubernetes provider operations (imports, plans, applies).
+ensure_kubeconfig
 
 # ✅ Justified Action: Prevent destructive replacement on reruns
 BUCKET="jetscale-terraform-state"
