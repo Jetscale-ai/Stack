@@ -1,5 +1,6 @@
 global:
   client_name: "jetscale"
+  env: "staging"
 
 backend-api:
   image:
