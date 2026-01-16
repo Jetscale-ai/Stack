@@ -19,7 +19,7 @@ backend-api:
   replicaCount: 1
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "3.1.0" # Match live (known-good)
+    tag: "3.1.1" # Match live (known-good)
     pullPolicy: Always
 
   # NOTE: Secret names are tenant-specific (e.g., pr-123-db-secret).
