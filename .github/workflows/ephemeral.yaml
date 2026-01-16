@@ -58,6 +58,8 @@ jobs:
       # 2) pull_request number -> pr-<n>
       # 3) fallback: "ephemeral" (no per-PR secret isolation)
       name: ${{ inputs.env_id || format('pr-{0}', github.event.pull_request.number || github.event.issue.number) || 'ephemeral' }}
+      # DX/Aisthesis: Surface the deployment URL directly in the Actions UI.
+      url: ${{ format('https://{0}', steps.identity.outputs.public_host) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -410,6 +412,42 @@ jobs:
           echo "::error::Public endpoint did not become reachable within timeout: https://${HOST}/"
           exit 1
 
+      - name: Summary (Ephemeral URL + status)
+        if: inputs.action != 'destroy' && always()
+        run: |
+          set -euo pipefail
+
+          HOST="${{ env.PUBLIC_HOST }}"
+          ENV_ID="${{ env.ENV_ID }}"
+          STATUS="${{ job.status }}"
+
+          if [[ "${STATUS}" == "success" ]]; then
+            STATUS_BADGE="✅ **Healthy**"
+          else
+            STATUS_BADGE="❌ **Failed**"
+          fi
+
+          {
+            echo "## 🚀 Ephemeral Environment Ready"
+            echo ""
+            echo "### [👉 https://${HOST}](https://${HOST})"
+            echo ""
+            echo "| Status | Environment |"
+            echo "| :--- | :--- |"
+            echo "| ${STATUS_BADGE} | \`${ENV_ID}\` |"
+            echo ""
+            echo "<details>"
+            echo "<summary>🛠️ <strong>View Infrastructure Diagnostics</strong> (Identity, Cluster, Namespace)</summary>"
+            echo ""
+            echo "- **Actor**: \`${{ github.actor }}\`"
+            echo "- **Cluster**: \`${{ env.CLUSTER_NAME || env.ENV_ID }}\`"
+            echo "- **Namespace**: \`${ENV_ID}\`"
+            echo "- **Helm release**: \`${ENV_ID}\`"
+            echo ""
+            echo "</details>"
+            echo ""
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       # ==========================================================
       # PHASE 5: DESTRUCTION
       # ==========================================================
@@ -464,12 +502,12 @@ jobs:
           issue-number: ${{ github.event.number }}
           body: |
             ## 🚀 Ephemeral Environment Ready
-
-            Your ephemeral cluster has been deployed and is ready for testing.
-
-            **Access URL:** https://${{ needs.manage-env.outputs.public_host }}
-
-            **Cluster:** `${{ needs.manage-env.outputs.env_id }}`
+            
+            ### [👉 https://${{ needs.manage-env.outputs.public_host }}](https://${{ needs.manage-env.outputs.public_host }})
+            
+            | Status | Environment |
+            | :--- | :--- |
+            | ✅ **Healthy** | `${{ needs.manage-env.outputs.env_id }}` |
 
             This environment will be automatically destroyed when the PR is closed or merged.
 

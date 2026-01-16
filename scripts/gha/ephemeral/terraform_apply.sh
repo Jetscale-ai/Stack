@@ -227,20 +227,28 @@ if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2
 
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     {
-      echo "## Ephemeral: Kubernetes RBAC baseline"
+      echo "<details>"
+      echo "<summary>🔐 <strong>Ephemeral Identity &amp; RBAC</strong> (click to expand)</summary>"
       echo ""
-      echo "- env_id: \`${ENV_ID}\`"
-      echo "- caller: \`$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)\`"
-      echo "- principal_arn: \`${PRINCIPAL_ARN}\`"
-      echo "- kubectl_context: \`$(kubectl config current-context 2>/dev/null || true)\`"
-      echo "- kubectl_version: \`$(kubectl version --client --short 2>/dev/null || true)\`"
-      echo "- eks_auth_mode: \`$(aws eks describe-cluster --name \"${ENV_ID}\" --region ${REGION} --query 'cluster.accessConfig.authenticationMode' --output text 2>/dev/null || true)\`"
+      echo "### 🆔 Identity Context"
       echo ""
-      echo "### kubectl auth can-i"
+      echo "| Component | Identity / Resource |"
+      echo "| :--- | :--- |"
+      echo "| env_id | \`${ENV_ID}\` |"
+      echo "| caller | \`$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)\` |"
+      echo "| principal_arn | \`${PRINCIPAL_ARN}\` |"
+      echo "| cluster | \`$(aws eks describe-cluster --name \"${ENV_ID}\" --region ${REGION} --query 'cluster.arn' --output text 2>/dev/null || true)\` |"
+      echo "| kubectl_context | \`$(kubectl config current-context 2>/dev/null || true)\` |"
+      echo "| kubectl | \`$(kubectl version --client --short 2>/dev/null || true)\` |"
+      echo "| eks_auth_mode | \`$(aws eks describe-cluster --name \"${ENV_ID}\" --region ${REGION} --query 'cluster.accessConfig.authenticationMode' --output text 2>/dev/null || true)\` |"
+      echo ""
+      echo "### 🛡️ RBAC Capabilities (kubectl auth can-i)"
       echo ""
       echo '```text'
       can_i_status_line || true
       echo '```'
+      echo ""
+      echo "</details>"
       echo ""
     } >> "${GITHUB_STEP_SUMMARY}"
   fi
