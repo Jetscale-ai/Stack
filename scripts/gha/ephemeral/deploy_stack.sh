@@ -134,6 +134,10 @@ if helm -n "${NAMESPACE}" status jetscale >/dev/null 2>&1; then
   echo "Found legacy release 'jetscale' in namespace; uninstalling..."
   helm -n "${NAMESPACE}" uninstall jetscale --wait --timeout 5m || true
 fi
+if helm -n "${NAMESPACE}" status jetscale-stack >/dev/null 2>&1; then
+  echo "Found legacy release 'jetscale-stack' in namespace; uninstalling..."
+  helm -n "${NAMESPACE}" uninstall jetscale-stack --wait --timeout 5m || true
+fi
 set +e
 STATUS="$(helm -n "${NAMESPACE}" status "${RELEASE}" 2>/dev/null | awk '/^STATUS:/ {print $2}')"
 set -e

@@ -23,11 +23,13 @@ backend-api:
 
   # Production schedule
   cronJobs:
-    discover-aws-resources:
+    # NOTE: keys must match `charts/jetscale/values.yaml` to override schedules
+    # (otherwise Helm deep-merge creates duplicate CronJobs).
+    discover-aws:
       schedule: "0 */4 * * *"
-    pull-coh-recommendations:
+    pull-coh:
       schedule: "30 */6 * * *"
-    pull-co-recommendations:
+    pull-co:
       schedule: "45 */12 * * *"
 
   resources:
