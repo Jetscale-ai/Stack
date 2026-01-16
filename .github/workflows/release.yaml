@@ -333,14 +333,20 @@ jobs:
 
       - name: Reset failed Helm release (if needed)
         run: |
-          # If the release is already in a failed state, `helm upgrade --atomic` cannot roll back
-          # (there is no previously successful revision). Reset to a clean install.
+          # If the release is already in a bad/pending state, reset to a clean install.
+          # Helm can also get "another operation is in progress" if a previous run was interrupted.
           set +e
           STATUS="$(helm status jetscale --namespace jetscale-prod 2>/dev/null | awk '/^STATUS:/ {print $2}')"
           set -e
-          if [ "$STATUS" = "failed" ]; then
-            echo "Helm release is failed; uninstalling to reset before install/upgrade..."
-            helm uninstall jetscale --namespace jetscale-prod || true
+          if [ "$STATUS" = "failed" ] || [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ] || [ "$STATUS" = "pending-rollback" ]; then
+            echo "Helm release status is ${STATUS}; uninstalling to reset before install/upgrade..."
+
+            # Retry uninstall in case Helm still holds an operation lock.
+            for i in $(seq 1 10); do
+              helm uninstall jetscale --namespace jetscale-prod && break
+              echo "uninstall attempt ${i}/10 failed; retrying in 15s..."
+              sleep 15
+            done
 
             # Ensure all key resources are fully gone before reinstalling.
             # Otherwise the next install can race with termination and fail during `--wait`
@@ -406,13 +412,37 @@ jobs:
           done
 
           echo "Values files (in order): ${FILES[*]}"
-          helm upgrade --install jetscale oci://ghcr.io/jetscale-ai/charts/jetscale \
-            --version "$VERSION" \
-            --namespace "${{ steps.target.outputs.namespace }}" \
-            --create-namespace \
-            "${VALUES_ARGS[@]}" \
-            --wait \
-            --timeout 20m0s
+          # Helm can return "another operation is in progress" if a previous run was interrupted.
+          # Retry a few times before failing the job.
+          for i in $(seq 1 6); do
+            set +e
+            OUT="$(helm upgrade --install jetscale oci://ghcr.io/jetscale-ai/charts/jetscale \
+              --version "$VERSION" \
+              --namespace "${{ steps.target.outputs.namespace }}" \
+              --create-namespace \
+              "${VALUES_ARGS[@]}" \
+              --wait \
+              --timeout 20m0s 2>&1)"
+            RC=$?
+            set -e
+
+            if [ "$RC" -eq 0 ]; then
+              echo "$OUT"
+              exit 0
+            fi
+
+            echo "$OUT"
+            if echo "$OUT" | grep -q "another operation (install/upgrade/rollback) is in progress"; then
+              echo "helm upgrade locked (attempt ${i}/6); waiting 20s then retrying..."
+              sleep 20
+              continue
+            fi
+
+            exit "$RC"
+          done
+
+          echo "::error::Timed out retrying helm upgrade due to in-progress operation lock."
+          exit 1
 
       - name: Debug cluster on failure
         if: failure()
