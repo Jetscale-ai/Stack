@@ -60,3 +60,32 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+CORS allowed origins.
+- Always allow localhost:3000 (local dev)
+- For each ingress host, allow https://<host>
+*/}}
+{{- define "jetscale.corsAllowedOrigins" -}}
+{{- $hosts := keys (default dict .Values.ingress.hosts) | sortAlpha -}}
+{{- $origins := list -}}
+{{- range $hosts -}}
+{{- $origins = append $origins (printf "https://%s" .) -}}
+{{- end -}}
+{{- $origins = append $origins "http://localhost:3000" -}}
+{{- join "," $origins -}}
+{{- end -}}
+
+{{/*
+Frontend URL used for email links, etc.
+- Prefer the first ingress host if present.
+- Fall back to localhost for default chart renders.
+*/}}
+{{- define "jetscale.frontendUrl" -}}
+{{- $hosts := keys (default dict .Values.ingress.hosts) | sortAlpha -}}
+{{- if gt (len $hosts) 0 -}}
+{{- printf "https://%s/" (index $hosts 0) -}}
+{{- else -}}
+http://localhost:3000/
+{{- end -}}
+{{- end -}}

@@ -11,23 +11,31 @@ allow_k8s_contexts('kind-kind')
 # - `charts/jetscale/values.local.dev.yaml`: Tilt inner-loop (local builds + live_update)
 # - `charts/jetscale/values.local.live.yaml`: Live-parity (pull published prod images)
 
+backend_dir = '../Backend'
+frontend_dir = '../Frontend'
+# Support both capitalized and lowercased sibling repo names (Linux is case-sensitive).
+if not os.path.exists(backend_dir):
+    backend_dir = '../backend'
+if not os.path.exists(frontend_dir):
+    frontend_dir = '../frontend'
+
 docker_build(
     'ghcr.io/jetscale-ai/backend-dev:tilt',
-    '../Backend',
-    dockerfile='../Backend/Dockerfile',
+    backend_dir,
+    dockerfile=backend_dir + '/Dockerfile',
     target='backend-dev',
     live_update=[
-        sync('../Backend', '/app'),
+        sync(backend_dir, '/app'),
     ],
 )
 
 docker_build(
     'ghcr.io/jetscale-ai/frontend-dev:tilt',
-    '../Frontend',
-    dockerfile='../Frontend/Dockerfile',
-    target='Frontend',  # dev stage in frontend Dockerfile
+    frontend_dir,
+    dockerfile=frontend_dir + '/Dockerfile',
+    target='frontend',  # runtime stage in frontend Dockerfile (nginx)
     live_update=[
-        sync('../Frontend', '/app'),
+        sync(frontend_dir, '/app'),
     ],
 )
 
