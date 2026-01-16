@@ -91,17 +91,6 @@ backend-ws:
     redis-secret: secretRef
     common-secrets: secretRef
     aws-client-secret: secretRef
-  cronJobs:
-    pull-coh:
-      suspend: true
-    pull-co:
-      suspend: true
-    discover-aws:
-      suspend: true
-    generate-from-coh:
-      suspend: true
-    generate-from-discovery:
-      suspend: true
 EOF
 
 # Ensure required Secret exists for backend chart envFrom.
