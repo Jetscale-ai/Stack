@@ -471,7 +471,7 @@ jobs:
             client_name: "${{ env.ENV_ID }}"
             tenant_id: "${{ env.ENV_ID }}"
 
-          # Ephemeral: the IaC does not manage `${client_name}-${env}/application/config` by default.
+          # Ephemeral: the IaC does not manage "<client>-<env>/application/config" by default.
           # Disable this ExternalSecret so backend pods don't hard-fail on a missing secret.
           externalSecret:
             app:
@@ -504,8 +504,19 @@ jobs:
               redis-secret: secretRef
               common-secrets: secretRef
               aws-client-secret: secretRef
-            # Preview safety: disable background cronjobs in ephemeral.
-            cronJobs: null
+            # Preview safety: disable/suspend background cronjobs in ephemeral.
+            # (Must remain a map type to avoid Helm coalesce warnings.)
+            cronJobs:
+              pull-coh:
+                suspend: true
+              pull-co:
+                suspend: true
+              discover-aws:
+                suspend: true
+              generate-from-coh:
+                suspend: true
+              generate-from-discovery:
+                suspend: true
 
           backend-ws:
             imagePullSecrets:
@@ -519,7 +530,24 @@ jobs:
               redis-secret: secretRef
               common-secrets: secretRef
               aws-client-secret: secretRef
+            cronJobs:
+              pull-coh:
+                suspend: true
+              pull-co:
+                suspend: true
+              discover-aws:
+                suspend: true
+              generate-from-coh:
+                suspend: true
+              generate-from-discovery:
+                suspend: true
           EOF
+
+          # Ensure required Secret exists for backend chart envFrom.
+          # The backend chart defaults include `app-secrets`, which maps to <release>-app-secrets.
+          kubectl -n "${{ env.ENV_ID }}" create secret generic "${RELEASE}-app-secrets" \
+            --from-literal=JETSCALE_PLACEHOLDER="true" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
           # Reset legacy/failed releases to avoid name drift across iterations.
           echo "🧹 Reset Helm releases (best-effort)"

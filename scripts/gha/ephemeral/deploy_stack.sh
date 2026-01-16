@@ -67,7 +67,17 @@ backend-api:
     redis-secret: secretRef
     common-secrets: secretRef
     aws-client-secret: secretRef
-  cronJobs: null
+  cronJobs:
+    pull-coh:
+      suspend: true
+    pull-co:
+      suspend: true
+    discover-aws:
+      suspend: true
+    generate-from-coh:
+      suspend: true
+    generate-from-discovery:
+      suspend: true
 
 backend-ws:
   imagePullSecrets:
@@ -81,7 +91,23 @@ backend-ws:
     redis-secret: secretRef
     common-secrets: secretRef
     aws-client-secret: secretRef
+  cronJobs:
+    pull-coh:
+      suspend: true
+    pull-co:
+      suspend: true
+    discover-aws:
+      suspend: true
+    generate-from-coh:
+      suspend: true
+    generate-from-discovery:
+      suspend: true
 EOF
+
+# Ensure required Secret exists for backend chart envFrom.
+kubectl -n "${ENV_ID}" create secret generic "${RELEASE}-app-secrets" \
+  --from-literal=JETSCALE_PLACEHOLDER="true" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # Reset legacy/failed releases to avoid name drift across iterations.
 echo "🧹 Reset Helm releases (best-effort)"
