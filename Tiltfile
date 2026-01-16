@@ -24,6 +24,7 @@ docker_build(
     backend_dir,
     dockerfile=backend_dir + '/Dockerfile',
     target='backend-dev',
+    platform='linux/amd64',
     live_update=[
         sync(backend_dir, '/app'),
     ],
@@ -34,6 +35,7 @@ docker_build(
     frontend_dir,
     dockerfile=frontend_dir + '/Dockerfile',
     target='frontend',  # runtime stage in frontend Dockerfile (nginx)
+    platform='linux/amd64',
     live_update=[
         sync(frontend_dir, '/app'),
     ],
