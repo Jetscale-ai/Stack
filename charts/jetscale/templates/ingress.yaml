@@ -29,8 +29,12 @@ spec:
       secretName: {{ .secretName }}
     {{- end }}
   {{- end }}
+  {{- $hosts := (.Values.ingress.hosts | default dict) -}}
+  {{- if eq (len $hosts) 0 }}
+  {{- fail "charts/jetscale: ingress.enabled is true but ingress.hosts is empty; set ingress.hosts (at least one host) or disable ingress" -}}
+  {{- end }}
   rules:
-    {{- range $host,$paths := .Values.ingress.hosts }}
+    {{- range $host,$paths := $hosts }}
     - host: {{ $host | quote }}
       http:
         paths:
