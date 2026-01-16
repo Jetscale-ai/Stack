@@ -15,6 +15,30 @@ source "${REPO_ROOT}/scripts/lib/tf_helpers.sh"
 # Ensure all kubeconfig-reading tools/providers use the same config path.
 export KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/config}"
 
+# kubectl_client_version prints a stable client version string across kubectl versions.
+kubectl_client_version() {
+  if ! command -v kubectl >/dev/null 2>&1; then
+    echo ""
+    return 0
+  fi
+
+  local v=""
+  v="$(kubectl version --client=true -o yaml 2>/dev/null | awk '/gitVersion:/ {print $2; exit}' || true)"
+  if [[ -z "${v}" ]]; then
+    v="$(kubectl version --client=true 2>/dev/null | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g' | sed -E 's/^ //; s/ $//')"
+  fi
+  echo "${v}"
+}
+
+fmt_code_or_unavailable() {
+  local v="${1:-}"
+  if [[ -z "${v}" || "${v}" == "None" || "${v}" == "null" ]]; then
+    echo "⚠️ _Unavailable_"
+  else
+    echo "\`${v}\`"
+  fi
+}
+
 # Optional: if Jetscale-IaC declares `variable "kubeconfig_path"`, pass it explicitly.
 # This keeps Stack scripts forward-compatible without breaking older IaC revisions.
 TF_VAR_ARGS=()
@@ -62,7 +86,7 @@ ensure_kubeconfig_required() {
   if [[ -z "${ctx}" ]]; then
     echo "::error::kubeconfig at ${KUBECONFIG} is present but has no current-context; Helm/Kubernetes providers will be unable to connect."
     echo "caller=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
-    echo "kubectl_version=$(kubectl version --client --short 2>/dev/null || true)"
+    echo "kubectl_version=$(kubectl_client_version 2>/dev/null || true)"
     echo "::group::kubeconfig (redacted-ish)"
     sed -n '1,120p' "${KUBECONFIG}" || true
     echo "::endgroup::"
@@ -200,7 +224,7 @@ if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2
   echo "caller=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
   echo "principal_arn=${PRINCIPAL_ARN}"
   echo "kubectl_context=$(kubectl config current-context 2>/dev/null || true)"
-  echo "kubectl_version=$(kubectl version --client --short 2>/dev/null || true)"
+  echo "kubectl_version=$(kubectl_client_version 2>/dev/null || true)"
   aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" --query 'cluster.accessConfig.authenticationMode' --output text || true
   aws eks describe-access-entry --cluster-name "${ENV_ID}" --region "${REGION}" --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1 && echo "eks_access_entry=present" || echo "eks_access_entry=absent"
   aws eks list-associated-access-policies --cluster-name "${ENV_ID}" --region "${REGION}" --principal-arn "${PRINCIPAL_ARN}" >/dev/null 2>&1 && echo "eks_access_policies=list_ok" || echo "eks_access_policies=list_failed"
@@ -232,15 +256,26 @@ if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2
       echo ""
       echo "### 🆔 Identity Context"
       echo ""
+      kubectl_context="$(kubectl config current-context 2>/dev/null || true)"
+      kubectl_v="$(kubectl_client_version 2>/dev/null || true)"
+      cluster_arn="$(aws eks describe-cluster --name \"${ENV_ID}\" --region ${REGION} --query 'cluster.arn' --output text 2>/dev/null || true)"
+      eks_auth_mode="$(aws eks describe-cluster --name \"${ENV_ID}\" --region ${REGION} --query 'cluster.accessConfig.authenticationMode' --output text 2>/dev/null || true)"
+      if [[ -z "${cluster_arn}" || "${cluster_arn}" == "None" || "${cluster_arn}" == "null" ]]; then
+        cluster_arn="${kubectl_context}"
+      fi
+      cluster_cell="$(fmt_code_or_unavailable "${cluster_arn}")"
+      kubectl_ctx_cell="$(fmt_code_or_unavailable "${kubectl_context}")"
+      kubectl_cell="$(fmt_code_or_unavailable "${kubectl_v}")"
+      auth_mode_cell="$(fmt_code_or_unavailable "${eks_auth_mode}")"
       echo "| Component | Identity / Resource |"
       echo "| :--- | :--- |"
       echo "| env_id | \`${ENV_ID}\` |"
       echo "| caller | \`$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)\` |"
       echo "| principal_arn | \`${PRINCIPAL_ARN}\` |"
-      echo "| cluster | \`$(aws eks describe-cluster --name \"${ENV_ID}\" --region ${REGION} --query 'cluster.arn' --output text 2>/dev/null || true)\` |"
-      echo "| kubectl_context | \`$(kubectl config current-context 2>/dev/null || true)\` |"
-      echo "| kubectl | \`$(kubectl version --client --short 2>/dev/null || true)\` |"
-      echo "| eks_auth_mode | \`$(aws eks describe-cluster --name \"${ENV_ID}\" --region ${REGION} --query 'cluster.accessConfig.authenticationMode' --output text 2>/dev/null || true)\` |"
+      echo "| cluster | ${cluster_cell} |"
+      echo "| kubectl_context | ${kubectl_ctx_cell} |"
+      echo "| kubectl | ${kubectl_cell} |"
+      echo "| eks_auth_mode | ${auth_mode_cell} |"
       echo ""
       echo "### 🛡️ RBAC Capabilities (kubectl auth can-i)"
       echo ""
