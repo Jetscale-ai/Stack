@@ -70,14 +70,12 @@ backend-ws:
     tag: "tilt"
     pullPolicy: Always
   imagePullSecrets: []
-  command: ["./entrypoint.sh"]
-  args: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+  command: ["python3", "-m", "uvicorn"]
+  args: ["main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
   envFrom: null
   env:
     JETSCALE_APP_NAME: "JetScale Backend WS (Tilt)"
     JETSCALE_DEBUG: "true"
-    JETSCALE_DB_HOST: "jetscale-local-postgres"
-    JETSCALE_DB_PORT: "5432"
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale_backend"
     JETSCALE_DB_PASSWORD: "jetscale_backend"
