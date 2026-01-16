@@ -321,6 +321,20 @@ jobs:
           if [ "$STATUS" = "failed" ]; then
             echo "Helm release is failed; uninstalling to reset before install/upgrade..."
             helm uninstall jetscale --namespace jetscale-prod || true
+
+            # Ensure all key resources are fully gone before reinstalling.
+            # Otherwise the next install can race with termination and fail during `--wait`
+            # with confusing "services <name> not found" / backend-not-found errors.
+            kubectl delete ingress/jetscale -n jetscale-prod --ignore-not-found
+            kubectl delete svc/jetscale-backend-api svc/jetscale-backend-ws svc/jetscale-frontend -n jetscale-prod --ignore-not-found
+            kubectl delete deploy/jetscale-backend-api deploy/jetscale-backend-ws deploy/jetscale-frontend -n jetscale-prod --ignore-not-found
+            kubectl delete externalsecret/jetscale-app-secrets -n jetscale-prod --ignore-not-found
+            kubectl delete targetgroupbinding -n jetscale-prod -l "app.kubernetes.io/instance=jetscale" --ignore-not-found || true
+
+            kubectl wait --for=delete ingress/jetscale -n jetscale-prod --timeout=10m || true
+            kubectl wait --for=delete svc/jetscale-backend-api -n jetscale-prod --timeout=10m || true
+            kubectl wait --for=delete svc/jetscale-backend-ws -n jetscale-prod --timeout=10m || true
+            kubectl wait --for=delete svc/jetscale-frontend -n jetscale-prod --timeout=10m || true
           else
             echo "Helm release status: ${STATUS:-not-installed}"
           fi
