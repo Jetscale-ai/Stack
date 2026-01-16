@@ -184,6 +184,13 @@ jobs:
             --type merge \
             -p '{"imagePullSecrets":[{"name":"jetscale-registry-secret"}]}'
 
+          # Backend/frontend charts commonly set an explicit ServiceAccount name (e.g. jetscale-service-account).
+          # Ensure it can pull from GHCR as well.
+          kubectl patch serviceaccount jetscale-service-account \
+            --namespace "${{ steps.target.outputs.namespace }}" \
+            --type merge \
+            -p '{"imagePullSecrets":[{"name":"jetscale-registry-secret"}]}' || true
+
       - name: Ensure AWS client secret exists (Secrets Manager -> ESO)
         env:
           # Optional: provide the JSON payload via the GitHub Environment secret.
@@ -260,6 +267,49 @@ jobs:
           kubectl -n "${{ steps.target.outputs.namespace }}" get externalsecret "${{ steps.target.outputs.aws_client_k8s_secret }}" -o wide || true
           kubectl -n "${{ steps.target.outputs.namespace }}" describe externalsecret "${{ steps.target.outputs.aws_client_k8s_secret }}" || true
           exit 1
+
+      - name: Ensure app config secret exists (Secrets Manager -> ESO)
+        env:
+          # Optional: provide the JSON payload via the GitHub Environment secret.
+          # If omitted, we default to an empty JSON object so ESO can materialize the secret.
+          AWS_APP_CONFIG_SECRET_JSON: ${{ secrets.AWS_APP_CONFIG_SECRET_JSON }}
+        run: |
+          set -euo pipefail
+
+          SECRET_ID="${{ steps.target.outputs.namespace }}/application/config"
+          REGION="us-east-1"
+
+          DEFAULT_SECRET_JSON='{}'
+
+          # Ensure the secret exists and has an AWSCURRENT value so ESO extraction succeeds.
+          set +e
+          aws secretsmanager describe-secret --secret-id "$SECRET_ID" --region "$REGION" >/dev/null 2>&1
+          DESCRIBE_RC=$?
+          aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --region "$REGION" --version-stage AWSCURRENT >/dev/null 2>&1
+          CURRENT_RC=$?
+          set -e
+
+          if [ "$DESCRIBE_RC" -eq 0 ] && [ "$CURRENT_RC" -eq 0 ]; then
+            echo "✅ Secrets Manager app config exists with AWSCURRENT value: $SECRET_ID"
+          else
+            SECRET_JSON="${AWS_APP_CONFIG_SECRET_JSON:-$DEFAULT_SECRET_JSON}"
+            echo "$SECRET_JSON" | jq -e . >/dev/null
+
+            if [ "$DESCRIBE_RC" -ne 0 ]; then
+              echo "🛠️ Creating Secrets Manager app config secret: $SECRET_ID"
+              aws secretsmanager create-secret \
+                --name "$SECRET_ID" \
+                --description "JetScale app configuration (consumed by ESO -> jetscale-app-secrets)" \
+                --secret-string "$SECRET_JSON" \
+                --region "$REGION"
+            else
+              echo "🛠️ App config secret exists but has no AWSCURRENT value; setting value for: $SECRET_ID"
+              aws secretsmanager put-secret-value \
+                --secret-id "$SECRET_ID" \
+                --secret-string "$SECRET_JSON" \
+                --region "$REGION"
+            fi
+          fi
 
       - name: Reset failed Helm release (if needed)
         run: |
