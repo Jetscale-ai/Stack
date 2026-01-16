@@ -1,7 +1,7 @@
 apiVersion: skaffold/v4beta7
 kind: Config
 metadata:
-  name: jetscale-stack
+  name: jetscale
 
 # ------------------------------------------------------------------------------
 # GLOBAL BUILD: Options Only (No Artifacts)
@@ -22,12 +22,12 @@ profiles:
     build:
       artifacts:
         - image: jetscale-backend-local
-          context: ../backend
+          context: ../Backend
           docker:
             dockerfile: Dockerfile
             target: backend
         - image: jetscale-frontend-local
-          context: ../frontend
+          context: ../Frontend
           docker:
             dockerfile: Dockerfile
             target: frontend
@@ -35,12 +35,12 @@ profiles:
       kubeContext: kind-kind
       helm:
         releases:
-          - name: jetscale-stack-test
-            chartPath: charts/app
+          - name: jetscale-test
+            chartPath: charts/jetscale
             namespace: jetscale-test-local
             createNamespace: true
             valuesFiles:
-              - charts/app/values.local.e2e.yaml
+              - charts/jetscale/values.local.e2e.yaml
 
   # --------------------------------------------------------
   # CI PROFILE (Kind on Runner)
@@ -52,13 +52,13 @@ profiles:
       kubeContext: kind-kind
       helm:
         releases:
-          - name: jetscale-stack-ci
-            chartPath: charts/app
+          - name: jetscale-ci
+            chartPath: charts/jetscale
             namespace: jetscale-ci
             createNamespace: true
             valuesFiles:
               # Kind CI must be self-contained (no Terraform-managed Secrets/DB/Redis, no ALB)
-              - charts/app/values.ci.kind.yaml
+              - charts/jetscale/values.ci.kind.yaml
 
   # --------------------------------------------------------
   # NOTE:

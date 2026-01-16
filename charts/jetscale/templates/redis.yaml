@@ -1,0 +1,40 @@
+{{ if .Values.redis.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis-master
+  labels:
+    {{- include "jetscale.labels" $ | nindent 4 }}
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    {{- include "jetscale.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    {{- include "jetscale.labels" $ | nindent 4 }}
+spec:
+  serviceName: {{ .Release.Name }}-redis-master
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "jetscale.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        {{- include "jetscale.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image }}
+          ports:
+            - containerPort: 6379
+{{- end }}

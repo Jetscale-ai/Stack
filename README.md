@@ -44,6 +44,8 @@ To save costs, Preview environments are **manual-trigger only**.
 
 > **Note:** This check is a **Mandatory Gate** for merging to `main`.
 
+- Architecture: `docs/ephemeral-architecture.md`
+
 ### The Janitor (Auto-Cleanup)
 When a PR is **closed** or **merged**, the `Janitor` workflow automatically destroys the cluster.
 * **Manual Fallback:** If the Janitor fails, you can manually trigger the `Ephemeral Fleet` workflow with **Action: destroy**.
@@ -69,11 +71,23 @@ Skaffold is intentionally scoped to **Kind** workflows (local + CI E2E).
 
 ### 2. Boot the Local Dev Platform (Inner Loop)
 
-Run these commands from the `stack/` directory:
+#### Helm/Container Registry Github auth.
+
+Documentation: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry
+
+To use the OCI published Helm charts and GHCR images by our pipelines, we need to auth. our CLIs
+1. Create a classic PAT with those minimal permissions:
+  - read:packages
+2. [HELM] Login with your username: `helm registry login ghcr.io --username <USERNAME>`
+3. [Docker] Login with your username: `docker login ghcr.io --username <USERNAME>`
+
+#### How-tos
+Run these commands from the `Stack/` directory (root of this repo):
 
 ```bash
 # 1. Create the local cluster
 kind create cluster --config kind/kind-config.yaml --name kind
+# If you already have a customized .kube/config, you can pass the argument --kubeconfig string for a specific location.
 
 # 2. Authenticate to GHCR (Required for private OCI chart dependencies)
 # Option A (recommended): create a gitignored `.env` with:
@@ -85,7 +99,7 @@ kind create cluster --config kind/kind-config.yaml --name kind
 #   gh auth token | helm registry login ghcr.io --username $(gh api user -q .login) --password-stdin
 
 # 3. Validate (also builds chart deps)
-mage validate:envs
+mage validate:envs aws
 
 # 4. Start Dev Loop (Fat images + Hot Reload)
 tilt up
@@ -93,17 +107,14 @@ tilt up
 
 ## 📂 Repository Layout
 
-- `charts/app` — **The Definition (Sovereign).** The generic "Umbrella Chart". Dependencies are pinned to immutable OCI versions.
+- `charts/jetscale` — **The Definition (Sovereign).** The generic "Umbrella Chart". Dependencies are pinned to immutable OCI versions.
 - `envs/` — **The Instantiation.**
-  - `envs/live/values.yaml` → Production (HA, replication).
-  - `envs/preview/values.yaml` → Ephemeral (Cluster-per-PR settings).
-- `clients/` — **The Infrastructure (Terraform).**
-  - Defines the AWS resources for both Live and Ephemeral tenants.
-
+  - All `.yaml` and `.yml` files in subdirectories are automatically validated.
+  - See [envs/](envs/README.md) documentation
 ## 🧙‍♂️ Mage Tasks
 
 ```bash
-mage validate:envs     # Check structural integrity of all envs/
+mage validate:envs aws    # Check structural integrity of all YAML files in envs/
 mage test:locale2e     # Run Stage 2 (Local Parity)
 mage test:ci           # Run Stage 3 (CI Mode)
 ```

@@ -10,6 +10,7 @@
 # OS
 .DS_Store
 Thumbs.db
+*.log
 
 # Golang (Mage)
 jetscale-stack
@@ -29,6 +30,7 @@ jetscale-stack
 # Build artifacts
 *.tgz
 charts/*/charts/
+charts/**/renders/**
 
 # Secrets & Local Overrides
 values.secret.yaml
@@ -58,6 +60,10 @@ lib64/
 parts/
 sdist/
 var/
+
+# Repo scripts (do not ignore these)
+!scripts/lib/
+!scripts/lib/**
 wheels/
 share/python-wheels/
 *.egg-info/

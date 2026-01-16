@@ -1,0 +1,56 @@
+## AWS Specific override
+
+ingress:
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=3600
+    alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=60
+    # ALB stickiness is for external/public clients -> Pod's IP
+    # K8s svc stickiness if for internal K8s traffic
+    # alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=10800
+    # TODO decide duration
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/ssl-policy: "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  albEncryptionRootAnnotations: true #Inject extra annotations for checking http header
+    # Where targetGroups serviceName is based on Release Name
+    # alb.ingress.kubernetes.io/conditions.encrypted-root: >
+    #   [{"field":"http-header","httpHeaderConfig":{"httpHeaderName": "JetScale-Request-Encryption-Enabled", "values":["true", "True", "TRUE"]}}]
+    # alb.ingress.kubernetes.io/actions.encrypted-root: >
+    #   {"type":"forward","forwardConfig":{"targetGroups":[{"serviceName":"{{ .Release.Name}}-backend-api","servicePort":"8000"}]}}
+  ingressHostDefaultPaths:
+    # Encrypted requests (highest priority - evaluated first)
+    - path: /
+      pathType: Prefix
+      serviceName: encrypted-root
+      servicePortName: use-annotation
+    # API documentation endpoints
+    - path: /openapi.json
+      pathType: Prefix
+      serviceNameSuffix: backend-api
+      servicePortNumber: 8000
+    - path: /redoc
+      pathType: Prefix
+      serviceNameSuffix: backend-api
+      servicePortNumber: 8000
+    - path: /docs
+      pathType: Prefix
+      serviceNameSuffix: backend-api
+      servicePortNumber: 8000
+    # API endpoints (must come before WebSocket for proper matching)
+    - path: /api
+      pathType: Prefix
+      serviceNameSuffix: backend-api
+      servicePortNumber: 8000
+    # WebSocket endpoints
+    - path: /api/v1/ws
+      pathType: Prefix
+      serviceNameSuffix: backend-ws
+      servicePortNumber: 8001
+    # Default frontend (lowest priority - catch-all)
+    - path: /
+      pathType: Prefix
+      serviceNameSuffix: frontend
+      servicePortNumber: 80

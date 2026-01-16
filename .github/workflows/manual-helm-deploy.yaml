@@ -87,6 +87,10 @@ jobs:
     name: Helm Diff
     needs: validate
     runs-on: ubuntu-latest
+    # NOTE: Do not attach an Environment here.
+    # - Staging environments have required reviewers configured.
+    # - If we attach the environment to the diff job, the diff can't run until approval is granted,
+    #   which defeats the purpose of "review the diff before approving deploy".
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -94,14 +98,16 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deployer
+          # NOTE: This currently uses the deploy role. If we later add a read-only IAM role for diff,
+          # switch this to that role (least-privilege).
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-helm-diff
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
         with:
-          version: 'v3.14.0'
+          version: 'v3.18.3'
 
       - name: Install Helm Diff Plugin
         run: |
@@ -174,8 +180,7 @@ jobs:
     name: Helm Deploy
     needs: [validate, helm-diff]
     runs-on: ubuntu-latest
-    # Use GitHub environment for manual approval
-    # This will require manual approval before proceeding
+    # Use GitHub environment for manual approval (staging has required reviewers configured).
     environment: ${{ inputs.environment_type }}-${{ inputs.client_name }}
     steps:
       - name: Checkout
@@ -184,14 +189,14 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deployer
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-helm-deploy
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
         with:
-          version: 'v3.14.0'
+          version: 'v3.18.3'
 
       - name: Configure kubectl
         run: |

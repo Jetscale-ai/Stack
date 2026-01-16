@@ -24,8 +24,8 @@ We represent a shift from "Container Orchestration" (Docker Compose) to "Platfor
 
 ### 3.2. Structural Integrity (Vigor)
 
-- **Validation First:** No configuration shall be committed without passing `mage validate:envs`. This ensures `envs/` configurations always align with `charts/` schemas.
-- **Environment Parity:** The `charts/app` definition is universal. Environments (`envs/`) differ only in configuration (values), never in structure (templates).
+- **Validation First:** No configuration shall be committed without passing `mage validate:envs aws`. This ensures `envs/` configurations always align with `charts/` schemas.
+- **Environment Parity:** The `charts/jetscale` definition is universal. Environments (`envs/`) differ only in configuration (values), never in structure (templates).
 
 ### 3.3. Public by Default (Ethos)
 
@@ -61,9 +61,13 @@ _Ethos (Identity), Logos (Reason), Praxis (Action)._
 This section exists because we lost time to “paper cuts” that looked like infra bugs but were actually:
 OIDC subject mismatch, missing ALB TLS annotations, green-but-dead workflows, and Terraform destroy vs missing clusters.
 
+- Architecture doc: `docs/ephemeral-architecture.md`
+
 ### 6.1. Parity Rule (Preview ↔ Live)
 
-- **Rule:** `envs/preview/values.yaml` must match `envs/live/values.yaml` for DNS/TLS semantics:
+- **Rule:** Preview + Live must match for DNS/TLS semantics via the `envs/` inheritance model:
+  - Shared ALB behavior lives in `envs/aws.yaml`
+  - Wildcard cert ARN must be consistent between `envs/preview/preview.yaml` and `envs/live/console.yaml`
   - `alb.ingress.kubernetes.io/listen-ports` includes 80+443
   - `alb.ingress.kubernetes.io/ssl-redirect: "443"`
   - `alb.ingress.kubernetes.io/certificate-arn` points at the wildcard cert

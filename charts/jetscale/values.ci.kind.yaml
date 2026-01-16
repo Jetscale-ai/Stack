@@ -23,22 +23,24 @@ redis:
   enabled: true
   image: "redis:7-bullseye"
 
+externalSecret:
+  app:
+    enabled: false
+
 # 3. BACKEND API (remote OCI image, wired to in-cluster DB/Redis)
-backend:
+backend-api:
   enabled: true
   replicaCount: 1
   serviceAccount:
-    create: false
-    name: ""
+    create: true
+    name: "jetscale-service-account"
   imagePullSecrets:
     - name: regcred
   image:
     repository: ghcr.io/jetscale-ai/backend
     tag: "2.0.3"
     pullPolicy: Always
-  externalSecrets:
-    enabled: false
-  envFrom: []
+  envFrom: null
   env:
     JETSCALE_APP_NAME: "JetScale Backend (CI)"
     JETSCALE_DEBUG: "false"
@@ -47,46 +49,64 @@ backend:
     JETSCALE_DEFAULT_ADMIN_USERNAME: "admin"
     JETSCALE_DEFAULT_ADMIN_PASSWORD: "ci-admin-password"
     # Required by backend entrypoint bootstrap (explicit host/user/password checks)
-    JETSCALE_DB_HOST: "jetscale-stack-ci-postgres"
+    JETSCALE_DB_HOST: "jetscale-ci-postgres"
     JETSCALE_DB_PORT: "5432"
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale-user"
     JETSCALE_DB_PASSWORD: "jetscale-password"
-    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-stack-ci-postgres:5432/jetscale"
-    JETSCALE_REDIS_URL: "redis://jetscale-stack-ci-redis-master:6379/0"
+    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-ci-postgres:5432/jetscale"
+    # JETSCALE_REDIS_URL: "redis://jetscale-ci-redis-master:6379/0"
+    JETSCALE_REDIS_HOST: jetscale-ci-redis-master
     JETSCALE_AWS_REGION: "us-east-1"
 
-# 4. FRONTEND WEB (remote OCI image)
+# 4. BACKEND WS
+backend-ws:
+  serviceAccount:
+    create: false
+    name: "jetscale-service-account"
+  image:
+    repository: ghcr.io/jetscale-ai/backend
+    tag: "2.0.3"
+    pullPolicy: Always
+  imagePullSecrets:
+    - name: regcred
+  # service:
+  #   type: NodePort
+  #   port: 8001
+  #   nodePort: 30001
+  # command: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+  envFrom: null
+  env:
+    JETSCALE_APP_NAME: "JetScale Backend (CI)"
+    JETSCALE_DEBUG: "true"
+    # Required by backend entrypoint bootstrap (explicit host/user/password checks)
+    JETSCALE_DB_HOST: "jetscale-ci-postgres"
+    JETSCALE_DB_PORT: "5432"
+    JETSCALE_DB_NAME: "jetscale"
+    JETSCALE_DB_USER: "jetscale-user"
+    JETSCALE_DB_PASSWORD: "jetscale-password"
+    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-ci-postgres:5432/jetscale"
+    # JETSCALE_REDIS_URL: "redis://jetscale-ci-redis-master:6379/0"
+    JETSCALE_REDIS_HOST: jetscale-ci-redis-master
+    JETSCALE_AWS_REGION: "us-east-1"
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+
+# 5. FRONTEND WEB (remote OCI image)
 frontend:
   enabled: true
   replicaCount: 1
-  serviceAccount:
-    create: false
-    name: ""
   imagePullSecrets:
     - name: regcred
   image:
     repository: ghcr.io/jetscale-ai/frontend
-    tag: "2.0.6"
+    tag: "2.0.4"
     pullPolicy: Always
-  service:
-    port: 80
-  readinessProbe:
-    httpGet:
-      path: /
-      port: 80
-  livenessProbe:
-    httpGet:
-      path: /
-      port: 80
   env:
-    VITE_API_BASE_URL: "http://jetscale-stack-ci-backend:8000"
+    VITE_API_BASE_URL: "http://jetscale-ci-backend:8000"
 
 # 5. ROUTING (not needed for CI; tests port-forward backend service)
 ingress:
   enabled: false
-
-apiExternal:
+appConfigMap:
   enabled: false
-
-

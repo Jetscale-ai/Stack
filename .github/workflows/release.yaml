@@ -6,6 +6,7 @@ on:
     paths:
       - 'charts/**'
       - '.release.yml'
+      - 'envs/aws.yaml'
       - 'envs/live/**'
       - '.github/workflows/release.yaml'
       - '.github/workflows/reusable-release.yaml'
@@ -27,7 +28,7 @@ on:
         default: ""
         type: string
       values_file:
-        description: "Optional override for Helm values file (default: envs/live/values.yaml for jetscale; envs/live/<tenant>.yaml otherwise)."
+        description: "Optional override for Helm values. If comma-separated, treated as a full ordered list. If a single path, treated as the env-specific values file (cloud + env defaults still apply)."
         required: false
         default: ""
         type: string
@@ -49,7 +50,7 @@ jobs:
   publish:
     uses: ./.github/workflows/reusable-release.yaml
     with:
-      chart_path: "charts/app"
+      chart_path: "charts/jetscale"
     secrets:
       token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
 
@@ -121,16 +122,25 @@ jobs:
             fi
           fi
 
-          # Default values file:
-          # - jetscale -> envs/live/values.yaml
-          # - others  -> envs/live/<tenant>.yaml
+          # Values inheritance (recommended):
+          # - envs/aws.yaml (cloud)
+          # - envs/live/default.yaml (env defaults)
+          # - envs/live/<tenant>.yaml (deployment-specific; jetscale uses console.yaml)
+          #
+          # INPUT_VALUES_FILE behavior:
+          # - If comma-separated, treat as a full ordered list of values files.
+          # - If a single path, treat as the deployment-specific file (cloud + env defaults still apply).
           if [ -n "${INPUT_VALUES_FILE:-}" ]; then
-            VALUES="${INPUT_VALUES_FILE}"
+            if echo "${INPUT_VALUES_FILE}" | grep -q ','; then
+              VALUES_FILES="${INPUT_VALUES_FILE}"
+            else
+              VALUES_FILES="envs/aws.yaml,envs/live/default.yaml,${INPUT_VALUES_FILE}"
+            fi
           else
             if [ "${TENANT}" = "jetscale" ]; then
-              VALUES="envs/live/values.yaml"
+              VALUES_FILES="envs/aws.yaml,envs/live/default.yaml,envs/live/console.yaml"
             else
-              VALUES="envs/live/${TENANT}.yaml"
+              VALUES_FILES="envs/aws.yaml,envs/live/default.yaml,envs/live/${TENANT}.yaml"
             fi
           fi
 
@@ -143,7 +153,7 @@ jobs:
           echo "tenant=${TENANT}" >> "$GITHUB_OUTPUT"
           echo "namespace=${NS}" >> "$GITHUB_OUTPUT"
           echo "public_host=${HOST}" >> "$GITHUB_OUTPUT"
-          echo "values_file=${VALUES}" >> "$GITHUB_OUTPUT"
+          echo "values_files=${VALUES_FILES}" >> "$GITHUB_OUTPUT"
           echo "aws_client_k8s_secret=${AWS_CLIENT_K8S_SECRET}" >> "$GITHUB_OUTPUT"
           echo "aws_client_sm_key=${AWS_CLIENT_SM_KEY}" >> "$GITHUB_OUTPUT"
 
@@ -256,11 +266,11 @@ jobs:
           # If the release is already in a failed state, `helm upgrade --atomic` cannot roll back
           # (there is no previously successful revision). Reset to a clean install.
           set +e
-          STATUS="$(helm status jetscale-stack --namespace jetscale-prod 2>/dev/null | awk '/^STATUS:/ {print $2}')"
+          STATUS="$(helm status jetscale --namespace jetscale-prod 2>/dev/null | awk '/^STATUS:/ {print $2}')"
           set -e
           if [ "$STATUS" = "failed" ]; then
             echo "Helm release is failed; uninstalling to reset before install/upgrade..."
-            helm uninstall jetscale-stack --namespace jetscale-prod || true
+            helm uninstall jetscale --namespace jetscale-prod || true
           else
             echo "Helm release status: ${STATUS:-not-installed}"
           fi
@@ -301,11 +311,22 @@ jobs:
         run: |
           echo "🔥 Promoting Version $VERSION to Live..."
           # Match Jetscale-IaC namespace convention: {client}-{environment}
-          helm upgrade --install jetscale-stack oci://ghcr.io/jetscale-ai/charts/jetscale-stack \
+          VALUES_ARGS=()
+          IFS=',' read -ra FILES <<< "${{ steps.target.outputs.values_files }}"
+          for file in "${FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Values file not found: $file"
+              exit 1
+            fi
+            VALUES_ARGS+=(--values "$file")
+          done
+
+          echo "Values files (in order): ${FILES[*]}"
+          helm upgrade --install jetscale oci://ghcr.io/jetscale-ai/charts/jetscale \
             --version "$VERSION" \
             --namespace "${{ steps.target.outputs.namespace }}" \
             --create-namespace \
-            --values "${{ steps.target.outputs.values_file }}" \
+            "${VALUES_ARGS[@]}" \
             --wait \
             --timeout 20m0s
 
@@ -314,9 +335,9 @@ jobs:
         run: |
           set +e
           echo "=== Helm status ==="
-          helm status jetscale-stack --namespace jetscale-prod
+          helm status jetscale --namespace jetscale-prod
           echo "=== Helm history ==="
-          helm history jetscale-stack --namespace jetscale-prod || true
+          helm history jetscale --namespace jetscale-prod || true
           echo "=== K8s resources (jetscale-prod) ==="
           kubectl get all -n jetscale-prod || true
           echo "=== K8s pods (wide) ==="

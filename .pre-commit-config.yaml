@@ -5,7 +5,7 @@ repos:
       # Runs 'helm template' via Mage to verify envs/ and charts/ syntax.
       - id: mage-validate-envs
         name: Validate Helm Environments
-        entry: mage validate:envs
+        entry: mage validate:envs aws
         language: system
         files: ^(charts/|envs/)
         pass_filenames: false

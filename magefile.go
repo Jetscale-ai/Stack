@@ -271,10 +271,26 @@ type Validate mg.Namespace
 // Envs runs 'helm template' against all environment configurations.
 // This proves that values.yaml + templates = Valid Kubernetes YAML.
 // It does NOT require a cluster.
-func (Validate) Envs() error {
-	envs := []string{"live", "preview"}
-
+//
+// USAGE: mage validate:envs <cloudName>
+// Examples: mage validate:envs aws | mage validate:envs gcp | mage validate:envs azure
+//
+// The cloudName parameter specifies which cloud provider values file to use (envs/<cloudName>.yaml)
+func (Validate) Envs(cloudName string) error {
 	fmt.Println("🔍 Validating Environment Configurations...")
+
+	// Validate cloudName is provided
+	if cloudName == "" {
+		return fmt.Errorf(
+			"cloudName argument is required.\n\n" +
+				"Usage: mage validate:envs <cloudName>\n" +
+				"Examples:\n" +
+				"  mage validate:envs aws\n" +
+				"  mage validate:envs gcp\n" +
+				"  mage validate:envs azure\n\n" +
+				"This will use the cloud-specific values file: envs/<cloudName>.yaml",
+		)
+	}
 
 	// Local Dev QoL: load `.env` if present so devs don't need to export vars in their shell.
 	// (Safe: `.env` should be gitignored; we never print secrets.)
@@ -284,9 +300,17 @@ func (Validate) Envs() error {
 	// private OCI chart deps can be pulled without manual login steps.
 	_ = ensureHelmGhcrLogin()
 
+	// Ensure dependencies are updated (requires OCI access or local file://)
+	fmt.Println("   > helm dependency update charts/jetscale")
+	depUpCmd := exec.Command("helm", "dependency", "update", "charts/jetscale")
+	if out, err := depUpCmd.CombinedOutput(); err != nil {
+		msg := string(out)
+		return fmt.Errorf("helm dependency update failed:\n%s", msg)
+	}
+
 	// Ensure dependencies are ready (requires OCI access or local file://)
-	fmt.Println("   > helm dependency build charts/app")
-	depCmd := exec.Command("helm", "dependency", "build", "charts/app")
+	fmt.Println("   > helm dependency build charts/jetscale")
+	depCmd := exec.Command("helm", "dependency", "build", "charts/jetscale")
 	if out, err := depCmd.CombinedOutput(); err != nil {
 		// Provide a meaningful local-dev error when GHCR auth is missing.
 		msg := string(out)
@@ -307,24 +331,105 @@ func (Validate) Envs() error {
 		// Generic failure
 		return fmt.Errorf("helm dependency build failed:\n%s", msg)
 	}
-
-	for _, env := range envs {
-		valuesFile := fmt.Sprintf("envs/%s/values.yaml", env)
-		fmt.Printf("   > Checking %s...", valuesFile)
+		
+	// Check for cloud-specific values file
+	cloudValuesFile := filepath.Join("envs", cloudName+".yaml")
+	if _, err := os.Stat(cloudValuesFile); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf(
+				"cloud values file not found: %s\n\n"+
+				"Please ensure the file exists for cloud provider: %s\n"+
+				"Expected file: envs/%s.yaml",
+				cloudValuesFile, cloudName, cloudName,
+			)
+		}
+		return fmt.Errorf("failed to check cloud values file: %w", err)
+	}
+	fmt.Printf("   > Using cloud values file: %s\n", cloudValuesFile)
+	
+	// Discover all YAML files in envs/ subdirectories
+	var valuesFiles []string
+	envsDir := "envs"
+	
+	err := filepath.Walk(envsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		// Skip directories and non-YAML files
+		if info.IsDir() {
+			return nil
+		}
+		// Match .yaml and .yml files
+		if strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml") {
+			// Skip default.yaml and envs/ top-level files
+			if strings.TrimSuffix(info.Name(), ".yaml") != "default" && filepath.Dir(path) != envsDir {
+				valuesFiles = append(valuesFiles, path)
+			}
+		}
+		return nil
+	})
+	
+	if err != nil {
+		return fmt.Errorf("failed to discover environment files: %w", err)
+	}
+	
+	if len(valuesFiles) == 0 {
+		return fmt.Errorf("no YAML files found in %s directory", envsDir)
+	}
+	
+	fmt.Printf("   > Found %d environment configuration(s)\n", len(valuesFiles))
+	
+	// Validate each discovered values file
+	for _, valuesFile := range valuesFiles {
+		fmt.Printf("   > Checking %s\n", valuesFile)
 
 		// Run Helm Template
 		// --dry-run: simulate install
 		// --debug: print generated manifest on failure
-		cmd := exec.Command("helm", "template", "jetscale-stack", "charts/app",
-			"--values", valuesFile,
-			"--debug")
+		args := []string{"template", "jetscale", "charts/jetscale"}
+		var usedFiles []string
+		
+		// Add cloud-specific values file
+		args = append(args, "--values", cloudValuesFile)
+		usedFiles = append(usedFiles, cloudValuesFile)
+		
+		// Check for default.yaml or default.yml in the same directory as valuesFile
+		envDir := filepath.Dir(valuesFile)
+		var defaultValuesFile string
+		for _, defaultName := range []string{"default.yaml", "default.yml"} {
+			defaultPath := filepath.Join(envDir, defaultName)
+			if _, err := os.Stat(defaultPath); err == nil {
+				defaultValuesFile = defaultPath
+				break
+			}
+		}
+		if defaultValuesFile != "" {
+			args = append(args, "--values", defaultValuesFile)
+			usedFiles = append(usedFiles, defaultValuesFile)
+		}
+		
+		// Add environment-specific values file
+		args = append(args, "--values", valuesFile, "--debug")
+		usedFiles = append(usedFiles, valuesFile)
+		
+		// Print the files being used in order
+		fmt.Printf("     Values files (in order): ")
+		for i, f := range usedFiles {
+			if i > 0 {
+				fmt.Printf(" → ")
+			}
+			fmt.Printf("%s", f)
+		}
+		fmt.Println()
+		
+		cmd := exec.Command("helm", args...)
 
 		if out, err := cmd.CombinedOutput(); err != nil {
-			fmt.Printf("❌ FAILED\n")
+			fmt.Printf("     ❌ FAILED\n")
 			fmt.Println(string(out))
-			return fmt.Errorf("validation failed for %s", env)
+			return fmt.Errorf("validation failed for %s", valuesFile)
 		}
-		fmt.Printf("✅ Valid Syntax\n")
+		fmt.Printf("     ✅ Valid Syntax\n")
 	}
 	return nil
 }
@@ -349,7 +454,7 @@ func (Test) LocalE2E() error {
 		return err
 	}
 
-	stopPF, localPort, err := startPortForward("jetscale-test-local", "svc/jetscale-stack-test-backend", 8000)
+	stopPF, localPort, err := startPortForward("jetscale-test-local", "svc/jetscale-test-backend-api", 8000)
 	if err != nil {
 		return fmt.Errorf("failed to port-forward: %w", err)
 	}
@@ -377,7 +482,7 @@ func (Test) CI() error {
 	waitCmd := exec.Command("kubectl", "wait",
 		"--namespace", "jetscale-ci",
 		"--for=condition=available",
-		"deployment/jetscale-stack-ci-backend",
+		"deployment/jetscale-ci-backend-api",
 		"--timeout=120s")
 	waitCmd.Stdout = os.Stdout
 	waitCmd.Stderr = os.Stderr
@@ -385,7 +490,7 @@ func (Test) CI() error {
 		return fmt.Errorf("backend deployment failed to become available: %w", err)
 	}
 
-	stopPF, localPort, err := startPortForward("jetscale-ci", "svc/jetscale-stack-ci-backend", 8000)
+	stopPF, localPort, err := startPortForward("jetscale-ci", "svc/jetscale-ci-backend-api", 8000)
 	if err != nil {
 		return fmt.Errorf("failed to port-forward: %w", err)
 	}
@@ -396,7 +501,7 @@ func (Test) CI() error {
 
 func (Test) Live() error {
 	fmt.Println("🔥 [E2E] Target: EKS Live (Verification)")
-	// Live console hostname (see envs/live/values.yaml)
+	// Live console hostname (see envs/live/console.yaml)
 	host := "console.jetscale.ai"
 	return runTestRunner(fmt.Sprintf("https://%s", host))
 }

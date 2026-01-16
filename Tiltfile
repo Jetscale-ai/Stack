@@ -8,26 +8,34 @@ allow_k8s_contexts('kind-kind')
 # Images
 # ---------------------------
 # We keep two modes:
-# - `charts/app/values.local.dev.yaml`: Tilt inner-loop (local builds + live_update)
-# - `charts/app/values.local.live.yaml`: Live-parity (pull published prod images)
+# - `charts/jetscale/values.local.dev.yaml`: Tilt inner-loop (local builds + live_update)
+# - `charts/jetscale/values.local.live.yaml`: Live-parity (pull published prod images)
+
+backend_dir = '../Backend'
+frontend_dir = '../Frontend'
+# Support both capitalized and lowercased sibling repo names (Linux is case-sensitive).
+if not os.path.exists(backend_dir):
+    backend_dir = '../backend'
+if not os.path.exists(frontend_dir):
+    frontend_dir = '../frontend'
 
 docker_build(
     'ghcr.io/jetscale-ai/backend-dev:tilt',
-    '../backend',
-    dockerfile='../backend/Dockerfile',
+    backend_dir,
+    dockerfile=backend_dir + '/Dockerfile',
     target='backend-dev',
     live_update=[
-        sync('../backend', '/app'),
+        sync(backend_dir, '/app'),
     ],
 )
 
 docker_build(
     'ghcr.io/jetscale-ai/frontend-dev:tilt',
-    '../frontend',
-    dockerfile='../frontend/Dockerfile',
-    target='frontend',  # dev stage in frontend Dockerfile
+    frontend_dir,
+    dockerfile=frontend_dir + '/Dockerfile',
+    target='frontend',  # runtime stage in frontend Dockerfile (nginx)
     live_update=[
-        sync('../frontend', '/app'),
+        sync(frontend_dir, '/app'),
     ],
 )
 
@@ -35,34 +43,40 @@ docker_build(
 # Helm: render umbrella chart
 # ---------------------------
 k8s_yaml(helm(
-    'charts/app',
-    name='jetscale-stack-local',              # Helm release name
-    values=['charts/app/values.local.dev.yaml'],
+    'charts/jetscale',
+    name='jetscale-local',              # Helm release name
+    values=['charts/jetscale/values.local.dev.yaml'],
 ))
 
 # ---------------------------
 # Port-forwards per resource
 # ---------------------------
-# backend (FastAPI /docs)
+# backend-api (FastAPI /docs)
 k8s_resource(
-    'jetscale-stack-local-backend',
+    'jetscale-local-backend-api',
     port_forwards=[port_forward(8000, 8000)],  # local: 8000 -> container: 8000
+)
+
+# backend-ws
+k8s_resource(
+    'jetscale-local-backend-ws',
+    port_forwards=[port_forward(8001, 8001)],  # local: 8000 -> container: 8000
 )
 
 # frontend (Nginx serving SPA)
 k8s_resource(
-    'jetscale-stack-local-frontend',
-    port_forwards=[port_forward(3002, 80)],    # local: 3002 -> container: 80
+    'jetscale-local-frontend',
+    port_forwards=[port_forward(8080, 80)],    # local: 3002 -> container: 80
 )
 
 # postgres
 k8s_resource(
-    'jetscale-stack-local-postgres',
-    port_forwards=[port_forward(5433, 5432)],  # local: 5433 -> container: 5432
+    'jetscale-local-postgres',
+    port_forwards=[port_forward(5432, 5432)],  # local: 5433 -> container: 5432
 )
 
 # redis
 k8s_resource(
-    'jetscale-stack-local-redis',
+    'jetscale-local-redis',
     port_forwards=[port_forward(6379, 6379)],  # local: 6379 -> container: 6379
 )

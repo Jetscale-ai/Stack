@@ -3,7 +3,7 @@ set -euo pipefail
 
 : "${ENV_ID:?ENV_ID is required}"
 
-REGION="us-east-1"
+REGION="${AWS_REGION:-us-east-1}"
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 
 SECRET_ID="${ENV_ID}-ephemeral/application/aws/client"

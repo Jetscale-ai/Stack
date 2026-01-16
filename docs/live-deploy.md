@@ -20,7 +20,7 @@ This repo separates the **Artifact Lifecycle** (published chart versions) from t
 
 - **Chart changes (`charts/**`)**: Stage 6 will publish a new chart version (semantic-release) and deploy that new version.
 - **Live config changes (`envs/live/**`)**: Stage 6 will **skip version inflation** and redeploy the **latest tagged version**
-  with the updated `envs/live/values.yaml`.
+  with the updated live values (see `envs/aws.yaml`, `envs/live/default.yaml`, `envs/live/console.yaml`).
 
 ### Preconditions (Terraform-owned “pipes”)
 
@@ -56,13 +56,15 @@ From the `stack/` directory:
 
 ```bash
 # Ensure chart dependencies are present (pulls pinned OCI subcharts)
-helm dependency build charts/app
+helm dependency build charts/jetscale
 
 # Deploy/upgrade Live into the Terraform-managed namespace
-helm upgrade --install jetscale-stack charts/app \
+helm upgrade --install jetscale charts/jetscale \
   --namespace jetscale-prod \
   --create-namespace \
-  --values envs/live/values.yaml
+  --values envs/aws.yaml \
+  --values envs/live/default.yaml \
+  --values envs/live/console.yaml
 ```
 
 ### Quick verification

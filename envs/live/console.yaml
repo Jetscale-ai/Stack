@@ -1,0 +1,71 @@
+# ==========================================================
+# LIVE ENVIRONMENT (EKS) — console.jetscale.ai
+# ==========================================================
+global:
+  # Align with Jetscale-IaC `clients/variables/jetscale.tfvars`
+  env: "prod"
+  client_name: "jetscale"
+
+# 1. INFRA (Managed by Terraform in AWS)
+postgres:
+  enabled: false
+
+redis:
+  enabled: false
+
+# 2a. BACKEND-API
+backend-api:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: ghcr.io/jetscale-ai/backend
+    tag: "3.1.0"
+
+  # Production schedule
+  cronJobs:
+    # NOTE: keys must match `charts/jetscale/values.yaml` to override schedules
+    # (otherwise Helm deep-merge creates duplicate CronJobs).
+    discover-aws:
+      schedule: "0 */4 * * *"
+    pull-coh:
+      schedule: "30 */6 * * *"
+    pull-co:
+      schedule: "45 */12 * * *"
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+# 2b. BACKEND-WS
+backend-ws:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: ghcr.io/jetscale-ai/backend
+    tag: "1.2.4"
+
+# 3. FRONTEND
+frontend:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: ghcr.io/jetscale-ai/frontend
+    tag: "2.1.0"
+  env:
+    # This should point at the same host the Ingress serves for /api
+    VITE_API_BASE_URL: "https://console.jetscale.ai"
+
+# 4. ROUTING
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:134051052096:certificate/6e3e7f72-af8e-457d-a397-8f13728dd06c"
+    # ExternalDNS (explicit intent)
+    external-dns.alpha.kubernetes.io/hostname: "console.jetscale.ai"
+  hosts:
+    console.jetscale.ai:

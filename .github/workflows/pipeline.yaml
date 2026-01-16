@@ -31,7 +31,7 @@ jobs:
           BOT_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
         run: echo "$BOT_TOKEN" | helm registry login ghcr.io --username jetscalebot --password-stdin
       - name: Mage Validate
-        run: mage validate:envs
+        run: mage validate:envs aws
 
   # ============================================================================
   # STAGE 3: SIMULATION (Kind E2E)

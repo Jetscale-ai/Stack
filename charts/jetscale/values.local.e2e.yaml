@@ -1,0 +1,98 @@
+global:
+  env: "local-e2e"
+
+# 1. DATABASE
+postgres:
+  enabled: true
+  image: "postgres:15-alpine"
+  auth:
+    username: "jetscale-user"
+    password: "jetscale-password"
+    database: "jetscale"
+  persistence:
+    size: 1Gi
+
+# 2. REDIS
+redis:
+  enabled: true
+  image: "redis:7-bullseye"
+
+externalSecret:
+  app:
+    enabled: false
+
+# 3. BACKEND API (Local-build mode: Skaffold builds + Kind loads)
+backend-api:
+  enabled: true
+  serviceAccount:
+    create: true
+    name: "jetscale-service-account"
+  replicaCount: 1
+  image:
+    # Local-only name – built by Skaffold using the Alpine runtime stage
+    repository: jetscale-backend-local
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  envFrom: null
+  env:
+    JETSCALE_APP_NAME: "JetScale Backend (E2E)"
+    JETSCALE_DEBUG: "true"
+    # Required by backend bootstrap (admin user initialization)
+    JETSCALE_DEFAULT_ADMIN_EMAIL: "admin@e2e.local"
+    JETSCALE_DEFAULT_ADMIN_USERNAME: "admin"
+    JETSCALE_DEFAULT_ADMIN_PASSWORD: "e2e-admin-password"
+    # Required by backend entrypoint bootstrap (explicit host/user/password checks)
+    JETSCALE_DB_HOST: "jetscale-test-postgres"
+    JETSCALE_DB_PORT: "5432"
+    JETSCALE_DB_NAME: "jetscale"
+    JETSCALE_DB_USER: "jetscale-user"
+    JETSCALE_DB_PASSWORD: "jetscale-password"
+    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-test-postgres:5432/jetscale"
+    # JETSCALE_REDIS_URL: "redis://jetscale-test-redis-master:6379/0"
+    JETSCALE_REDIS_HOST: jetscale-test-redis-master
+    JETSCALE_AWS_REGION: "us-east-1"
+
+# 4. BACKEND WS (Dev Image + Hot Reload)
+backend-ws:
+  serviceAccount:
+    create: false
+    name: "jetscale-service-account"
+  image:
+    repository: jetscale-backend-local
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  # service:
+  #   type: NodePort
+  #   port: 8001
+  #   nodePort: 30001
+  # command: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+  envFrom: null
+  env:
+    JETSCALE_APP_NAME: "JetScale Backend (E2E)"
+    JETSCALE_DEBUG: "true"
+    # Required by backend entrypoint bootstrap (explicit host/user/password checks)
+    JETSCALE_DB_HOST: "jetscale-test-postgres"
+    JETSCALE_DB_PORT: "5432"
+    JETSCALE_DB_NAME: "jetscale"
+    JETSCALE_DB_USER: "jetscale-user"
+    JETSCALE_DB_PASSWORD: "jetscale-password"
+    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-test-postgres:5432/jetscale"
+    # JETSCALE_REDIS_URL: "redis://jetscale-test-redis-master:6379/0"
+    JETSCALE_REDIS_HOST: jetscale-test-redis-master
+    JETSCALE_AWS_REGION: "us-east-1"
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+
+# 5. FRONTEND WEB (Local-build mode)
+frontend:
+  enabled: true
+  image:
+    repository: jetscale-frontend-local
+    pullPolicy: IfNotPresent
+  env:
+    VITE_API_BASE_URL: "http://jetscale-test-backend:8000"
+
+appConfigMap:
+  enabled: false
+ingress:
+  enabled: false
