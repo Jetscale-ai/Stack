@@ -114,6 +114,16 @@ backend-api:
         limits:
           memory: "1Gi"
           cpu: "500m"
+    pull-ce:
+      schedule: "45 3 * * *"
+      command: ["python3", "jobs/aws/action_pull_ce.py"]
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "100m"
+        limits:
+          memory: "512Mi"
+          cpu: "300m"
 
 backend-ws:
   enabled: true

@@ -15,11 +15,15 @@ Outside of the default values defined in values.yaml, there are a few other valu
 
 | Value file | Description | Comments |
 |----------|----------|----------|
-| values.ci.kind.yaml    |      |      |
-| values.jetscale.yaml    |  Default values for AWS Jetscale deployment    | To be used by a env. specific values (envs/)   |
-| values.local.dev.yaml    |      |      |
-| values.local.e2e.yaml     | E2E tests using newly built image (from local ref)     |      |
-| values.local.yaml |  |  |
+| values.yaml | Default values for the umbrella chart | Helm always loads this file |
+| values.ci.kind.yaml | CI configuration for Kind cluster testing | Used in GitHub Actions CI pipeline |
+| values.local.dev.yaml | Local development with hot reload | Used by Tilt (`Tiltfile`) |
+| values.local.e2e.yaml | Local E2E tests using locally built images | Used by `tests/e2e` + Kind |
+| values.local.live.yaml | Live-parity local mode | Pulls published images (no local builds) |
+| values.local.yaml | Local base configuration | Shared defaults for local workflows |
+
+Environment deployments (staging/live/preview) are defined under `envs/` and composed as:
+`envs/<cloud>.yaml` → `envs/<type>/default.yaml` → `envs/<type>/<client>.yaml`
 
 ## Dev/Test
 
@@ -41,7 +45,7 @@ Useful arguments:
   - Note that you can chain multiple files, the last ones taking precedence
 - Render in different file in a directory: `--output-dir renders/`
 
-To test on a K8s cluster without applying: `helm upgrade --install test . --create-namespace -n <TEST-NS> -f values.jetscale.yaml --dry-run=server`
+To test on a K8s cluster without applying: `helm upgrade --install test . --create-namespace -n <TEST-NS> --dry-run=server`
 
 
 ### Installation/Upgrade
