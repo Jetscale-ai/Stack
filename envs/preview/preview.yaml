@@ -34,7 +34,19 @@ backend-api:
   env:
     JETSCALE_AWS_REGION: "us-east-1"
     # DB/Redis/JWT are injected via envFrom Secrets
-  cronJobs: {} #TODO how to test cronjobs
+  # Preview safety: suspend background CronJobs in ephemeral/preview environments.
+  # (Must remain a map type to avoid Helm coalesce warnings.)
+  cronJobs:
+    pull-coh:
+      suspend: true
+    pull-co:
+      suspend: true
+    discover-aws:
+      suspend: true
+    generate-from-coh:
+      suspend: true
+    generate-from-discovery:
+      suspend: true
 
 # 2b. BACKEND-WS
 backend-ws:
@@ -57,7 +69,7 @@ backend-ws:
   env:
     JETSCALE_AWS_REGION: "us-east-1"
     # DB/Redis/JWT are injected via envFrom Secrets
-  cronJobs: {} #TODO how to test cronjobs
+  cronJobs: {}
 
 # 3. FRONTEND
 frontend:

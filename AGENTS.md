@@ -61,6 +61,8 @@ _Ethos (Identity), Logos (Reason), Praxis (Action)._
 This section exists because we lost time to “paper cuts” that looked like infra bugs but were actually:
 OIDC subject mismatch, missing ALB TLS annotations, green-but-dead workflows, and Terraform destroy vs missing clusters.
 
+- Architecture doc: `docs/ephemeral-architecture.md`
+
 ### 6.1. Parity Rule (Preview ↔ Live)
 
 - **Rule:** Preview + Live must match for DNS/TLS semantics via the `envs/` inheritance model:

@@ -44,6 +44,8 @@ To save costs, Preview environments are **manual-trigger only**.
 
 > **Note:** This check is a **Mandatory Gate** for merging to `main`.
 
+- Architecture: `docs/ephemeral-architecture.md`
+
 ### The Janitor (Auto-Cleanup)
 When a PR is **closed** or **merged**, the `Janitor` workflow automatically destroys the cluster.
 * **Manual Fallback:** If the Janitor fails, you can manually trigger the `Ephemeral Fleet` workflow with **Action: destroy**.

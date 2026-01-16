@@ -60,6 +60,10 @@ lib64/
 parts/
 sdist/
 var/
+
+# Repo scripts (do not ignore these)
+!scripts/lib/
+!scripts/lib/**
 wheels/
 share/python-wheels/
 *.egg-info/

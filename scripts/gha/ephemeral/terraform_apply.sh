@@ -6,8 +6,25 @@ set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+# shellcheck source=/dev/null
+source "${REPO_ROOT}/scripts/lib/tf_helpers.sh"
+
 # Ensure all kubeconfig-reading tools/providers use the same config path.
-export KUBECONFIG="${HOME}/.kube/config"
+export KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/config}"
+
+# Optional: if Jetscale-IaC declares `variable "kubeconfig_path"`, pass it explicitly.
+# This keeps Stack scripts forward-compatible without breaking older IaC revisions.
+TF_VAR_ARGS=()
+if grep -R --no-messages -Eq 'variable[[:space:]]+"kubeconfig_path"' --include='*.tf' --include='*.tf.json' .; then
+  TF_VAR_ARGS+=(-var="kubeconfig_path=${KUBECONFIG}")
+  export TF_VAR_kubeconfig_path="${KUBECONFIG}"
+  echo "terraform_var_kubeconfig_path=${KUBECONFIG}"
+else
+  echo "terraform_var_kubeconfig_path=absent (using legacy provider config)"
+fi
 
 ensure_kubeconfig_required() {
   # Terraform's kubernetes/helm providers will fail with:
@@ -30,7 +47,7 @@ ensure_kubeconfig_required() {
   rm -f "${KUBECONFIG}"
 
   # This MUST succeed; otherwise Helm/Kubernetes providers cannot talk to the cluster.
-  aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}"
+  aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}" --kubeconfig "${KUBECONFIG}"
 
   if [[ ! -s "${KUBECONFIG}" ]]; then
     echo "::error::kubeconfig is missing/empty at ${KUBECONFIG}. Helm/Kubernetes providers will be unable to connect."
@@ -107,7 +124,7 @@ ENABLE_NAT="$(python -c "import json; data = json.load(open('ephemeral.auto.tfva
 if [[ "${ENABLE_NAT}" == "true" ]]; then
   echo "::group::Bootstrap: NAT gateway + private egress routes"
   echo "enable_nat_gateway=true → applying NAT + private route changes first"
-  terraform apply -auto-approve -refresh=false \
+  terraform apply -auto-approve -refresh=false "${TF_VAR_ARGS[@]}" \
     -target=aws_vpc.main \
     -target=aws_internet_gateway.main \
     -target=aws_subnet.public \
@@ -152,11 +169,11 @@ if ! aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null
 
   # EKS may auto-create this log group when control-plane logging is enabled. Create it first to
   # avoid a later "ResourceAlreadyExistsException" during the full apply.
-  terraform apply -auto-approve -refresh=false \
+  terraform apply -auto-approve -refresh=false "${TF_VAR_ARGS[@]}" \
     -target=aws_cloudwatch_log_group.eks_cluster
 
   # Bootstrap the control plane (AWS-only resources; avoids kubeconfig dependency).
-  terraform apply -auto-approve -refresh=false \
+  terraform apply -auto-approve -refresh=false "${TF_VAR_ARGS[@]}" \
     -target=aws_eks_cluster.main
 
   # Best-effort: ensure the runner role has EKS API access (helps avoid transient Unauthorized).
@@ -366,7 +383,7 @@ import_helm_release() {
   echo "::group::Terraform Import (helm): ${addr}"
   echo "import_id=${id}"
   set +e
-  out="$(terraform import -input=false -no-color "${addr}" "${id}" 2>&1)"
+  out="$(terraform import -input=false -no-color "${TF_VAR_ARGS[@]}" "${addr}" "${id}" 2>&1)"
   rc=$?
   set -e
   echo "${out}"
@@ -390,93 +407,19 @@ import_helm_release 'helm_release.external_dns[0]' 'kube-system/external-dns'
 import_helm_release 'helm_release.external_secrets[0]' 'external-secrets-system/external-secrets'
 
 PLANFILE="/tmp/tf.plan"
+PLAN_LOG="/tmp/tf-plan.log"
+APPLY_LOG="/tmp/tf-apply.log"
 
-run_plan() {
-  local label="$1"
-  echo "::group::Terraform Plan (${label})"
-  set +e
-  terraform plan -out="${PLANFILE}" -input=false -no-color 2>&1 | tee /tmp/tf-plan.log
-  local rc=${PIPESTATUS[0]}
-  set -e
-  echo "::endgroup::"
-  return "${rc}"
-}
-
-run_apply_plan() {
-  local label="$1"
-  echo "::group::Terraform Apply (${label})"
-  set +e
-  terraform apply -input=false -auto-approve -no-color "${PLANFILE}" 2>&1 | tee /tmp/tf-apply.log
-  local rc=${PIPESTATUS[0]}
-  set -e
-  echo "::endgroup::"
-  return "${rc}"
-}
-
-run_plan "initial"
+terraform_apply_with_retry "${ENV_ID}" "${REGION}" "${PLANFILE}" "${PLAN_LOG}" "${APPLY_LOG}" "${TF_VAR_ARGS[@]}"
 rc=$?
 if [[ "${rc}" -ne 0 ]]; then
-  echo "::error::Terraform plan failed. See /tmp/tf-plan.log output above for details."
-  python3 "${GITHUB_WORKSPACE}/scripts/gha/ephemeral/extract_tf_errors.py" /tmp/tf-plan.log || true
-  exit "${rc}"
-fi
-
-run_apply_plan "initial"
-rc=$?
-
-if [[ "${rc}" -ne 0 ]]; then
-  if grep -Eq "Error acquiring the state lock|PreconditionFailed" /tmp/tf-apply.log; then
-    clean_log="$(sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' /tmp/tf-apply.log | tr -d '\r')"
-    lock_id="$(echo "${clean_log}" | grep -oE '[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}' | head -n 1 || true)"
-    echo "::group::Diagnostics: Terraform state lock"
-    echo "Terraform failed to acquire the state lock."
-    echo "parsed_lock_id=${lock_id:-unknown}"
-    if [[ -n "${lock_id:-}" ]]; then
-      terraform force-unlock -force "${lock_id}" || true
-    else
-      echo "::error::Could not parse lock ID. Re-run the job to retry."
-      echo "${clean_log}" | sed -n '/Lock Info:/,/^$/p' | head -n 60 || true
-      exit "${rc}"
-    fi
-    echo "::endgroup::"
-
-    echo "🔁 Retrying once after clearing lock..."
-    run_plan "after-force-unlock"
-    rc=$?
-    if [[ "${rc}" -ne 0 ]]; then
-      echo "::error::Terraform plan failed after force-unlock. See /tmp/tf-plan.log output above for details."
-      python3 "${GITHUB_WORKSPACE}/scripts/gha/ephemeral/extract_tf_errors.py" /tmp/tf-plan.log || true
-      exit "${rc}"
-    fi
-    run_apply_plan "after-force-unlock"
-    rc=$?
+  if [[ "${TF_FAILURE_STAGE}" == "plan" ]]; then
+    echo "::error::Terraform plan failed. See ${PLAN_LOG} output above for details."
+    python3 "${GITHUB_WORKSPACE}/scripts/gha/ephemeral/extract_tf_errors.py" "${PLAN_LOG}" || true
+  else
+    echo "::error::Terraform apply failed. See ${APPLY_LOG} output above for details."
+    python3 "${GITHUB_WORKSPACE}/scripts/gha/ephemeral/extract_tf_errors.py" "${APPLY_LOG}" || true
   fi
-fi
-
-if [[ "${rc}" -ne 0 ]]; then
-  if grep -Eq "helm_release\\.aws_load_balancer_controller|aws-load-balancer-controller|context deadline exceeded|cannot re-use a name that is still in use" /tmp/tf-apply.log; then
-    echo "::group::Wait: aws-load-balancer-controller readiness"
-    aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}" || true
-    kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=10m || true
-    kubectl -n kube-system get pods -o wide || true
-    echo "::endgroup::"
-
-    echo "🔁 Retrying once after waiting for aws-load-balancer-controller..."
-    run_plan "after-alb-wait"
-    rc=$?
-    if [[ "${rc}" -ne 0 ]]; then
-      echo "::error::Terraform plan failed after ALB wait. See /tmp/tf-plan.log output above for details."
-      python3 "${GITHUB_WORKSPACE}/scripts/gha/ephemeral/extract_tf_errors.py" /tmp/tf-plan.log || true
-      exit "${rc}"
-    fi
-    run_apply_plan "after-alb-wait"
-    rc=$?
-  fi
-fi
-
-if [[ "${rc}" -ne 0 ]]; then
-  echo "::error::Terraform apply failed. See /tmp/tf-apply.log output above for details."
-  python3 "${GITHUB_WORKSPACE}/scripts/gha/ephemeral/extract_tf_errors.py" /tmp/tf-apply.log || true
   exit "${rc}"
 fi
 
