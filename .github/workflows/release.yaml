@@ -282,6 +282,17 @@ jobs:
 
           DEFAULT_SECRET_JSON='{}'
 
+          # If a payload was provided via the GitHub Environment secret, make it authoritative.
+          # (Even if the secret already has an AWSCURRENT value, we must update it to match.)
+          if [ -n "${AWS_APP_CONFIG_SECRET_JSON:-}" ]; then
+            echo "🛠️ Applying AWS_APP_CONFIG_SECRET_JSON to Secrets Manager: $SECRET_ID"
+            echo "$AWS_APP_CONFIG_SECRET_JSON" | jq -e . >/dev/null
+            aws secretsmanager put-secret-value \
+              --secret-id "$SECRET_ID" \
+              --secret-string "$AWS_APP_CONFIG_SECRET_JSON" \
+              --region "$REGION"
+          fi
+
           # Ensure the secret exists and has an AWSCURRENT value so ESO extraction succeeds.
           set +e
           aws secretsmanager describe-secret --secret-id "$SECRET_ID" --region "$REGION" >/dev/null 2>&1
