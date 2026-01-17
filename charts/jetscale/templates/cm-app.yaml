@@ -64,6 +64,12 @@ data:
   AWS_DEFAULT_REGION: "us-east-1"
 
   # Email/SMTP Configuration (sensitive values from External Secrets)
+  # Provide non-secret SMTP defaults via ConfigMap so the app can start even if
+  # the ExternalSecret projection is temporarily empty/stale.
+  JETSCALE_SMTP_SERVER: "email-smtp.us-east-1.amazonaws.com"
+  JETSCALE_SMTP_PORT: "587"
+  JETSCALE_SMTP_TLS: "true"
+  JETSCALE_SMTP_SSL: "false"
   JETSCALE_FRONTEND_URL: "{{ include "jetscale.frontendUrl" . }}"
   JETSCALE_EMAIL_FROM: "noreply@jetscale.ai"
   JETSCALE_EMAIL_FROM_NAME: "JetScale"

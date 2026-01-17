@@ -2,8 +2,8 @@ apiVersion: v2
 name: jetscale
 description: The JetScale Platform Umbrella Chart
 type: application
-version: 0.13.10
-appVersion: "0.13.10"
+version: 0.13.11
+appVersion: "0.13.11"
 
 dependencies:
   # Backend Service (Proprietary OCI)
