@@ -1,5 +1,13 @@
 # Stack Roadmap
 
+## 0. ArgoCD + Fleet Impact
+
+This repo builds the `jetscale` **OCI Helm chart**. **It does not own deployment state.**
+
+- **Deployments:** change `../fleet/clusters/<name>/values.yaml` (version pins + environment config); ArgoCD syncs.
+- **Patterns:** maintained in `../catalog` (Blueprint charts rendering Argo `Application` objects).
+- **Infra/Drivers:** provisioned in `../iac` (EKS + controllers + Argo bootstrap).
+
 ## Phase 1: Foundation (Completed)
 - [x] Establish `Jetscale-ai/Stack`.
 - [x] **Chart Synthesis:** Implemented missing subcharts (`backend`, `frontend`).
@@ -19,20 +27,18 @@
 - [x] **Dependency Locking:** Enforced `Chart.lock` integrity.
 - [ ] **Secret Management:** Implement `ExternalSecrets` in Helm + `ClusterSecretStore` in Terraform.
 
-## Phase 5: Infrastructure & Automation (Next)
-- [ ] **Terraform Bootstrap Module:**
-  - [ ] Implement `aws-load-balancer-controller` (via TF Helm Provider).
-  - [ ] Implement `external-secrets` operator (via TF Helm Provider).
-  - [ ] Implement `external-dns` (via TF Helm Provider).
-- [ ] **Live Deployment:**
-  - [ ] Create `jetscale-prod.tfvars` (Live Config).
-  - [ ] Verify `security.tf` allows EKS -> RDS access.
+## Phase 5: GitOps Adoption (Current)
+
+- [ ] **Docs boundary:** ensure chart READMEs describe **local Helm usage only**; production installs are via ArgoCD from `../fleet`.
+- [ ] **Argo-friendly chart contract:** keep templates idempotent; avoid CRD installs; rely on infra-provided controllers.
+- [ ] **Release automation:** publish the `jetscale` OCI chart from CI on tags and keep `Chart.lock` in sync.
+- [ ] **Interface stability:** maintain a small, well-documented values surface that `../fleet` can safely own (domains, replicas, ingress toggles).
 
 ## Phase 6: The Sovereign Pipeline (GH Actions)
 - [ ] **Dynamic State Logic:** Update CI to handle `prs/pr-N/terraform.tfstate`.
 - [ ] **DNS Automation:** Implement `pr-N.jetscale.ai` dynamic registration via ExternalDNS.
 - [ ] **The Janitor:** Create scheduled GitHub Action to destroy orphaned PR clusters.
-- [ ] **App Deployment:** Use GitHub Actions to run `helm install` after Terraform completes.
+- [ ] **App Deployment:** update Fleet version pins (PR-driven) and let ArgoCD sync; never run `helm install` for live clusters.
 
 ## Phase 7: GitOps Evolution (Future)
 - [ ] **The Mothership:** Establish `tools.jetscale.ai` cluster.

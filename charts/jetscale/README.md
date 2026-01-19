@@ -2,6 +2,16 @@
 
 This Helm chart is the umbrella (parent) chart for installing Jetscale.
 
+## 🏗 Deployment & Ownership (Fractal Franchise)
+
+This chart is **built** here and **deployed by ArgoCD**. It is not deployed by running `helm install` manually in live clusters.
+
+- **Infrastructure + Argo bootstrap:** `../../../iac/README.md`
+- **Blueprint patterns (How to install):** `../../../catalog/README.md`
+- **Deployment state (What is installed):** `../../../fleet/README.md`
+
+Direct Helm commands in this README are intended for **local Kind / debugging** only.
+
 ### Structure description
 - templates/ : Helm template files (ex. ingress.yaml)
   - Those resources are touch/are used by all the childs chart
@@ -24,6 +34,8 @@ Outside of the default values defined in values.yaml, there are a few other valu
 
 Environment deployments (staging/live/preview) are defined under `envs/` and composed as:
 `envs/<cloud>.yaml` → `envs/<type>/default.yaml` → `envs/<type>/<client>.yaml`
+
+**Production note:** The authoritative live configuration (domains, replicas, versions) lives in `../../../fleet/` and is applied by ArgoCD.
 
 ## Dev/Test
 
@@ -48,7 +60,7 @@ Useful arguments:
 To test on a K8s cluster without applying: `helm upgrade --install test . --create-namespace -n <TEST-NS> --dry-run=server`
 
 
-### Installation/Upgrade
+### Local Installation/Upgrade (debug only)
 
 Installation with the creation of a namespace: `helm upgrade --install test . --create-namespace -n <TEST-NS> -f examples/values.ws.yaml`
 

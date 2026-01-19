@@ -1,5 +1,24 @@
 # The JetScale Stack Constitution
 
+## 0. The 5-Repo Topology (Global Context)
+
+We operate under the **Fractal Franchise Model**. This repository is one part of a distributed system:
+
+| Repo | Role | Artifact | Responsibility |
+| :--- | :--- | :--- | :--- |
+| **`iac`** | **The Soil** | `.tfstate` | Provisions Cluster, IAM, S3, and **bootstraps ArgoCD**. |
+| **`stack`** | **The App** | OCI Chart | Builds the Business Logic (`backend` + `frontend` umbrella). |
+| **`observability`** | **The Tools** | OCI Chart | Builds the Platform Layer (Loki, Grafana, Promtail). |
+| **`catalog`** | **The Pattern** | Helm Charts | Defines **Blueprints** (Argo AppSets) for *how* things are installed. |
+| **`fleet`** | **The State** | Live Cluster | Defines **Instances**. Pins versions and connects Infra to Apps. |
+
+**Related Documentation:**
+- Infrastructure provisioning: `../iac/README.md` (The Soil)
+- Deployment state management: `../fleet/README.md` (Instances)
+- Blueprint patterns: `../catalog/README.md` (Patterns)
+- Source services: `../backend/README.md`, `../frontend/README.md`
+- Observability artifacts: `../observability/README.md`
+
 ## 1. Identity & Purpose
 
 This repository, `Jetscale-ai/Stack`, is the **Sovereign Assembly** of the JetScale platform. It replaces the legacy `docker-compose.yml` as the single source of truth for system assembly.
@@ -40,6 +59,11 @@ We represent a shift from "Container Orchestration" (Docker Compose) to "Platfor
   - **AWS (SaaS):** Infra installs **AWS LB Controller** + **ExternalDNS**. The Chart's `Ingress` becomes an ALB.
   - **Azure (AKS):** Infra installs **AGIC** (App Gateway Ingress Controller) or **Nginx**. The _same_ Chart's `Ingress` becomes an Azure App Gateway.
   - **OpenStack/On-Prem:** Infra installs **Octavia** or **MetalLB**. The _same_ Chart's `Ingress` becomes a LoadBalancer IP.
+
+### The Artifact Boundary
+We produce an **Immutable OCI Artifact**.
+- We do **not** manage environment-specific values (replicas, domains) in this repo. Those belong in `../fleet`.
+- We do **not** manage infrastructure dependencies (RDS, S3). Those belong in `../iac`.
 
 ## 4. The Eudaimonia Framework
 

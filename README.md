@@ -1,6 +1,10 @@
 # JetScale Stack
 
-The central infrastructure, deployment, and orchestration repository for the JetScale Platform.
+The Helm **umbrella chart** (and local dev orchestration) for the JetScale Platform.
+
+**Important:** This repository produces an **immutable OCI Helm artifact**. It does **not** own deployment state.
+- **State & version pins:** `../fleet/`
+- **Installation patterns (Blueprints):** `../catalog/`
 
 ## 🚀 The Vision
 
@@ -20,7 +24,7 @@ To ensure our Helm chart remains **Cloud Agnostic** (deployable on AWS, Azure, o
 | **Infrastructure** | **Terraform** | **The "Hardware" & "Drivers":** VPC, EKS, RDS, Redis, **AWS LB Controller**, **ExternalDNS**, **External Secrets Operator**. |
 | **Application** | **Helm** | **The "Intent":** `Ingress` resources, `ExternalSecret` mappings, Deployments, Services. |
 
-**The Contract:** Terraform provides the "Pipe" (SecretStore, Ingress Class, DNS automationggggg); Helm turns on the "Tap" (ExternalSecret, Ingress Resource).
+**The Contract:** Terraform provides the "Pipe" (SecretStore, Ingress Class, DNS automation); Helm declares the "Tap" (ExternalSecret, Ingress Resource).
 
 ## 4. The 5-Stage Lifecycle
 
@@ -29,8 +33,8 @@ To ensure our Helm chart remains **Cloud Agnostic** (deployable on AWS, Azure, o
 | **1** | **Inner Loop** | Tilt | Kind (Local) | **Speed.** Hot reload, fat images. |
 | **2** | **Outer Loop** | Skaffold | Kind (Local) | **Parity.** Builds local code -> Alpine images. |
 | **3** | **CI Loop** | Skaffold | Kind (CI Runner) | **Gating.** Deploys remote OCI artifacts. |
-| **4** | **Preview Loop** | TF + Helm | **Ephemeral EKS** | **Sovereignty.** Full "Cluster-per-PR" in Live AWS Account. |
-| **5** | **Live Verify** | TF + Helm | **Live EKS** | **Availability.** Persistent infra, rolling updates. |
+| **4** | **Preview Loop** | TF + ArgoCD | **Ephemeral EKS** | **Sovereignty.** Cluster-per-PR + GitOps sync from `../fleet`. |
+| **5** | **Live Verify** | TF + ArgoCD | **Live EKS** | **Availability.** Persistent infra + GitOps upgrades via `../fleet`. |
 
 ## 🚀 Pull Request Workflows
 
@@ -50,14 +54,23 @@ To save costs, Preview environments are **manual-trigger only**.
 When a PR is **closed** or **merged**, the `Janitor` workflow automatically destroys the cluster.
 * **Manual Fallback:** If the Janitor fails, you can manually trigger the `Ephemeral Fleet` workflow with **Action: destroy**.
 
-## Live deployment (Helm-only; ArgoCD later)
+## 📦 Release Workflow
 
-Live (`console.jetscale.ai`) is deployed **via Helm** (and later **ArgoCD**) using the same umbrella chart + values contract.
-Skaffold is intentionally scoped to **Kind** workflows (local + CI E2E).
+This repository is the **Source of Truth** for the Application Code, but **NOT** the Deployment State.
 
+### How to Deploy
+1.  **Build:** CI packages and pushes the `jetscale` chart to `oci://ghcr.io/jetscale-ai/charts` (version `X.Y.Z`).
+2.  **Deploy:** Go to `../fleet`, find your cluster, and update `clusters/<name>/values.yaml`:
+    - `versions.stack: X.Y.Z`
+3.  **Sync:** ArgoCD detects the change in Fleet and pulls the OCI artifact from here.
+
+### Local Development (Tilt)
+Tilt still uses this directory directly for the Inner Loop.
+
+### Legacy Deployment (Pre-ArgoCD)
+For historical reference:
 - Runbook: `docs/live-deploy.md`
 - Script: `scripts/deploy-live.sh`
-- CI/CD: **Stage 6** will redeploy Live on `envs/live/**` changes without forcing a new chart version (decoupled deploy).
 
 ## 🛠️ Quick Start (Local Dev)
 
