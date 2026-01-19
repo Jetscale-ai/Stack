@@ -42,6 +42,22 @@ docker_build(
 )
 
 # ---------------------------
+# ConfigMap: Backend .env file (for local dev only)
+# ---------------------------
+backend_env_file = backend_dir + '/.env'
+if os.path.exists(backend_env_file):
+    env_content = str(read_file(backend_env_file))
+    # Indent each line for YAML data block
+    indented_env = '\n'.join(['    ' + line for line in env_content.split('\n')])
+    k8s_yaml(blob("""apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-env-file
+data:
+  .env: |
+""" + indented_env))
+
+# ---------------------------
 # Helm: render umbrella chart
 # ---------------------------
 k8s_yaml(helm(
