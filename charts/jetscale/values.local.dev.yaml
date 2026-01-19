@@ -39,6 +39,15 @@ backend-api:
   command: ["./entrypoint.sh"]
   args: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
   envFrom: null
+  # Mount Backend .env file from ConfigMap (created by Tiltfile)
+  volumes:
+    - name: backend-env
+      configMap:
+        name: backend-env-file
+  volumeMounts:
+    - name: backend-env
+      mountPath: /app/.env
+      subPath: .env
   env:
     JETSCALE_APP_NAME: "JetScale Backend (Tilt)"
     JETSCALE_DEBUG: "true"
@@ -70,12 +79,23 @@ backend-ws:
     tag: "tilt"
     pullPolicy: Always
   imagePullSecrets: []
-  command: ["python3", "-m", "uvicorn"]
-  args: ["main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+  command: ["./entrypoint.sh"]
+  args: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
   envFrom: null
+  # Mount Backend .env file from ConfigMap (created by Tiltfile)
+  volumes:
+    - name: backend-env
+      configMap:
+        name: backend-env-file
+  volumeMounts:
+    - name: backend-env
+      mountPath: /app/.env
+      subPath: .env
   env:
     JETSCALE_APP_NAME: "JetScale Backend WS (Tilt)"
     JETSCALE_DEBUG: "true"
+    JETSCALE_DB_HOST: "jetscale-local-postgres"
+    JETSCALE_DB_PORT: "5432"
     JETSCALE_DB_NAME: "jetscale"
     JETSCALE_DB_USER: "jetscale_backend"
     JETSCALE_DB_PASSWORD: "jetscale_backend"
