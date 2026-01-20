@@ -61,6 +61,7 @@ jobs:
     name: Build Images
     if: inputs.build_images == true
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_type }}-${{ inputs.client_name }}
     outputs:
       backend_tag: ${{ steps.build.outputs.backend_tag }}
       frontend_tag: ${{ steps.build.outputs.frontend_tag }}
