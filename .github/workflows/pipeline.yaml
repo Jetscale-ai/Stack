@@ -84,6 +84,11 @@ jobs:
             -p '{"imagePullSecrets":[{"name":"regcred"}]}'
 
       - name: Run E2E
+        env:
+          # Needed so `mage test:ci` can (idempotently) provision `regcred` for GHCR pulls.
+          # Use the same bot token we already used for Helm registry login + pre-provisioning.
+          GITHUB_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+          GITHUB_USER: jetscalebot
         run: mage test:ci
 
       # ✅ Enhanced Debugging (Preserved)

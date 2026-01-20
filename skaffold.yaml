@@ -20,14 +20,16 @@ profiles:
   # --------------------------------------------------------
   - name: local-kind
     build:
+      local:
+        push: false  # Don't push to registry, load directly to Kind
       artifacts:
         - image: jetscale-backend-local
-          context: ../Backend
+          context: ../backend
           docker:
             dockerfile: Dockerfile
             target: backend
         - image: jetscale-frontend-local
-          context: ../Frontend
+          context: ../frontend
           docker:
             dockerfile: Dockerfile
             target: frontend
@@ -46,7 +48,7 @@ profiles:
   # CI PROFILE (Kind on Runner)
   # --------------------------------------------------------
   - name: ci-kind
-    # No build section needed. 
+    # No build section needed.
     # Skaffold will simply deploy the remote images defined in values.yaml.
     deploy:
       kubeContext: kind-kind
@@ -59,6 +61,35 @@ profiles:
             valuesFiles:
               # Kind CI must be self-contained (no Terraform-managed Secrets/DB/Redis, no ALB)
               - charts/jetscale/values.ci.kind.yaml
+
+  # --------------------------------------------------------
+  # CI PROFILE (Kind on laptop - local builds)
+  # --------------------------------------------------------
+  - name: ci-kind-local
+    build:
+      local:
+        push: false # Don't push to registry, load directly to Kind
+      artifacts:
+        - image: jetscale-backend-local
+          context: ../backend
+          docker:
+            dockerfile: Dockerfile
+            target: backend
+        - image: jetscale-frontend-local
+          context: ../frontend
+          docker:
+            dockerfile: Dockerfile
+            target: frontend
+    deploy:
+      kubeContext: kind-kind
+      helm:
+        releases:
+          - name: jetscale-ci
+            chartPath: charts/jetscale
+            namespace: jetscale-ci
+            createNamespace: true
+            valuesFiles:
+              - charts/jetscale/values.ci.kind.local.yaml
 
   # --------------------------------------------------------
   # NOTE:

@@ -31,7 +31,7 @@ backend:
     name: "jetscale-service-account"
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "3.1.1"
+    tag: "3.1.4"
     pullPolicy: IfNotPresent
   imagePullSecrets: []
   service:
@@ -58,7 +58,7 @@ frontend:
     create: false
   image:
     repository: ghcr.io/jetscale-ai/frontend
-    tag: "2.1.0"
+    tag: "2.1.1"
     pullPolicy: IfNotPresent
   imagePullSecrets: []
   service:
