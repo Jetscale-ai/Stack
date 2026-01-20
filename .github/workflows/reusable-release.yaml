@@ -40,6 +40,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.token }}
 
       - name: Trust Git Directory
         run: git config --global --add safe.directory '*'
@@ -79,3 +80,27 @@ jobs:
           # Package & Push
           helm package .
           helm push *.tgz "${OCI_BASE}"
+
+      - name: Commit & Push Version Bump
+        if: steps.semrel.outputs.version != ''
+        env:
+          VERSION: ${{ steps.semrel.outputs.version }}
+          CHART_PATH: ${{ inputs.chart_path }}
+        run: |
+          set -euo pipefail
+
+          # Configure Git Identity
+          git config --global user.name "jetscale-bot"
+          git config --global user.email "bot@jetscale.ai"
+
+          echo "📝 Committing version bump to ${VERSION}..."
+
+          # Stage the modified Chart.yaml (and lockfile if changed)
+          git add "${CHART_PATH}/Chart.yaml"
+          git add "${CHART_PATH}/Chart.lock" || true
+
+          # Commit with [skip ci] to prevent recursion
+          git commit -m "chore(release): v${VERSION} [skip ci]"
+
+          # Push to main
+          git push origin HEAD:main

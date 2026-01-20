@@ -80,6 +80,9 @@ _Ethos (Identity), Logos (Reason), Praxis (Action)._
 - git commits require -S gpg signature by a human, so you may not commit; never push unless asked explicitly
 - you may propose git commit messages in the style of past commits, but never commit yourself. Aim for `git commit -F - <<'EOF'...` style multiline commit messages
 
+**Chart maintenance:**
+- Chart upversion protocol: @agents/upversion.md
+
 ## 6. Ephemeral Environments: No-Loop Playbook
 
 This section exists because we lost time to “paper cuts” that looked like infra bugs but were actually:
