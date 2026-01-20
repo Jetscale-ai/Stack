@@ -188,6 +188,7 @@ jobs:
     # Always run after validate succeeds, even if build-images was skipped
     if: always() && needs.validate.result == 'success'
     runs-on: ubuntu-latest
+    # Use GitHub environment-type for seeing the diff (read-only role)
     environment: ${{ inputs.environment_type }}
     steps:
       - name: Checkout
@@ -250,12 +251,8 @@ jobs:
           # Add image tag overrides if we built new images
           IMAGE_OVERRIDES=""
           if [ "${BUILD_IMAGES}" == "true" ] && [ -n "${BACKEND_TAG}" ] && [ -n "${FRONTEND_TAG}" ]; then
-            echo "📦 Using freshly built image tags:"
-            echo "  Backend:  ${BACKEND_TAG}"
-            echo "  Frontend: ${FRONTEND_TAG}"
-            IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG}"
-            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set backend-ws.image.tag=${BACKEND_TAG}"
-            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set frontend.image.tag=${FRONTEND_TAG}"
+            echo "📦 Image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
+            IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG} --set backend-ws.image.tag=${BACKEND_TAG} --set frontend.image.tag=${FRONTEND_TAG}"
           fi
 
           echo "📊 Running Helm diff..."
@@ -348,16 +345,10 @@ jobs:
           done
 
           # Add image tag overrides if we built new images
-          # Note: Repositories are already defined in client values files, only tags need override
           IMAGE_OVERRIDES=""
           if [ "${BUILD_IMAGES}" == "true" ] && [ -n "${BACKEND_TAG}" ] && [ -n "${FRONTEND_TAG}" ]; then
-            echo "📦 Using freshly built image tags:"
-            echo "  Backend:  ${BACKEND_TAG}"
-            echo "  Frontend: ${FRONTEND_TAG}"
-
-            IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG}"
-            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set backend-ws.image.tag=${BACKEND_TAG}"
-            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set frontend.image.tag=${FRONTEND_TAG}"
+            echo "📦 Image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
+            IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG} --set backend-ws.image.tag=${BACKEND_TAG} --set frontend.image.tag=${FRONTEND_TAG}"
           fi
 
           echo "🚀 Deploying Helm release..."
