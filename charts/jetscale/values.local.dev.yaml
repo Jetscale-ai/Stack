@@ -51,6 +51,9 @@ backend-api:
   env:
     JETSCALE_APP_NAME: "JetScale Backend (Tilt)"
     JETSCALE_DEBUG: "true"
+    # Parity: ExternalSecret is disabled in local dev; auth requires a JWT signing key.
+    # This is a dev-only default (NOT a production secret).
+    JETSCALE_JWT_SECRET_KEY: "tilt-local-jwt-secret"
     JETSCALE_DB_HOST: "jetscale-local-postgres"
     JETSCALE_DB_PORT: "5432"
     JETSCALE_DB_NAME: "jetscale"
@@ -94,6 +97,9 @@ backend-ws:
   env:
     JETSCALE_APP_NAME: "JetScale Backend WS (Tilt)"
     JETSCALE_DEBUG: "true"
+    # Parity: ExternalSecret is disabled in local dev; auth requires a JWT signing key.
+    # This is a dev-only default (NOT a production secret).
+    JETSCALE_JWT_SECRET_KEY: "tilt-local-jwt-secret"
     JETSCALE_DB_HOST: "jetscale-local-postgres"
     JETSCALE_DB_PORT: "5432"
     JETSCALE_DB_NAME: "jetscale"

@@ -11,13 +11,33 @@ allow_k8s_contexts('kind-kind')
 # - `charts/jetscale/values.local.dev.yaml`: Tilt inner-loop (local builds + live_update)
 # - `charts/jetscale/values.local.live.yaml`: Live-parity (pull published prod images)
 
-backend_dir = '../Backend'
-frontend_dir = '../Frontend'
-# Support both capitalized and lowercased sibling repo names (Linux is case-sensitive).
-if not os.path.exists(backend_dir):
-    backend_dir = '../backend'
-if not os.path.exists(frontend_dir):
-    frontend_dir = '../frontend'
+# Support case-insensitive backend/frontend directory names
+def find_sibling_dir(base_name):
+    """Find sibling directory case-insensitively by trying common variations."""
+    parent_dir = os.path.dirname(os.getcwd())
+
+    # Try common case variations
+    variations = [
+        base_name,                    # backend
+        base_name.capitalize(),       # Backend
+        base_name.upper(),           # BACKEND
+        base_name.lower(),           # backend (already covered)
+    ]
+
+    for variation in variations:
+        candidate = os.path.join(parent_dir, variation)
+        if os.path.exists(candidate):
+            return candidate
+
+    return None
+
+backend_dir = find_sibling_dir('backend')
+if not backend_dir:
+    fail('Could not find backend directory (tried: backend, Backend, BACKEND)')
+
+frontend_dir = find_sibling_dir('frontend')
+if not frontend_dir:
+    fail('Could not find frontend directory (tried: frontend, Frontend, FRONTEND)')
 
 docker_build(
     'ghcr.io/jetscale-ai/backend-dev:tilt',
@@ -45,11 +65,15 @@ docker_build(
 # ConfigMap: Backend .env file (for local dev only)
 # ---------------------------
 backend_env_file = backend_dir + '/.env'
+env_content = ""
 if os.path.exists(backend_env_file):
     env_content = str(read_file(backend_env_file))
-    # Indent each line for YAML data block
-    indented_env = '\n'.join(['    ' + line for line in env_content.split('\n')])
-    k8s_yaml(blob("""apiVersion: v1
+
+# Always create the ConfigMap so pods don't fail to mount when the local backend
+# repo doesn't have a `.env` file yet.
+# (values.local.dev.yaml mounts this unconditionally.)
+indented_env = '\n'.join(['    ' + line for line in env_content.split('\n')])
+k8s_yaml(blob("""apiVersion: v1
 kind: ConfigMap
 metadata:
   name: backend-env-file
