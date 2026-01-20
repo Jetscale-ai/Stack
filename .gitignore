@@ -15,6 +15,9 @@ Thumbs.db
 # Golang (Mage)
 jetscale-stack
 
+# Go test binaries (e.g. `go test -c`)
+*.test
+
 # Terraform
 .terraform/
 *.tfstate
