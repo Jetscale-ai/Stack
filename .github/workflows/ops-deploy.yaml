@@ -61,7 +61,7 @@ jobs:
     name: Build Images
     if: inputs.build_images == true
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment_type }}-${{ inputs.client_name }}
+    environment: ${{ inputs.environment_type }}
     outputs:
       backend_tag: ${{ steps.build.outputs.backend_tag }}
       frontend_tag: ${{ steps.build.outputs.frontend_tag }}
@@ -139,7 +139,7 @@ jobs:
   # VALIDATE CONFIGURATION
   # ============================================================================
   validate:
-    name: "Ops: Validate Config"
+    name: Validate Configuration
     runs-on: ubuntu-latest
     outputs:
       values_files: ${{ steps.build_values.outputs.files }}
@@ -183,10 +183,11 @@ jobs:
           echo "$VALUES_FILES" | tr ',' '\n' | sed 's/^/  - /'
 
   helm-diff:
-    name: "Ops: Helm Diff"
-    needs: validate
+    name: Helm Diff
+    needs: [validate, build-images]
+    # Always run after validate succeeds, even if build-images was skipped
+    if: always() && needs.validate.result == 'success'
     runs-on: ubuntu-latest
-    # Use GitHub environment-type for seeing the diff (read-only role)
     environment: ${{ inputs.environment_type }}
     steps:
       - name: Checkout
@@ -234,6 +235,10 @@ jobs:
 
       - name: Run Helm Diff
         id: helm_diff
+        env:
+          BUILD_IMAGES: ${{ inputs.build_images }}
+          BACKEND_TAG: ${{ needs.build-images.outputs.backend_tag }}
+          FRONTEND_TAG: ${{ needs.build-images.outputs.frontend_tag }}
         run: |
           # Build values flags from comma-separated list
           VALUES_FLAGS=""
@@ -241,23 +246,35 @@ jobs:
           for file in "${FILES[@]}"; do
             VALUES_FLAGS="$VALUES_FLAGS --values $file"
           done
-          
+
+          # Add image tag overrides if we built new images
+          IMAGE_OVERRIDES=""
+          if [ "${BUILD_IMAGES}" == "true" ] && [ -n "${BACKEND_TAG}" ] && [ -n "${FRONTEND_TAG}" ]; then
+            echo "📦 Using freshly built image tags:"
+            echo "  Backend:  ${BACKEND_TAG}"
+            echo "  Frontend: ${FRONTEND_TAG}"
+            IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG}"
+            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set backend-ws.image.tag=${BACKEND_TAG}"
+            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set frontend.image.tag=${FRONTEND_TAG}"
+          fi
+
           echo "📊 Running Helm diff..."
           echo "Release: ${{ inputs.client_name }}"
           echo "Namespace: ${{ inputs.client_name }}-${{ inputs.environment_type }}"
           echo "Values files: ${{ needs.validate.outputs.values_files }}"
-          
+
           # Run diff and capture output
           set +e
           helm diff upgrade ${{ inputs.client_name }} ./charts/jetscale \
             --namespace ${{ inputs.client_name }}-${{ inputs.environment_type }} \
             --allow-unreleased \
             $VALUES_FLAGS \
+            $IMAGE_OVERRIDES \
             --context 5 \
             --color
           DIFF_EXIT_CODE=$?
           set -e
-          
+
           # Check if there are changes
           if [ $DIFF_EXIT_CODE -eq 0 ]; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
@@ -274,7 +291,7 @@ jobs:
           echo "If you expected changes, verify your values files."
 
   helm-deploy:
-    name: "Ops: Helm Deploy"
+    name: Helm Deploy
     needs: [validate, helm-diff, build-images]
     # Always run, but build-images may be skipped
     if: always() && needs.validate.result == 'success' && needs.helm-diff.result == 'success'
@@ -302,7 +319,7 @@ jobs:
           aws eks update-kubeconfig \
             --region ${{ inputs.aws_region }} \
             --name ${{ inputs.client_name }}-${{ inputs.environment_type }}
-          
+
           # Verify connection
           kubectl cluster-info
 
@@ -322,9 +339,6 @@ jobs:
           BUILD_IMAGES: ${{ inputs.build_images }}
           BACKEND_TAG: ${{ needs.build-images.outputs.backend_tag }}
           FRONTEND_TAG: ${{ needs.build-images.outputs.frontend_tag }}
-          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com
-          CLIENT: ${{ inputs.client_name }}
-          ENV_TYPE: ${{ inputs.environment_type }}
         run: |
           # Build values flags from comma-separated list
           VALUES_FLAGS=""
@@ -333,28 +347,23 @@ jobs:
             VALUES_FLAGS="$VALUES_FLAGS --values $file"
           done
 
-          # Add image overrides if we built new images
+          # Add image tag overrides if we built new images
+          # Note: Repositories are already defined in client values files, only tags need override
           IMAGE_OVERRIDES=""
           if [ "${BUILD_IMAGES}" == "true" ] && [ -n "${BACKEND_TAG}" ] && [ -n "${FRONTEND_TAG}" ]; then
-            echo "📦 Using freshly built images:"
+            echo "📦 Using freshly built image tags:"
             echo "  Backend:  ${BACKEND_TAG}"
             echo "  Frontend: ${FRONTEND_TAG}"
 
-            BACKEND_REPO="${ECR_REGISTRY}/${CLIENT}-${ENV_TYPE}-backend"
-            FRONTEND_REPO="${ECR_REGISTRY}/${CLIENT}-${ENV_TYPE}-frontend"
-
-            IMAGE_OVERRIDES="--set backend-api.image.repository=${BACKEND_REPO}"
-            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set backend-api.image.tag=${BACKEND_TAG}"
-            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set backend-ws.image.repository=${BACKEND_REPO}"
+            IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG}"
             IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set backend-ws.image.tag=${BACKEND_TAG}"
-            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set frontend.image.repository=${FRONTEND_REPO}"
             IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set frontend.image.tag=${FRONTEND_TAG}"
           fi
 
           echo "🚀 Deploying Helm release..."
           echo "Release: ${{ inputs.client_name }}"
           echo "Namespace: ${{ inputs.client_name }}-${{ inputs.environment_type }}"
-          
+
           helm upgrade --install ${{ inputs.client_name }} ./charts/jetscale \
             --namespace ${{ inputs.client_name }}-${{ inputs.environment_type }} \
             --create-namespace \
@@ -364,5 +373,5 @@ jobs:
             --timeout 10m \
             --atomic \
             --cleanup-on-fail
-          
+
           echo "✅ Deployment completed successfully"
