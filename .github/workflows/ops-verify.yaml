@@ -1,11 +1,7 @@
 name: "Ops: Verify Live"
 
 on:
-  push:
-    branches: [ main ]
-    # Optional: Add filters if you only want this to run when code changes
-    # paths-ignore:
-    #   - '**.md'
+  workflow_call:
 
 jobs:
   smoke-test:

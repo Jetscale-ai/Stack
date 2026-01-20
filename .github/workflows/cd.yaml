@@ -469,3 +469,11 @@ jobs:
           kubectl get pods -n jetscale-prod -o wide || true
           echo "=== K8s events (last 200) ==="
           kubectl get events -n jetscale-prod --sort-by=.metadata.creationTimestamp | tail -n 200 || true
+
+  # ============================================================================
+  # STEP 3: VERIFY LIVE (POST-DEPLOY)
+  # ============================================================================
+  verify-live:
+    name: "CD: Verify Live"
+    needs: [deploy-live]
+    uses: ./.github/workflows/ops-verify.yaml
