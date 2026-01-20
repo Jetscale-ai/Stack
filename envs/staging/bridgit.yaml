@@ -8,11 +8,17 @@ backend-api:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-backend
     # tag: set by workflow via --set when build_images=true
+  serviceAccount:
+    create: false
+    name: "bridgit-service-account"
 
 backend-ws:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-backend
     # tag: set by workflow via --set when build_images=true
+  serviceAccount:
+    create: false
+    name: "bridgit-service-account"
 
 frontend:
   image:
