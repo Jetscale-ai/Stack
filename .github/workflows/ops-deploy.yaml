@@ -1,4 +1,4 @@
-name: "Ops: Manual Deploy"
+name: Manual Helm Deploy
 
 on:
   workflow_dispatch:
@@ -32,6 +32,21 @@ on:
           - us-east-1
           - us-west-2
           - eu-west-1
+      build_images:
+        description: 'Build new images from branch code'
+        required: false
+        type: boolean
+        default: false
+      backend_ref:
+        description: 'Backend repo branch/tag (required if build_images=true)'
+        required: false
+        type: string
+        default: 'main'
+      frontend_ref:
+        description: 'Frontend repo branch/tag (required if build_images=true)'
+        required: false
+        type: string
+        default: 'main'
 
 # Required for OIDC
 permissions:
@@ -39,6 +54,89 @@ permissions:
   contents: read
 
 jobs:
+  # ============================================================================
+  # BUILD IMAGES (Optional - only if build_images=true)
+  # ============================================================================
+  build-images:
+    name: Build Images
+    if: inputs.build_images == true
+    runs-on: ubuntu-latest
+    outputs:
+      backend_tag: ${{ steps.build.outputs.backend_tag }}
+      frontend_tag: ${{ steps.build.outputs.frontend_tag }}
+    steps:
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-actions-role
+          aws-region: ${{ inputs.aws_region }}
+          role-session-name: github-actions-build-images
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Checkout Backend
+        uses: actions/checkout@v4
+        with:
+          repository: Jetscale-ai/Backend
+          ref: ${{ inputs.backend_ref }}
+          token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+          path: backend
+
+      - name: Checkout Frontend
+        uses: actions/checkout@v4
+        with:
+          repository: Jetscale-ai/Frontend
+          ref: ${{ inputs.frontend_ref }}
+          token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
+          path: frontend
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push Images
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          CLIENT: ${{ inputs.client_name }}
+          ENV_TYPE: ${{ inputs.environment_type }}
+        run: |
+          # Generate image tag
+          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+          BACKEND_SHA=$(cd backend && git rev-parse --short HEAD)
+          FRONTEND_SHA=$(cd frontend && git rev-parse --short HEAD)
+
+          BACKEND_TAG="${ENV_TYPE}-${CLIENT}-${TIMESTAMP}-${BACKEND_SHA}"
+          FRONTEND_TAG="${ENV_TYPE}-${CLIENT}-${TIMESTAMP}-${FRONTEND_SHA}"
+
+          BACKEND_REPO="${ECR_REGISTRY}/${CLIENT}-${ENV_TYPE}-backend"
+          FRONTEND_REPO="${ECR_REGISTRY}/${CLIENT}-${ENV_TYPE}-frontend"
+
+          echo "🔨 Building backend image: ${BACKEND_REPO}:${BACKEND_TAG}"
+          docker buildx build \
+            --platform linux/amd64 \
+            --push \
+            -t "${BACKEND_REPO}:${BACKEND_TAG}" \
+            ./backend
+
+          echo "🔨 Building frontend image: ${FRONTEND_REPO}:${FRONTEND_TAG}"
+          docker buildx build \
+            --platform linux/amd64 \
+            --push \
+            -t "${FRONTEND_REPO}:${FRONTEND_TAG}" \
+            ./frontend
+
+          echo "backend_tag=${BACKEND_TAG}" >> $GITHUB_OUTPUT
+          echo "frontend_tag=${FRONTEND_TAG}" >> $GITHUB_OUTPUT
+
+          echo "✅ Images built and pushed:"
+          echo "  Backend:  ${BACKEND_REPO}:${BACKEND_TAG}"
+          echo "  Frontend: ${FRONTEND_REPO}:${FRONTEND_TAG}"
+
+  # ============================================================================
+  # VALIDATE CONFIGURATION
+  # ============================================================================
   validate:
     name: "Ops: Validate Config"
     runs-on: ubuntu-latest
@@ -176,7 +274,9 @@ jobs:
 
   helm-deploy:
     name: "Ops: Helm Deploy"
-    needs: [validate, helm-diff]
+    needs: [validate, helm-diff, build-images]
+    # Always run, but build-images may be skipped
+    if: always() && needs.validate.result == 'success' && needs.helm-diff.result == 'success'
     runs-on: ubuntu-latest
     # Use GitHub environment for manual approval (staging has required reviewers configured).
     environment: ${{ inputs.environment_type }}-${{ inputs.client_name }}
@@ -217,6 +317,13 @@ jobs:
           helm dependency update
 
       - name: Deploy with Helm
+        env:
+          BUILD_IMAGES: ${{ inputs.build_images }}
+          BACKEND_TAG: ${{ needs.build-images.outputs.backend_tag }}
+          FRONTEND_TAG: ${{ needs.build-images.outputs.frontend_tag }}
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com
+          CLIENT: ${{ inputs.client_name }}
+          ENV_TYPE: ${{ inputs.environment_type }}
         run: |
           # Build values flags from comma-separated list
           VALUES_FLAGS=""
@@ -224,7 +331,25 @@ jobs:
           for file in "${FILES[@]}"; do
             VALUES_FLAGS="$VALUES_FLAGS --values $file"
           done
-          
+
+          # Add image overrides if we built new images
+          IMAGE_OVERRIDES=""
+          if [ "${BUILD_IMAGES}" == "true" ] && [ -n "${BACKEND_TAG}" ] && [ -n "${FRONTEND_TAG}" ]; then
+            echo "📦 Using freshly built images:"
+            echo "  Backend:  ${BACKEND_TAG}"
+            echo "  Frontend: ${FRONTEND_TAG}"
+
+            BACKEND_REPO="${ECR_REGISTRY}/${CLIENT}-${ENV_TYPE}-backend"
+            FRONTEND_REPO="${ECR_REGISTRY}/${CLIENT}-${ENV_TYPE}-frontend"
+
+            IMAGE_OVERRIDES="--set backend-api.image.repository=${BACKEND_REPO}"
+            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set backend-api.image.tag=${BACKEND_TAG}"
+            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set backend-ws.image.repository=${BACKEND_REPO}"
+            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set backend-ws.image.tag=${BACKEND_TAG}"
+            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set frontend.image.repository=${FRONTEND_REPO}"
+            IMAGE_OVERRIDES="${IMAGE_OVERRIDES} --set frontend.image.tag=${FRONTEND_TAG}"
+          fi
+
           echo "🚀 Deploying Helm release..."
           echo "Release: ${{ inputs.client_name }}"
           echo "Namespace: ${{ inputs.client_name }}-${{ inputs.environment_type }}"
@@ -233,6 +358,7 @@ jobs:
             --namespace ${{ inputs.client_name }}-${{ inputs.environment_type }} \
             --create-namespace \
             $VALUES_FLAGS \
+            $IMAGE_OVERRIDES \
             --wait \
             --timeout 10m \
             --atomic \
