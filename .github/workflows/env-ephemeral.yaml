@@ -1,4 +1,4 @@
-name: "Ephemeral Cluster per PR"
+name: "Env: Ephemeral (Preview)"
 
 on:
   pull_request:

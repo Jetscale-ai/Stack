@@ -1,4 +1,4 @@
-name: "Publish Release & Deploy"
+name: "CD: Publish & Promote"
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
       - '.release.yml'
       - 'envs/aws.yaml'
       - 'envs/live/**'
-      - '.github/workflows/release.yaml'
+      - '.github/workflows/cd.yaml'
       - '.github/workflows/reusable-release.yaml'
   workflow_dispatch:
     inputs:

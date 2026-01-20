@@ -1,4 +1,4 @@
-name: "PR Pipeline (Validate > E2E)"
+name: "CI: Validate & E2E"
 
 on:
   pull_request:

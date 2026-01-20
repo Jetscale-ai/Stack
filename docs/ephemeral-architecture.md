@@ -107,7 +107,7 @@ There is also a required (sometimes placeholder) secret:
 
 ### Operational scripts (where the logic lives)
 
-- Workflow: `.github/workflows/ephemeral.yaml`
+- Workflow: `.github/workflows/env-ephemeral.yaml`
 - Terraform + adoption:
   - `scripts/gha/ephemeral/state_reconcile.sh`
   - `scripts/gha/ephemeral/terraform_apply.sh`

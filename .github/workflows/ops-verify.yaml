@@ -1,4 +1,4 @@
-name: Verify Live
+name: "Ops: Verify Live"
 
 on:
   push:

@@ -1,4 +1,4 @@
-name: "Janitor (Cleanup Ephemeral)"
+name: "Env: Cleanup (Janitor)"
 
 on:
   pull_request:

@@ -144,7 +144,7 @@ func ensureHelmGhcrLogin() error {
 // ensureK8sGhcrPullSecret ensures the Kind cluster can pull GHCR images by creating a docker-registry
 // secret in the given namespace and patching the default ServiceAccount to reference it.
 //
-// This mirrors the CI workflow behavior (see `.github/workflows/pipeline.yaml`).
+// This mirrors the CI workflow behavior (see `.github/workflows/ci.yaml`).
 //
 // Required env:
 // - GITHUB_TOKEN (or GH_TOKEN): token with `read:packages`
