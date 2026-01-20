@@ -1,0 +1,32 @@
+global:
+  client_name: "bridgit"
+  env: "staging"
+
+# Images are built and set dynamically by the workflow when build_images=true
+# Repository paths follow the pattern: {client}-{env}-backend/frontend
+backend-api:
+  image:
+    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-backend
+    # tag: set by workflow via --set when build_images=true
+  serviceAccount:
+    create: false
+    name: "bridgit-service-account"
+
+backend-ws:
+  image:
+    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-backend
+    # tag: set by workflow via --set when build_images=true
+  serviceAccount:
+    create: false
+    name: "bridgit-service-account"
+
+frontend:
+  image:
+    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-frontend
+    # tag: set by workflow via --set when build_images=true
+
+ingress:
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: "bridgit.staging.jetscale.ai"
+  hosts:
+    bridgit.staging.jetscale.ai:
