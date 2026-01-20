@@ -39,6 +39,23 @@ backend-api:
   command: ["./entrypoint.sh"]
   args: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
   envFrom: null
+  # Relaxed probes for local development
+  livenessProbe:
+    httpGet:
+      path: /api/v1/health/
+      port: 8000
+    initialDelaySeconds: 60
+    periodSeconds: 60
+    timeoutSeconds: 10
+    failureThreshold: 5
+  readinessProbe:
+    httpGet:
+      path: /api/v1/health/
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 5
   # Mount Backend .env file from ConfigMap (created by Tiltfile)
   volumes:
     - name: backend-env
@@ -85,6 +102,23 @@ backend-ws:
   command: ["./entrypoint.sh"]
   args: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
   envFrom: null
+  # Relaxed probes for local development
+  livenessProbe:
+    httpGet:
+      path: /api/v1/ws/health
+      port: 8001
+    initialDelaySeconds: 60
+    periodSeconds: 60
+    timeoutSeconds: 10
+    failureThreshold: 5
+  readinessProbe:
+    httpGet:
+      path: /api/v1/ws/health
+      port: 8001
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 5
   # Mount Backend .env file from ConfigMap (created by Tiltfile)
   volumes:
     - name: backend-env
