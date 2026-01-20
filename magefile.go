@@ -529,25 +529,28 @@ func (Test) CI() error {
 	// but we actually want to test on local Kind.
 	ctxName := "kind-kind"
 
-	// Local developer runs should not require GHCR access; in real CI we keep the
-	// remote-image flow. Detect real CI via GitHub Actions env vars.
+	// CI parity: always use the same remote-image Skaffold profile as GitHub Actions.
+	// If GHCR creds are missing locally, fail loudly (don't silently fall back to local images),
+	// so local `mage test:ci` reproduces CI failures.
 	profile := "ci-kind"
-	isCI := os.Getenv("GITHUB_ACTIONS") != ""
-	if !isCI {
-		profile = "ci-kind-local"
+
+	_, _ = loadDotEnvIfPresent(".env")
+	token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("GH_TOKEN"))
+	}
+	if token == "" {
+		return fmt.Errorf(
+			"missing GHCR credentials for Kind CI.\n\n" +
+				"Set one of:\n" +
+				"  GITHUB_TOKEN=<token with read:packages>\n" +
+				"  GH_TOKEN=<token with read:packages>\n\n" +
+				"Then re-run: mage test:ci",
+		)
 	}
 
-	if isCI {
-		// Parity with CI workflow: ensure `regcred` exists so pods can pull from GHCR.
-		_, _ = loadDotEnvIfPresent(".env")
-		if err := ensureK8sGhcrPullSecret(ctxName, "jetscale-ci", "regcred"); err != nil {
-			return fmt.Errorf("failed to ensure GHCR pull secret: %w", err)
-		}
-	} else {
-		// Local build path: build + load images directly into Kind.
-		if err := loadLocalImagesIntoKind(); err != nil {
-			return err
-		}
+	if err := ensureK8sGhcrPullSecret(ctxName, "jetscale-ci", "regcred"); err != nil {
+		return fmt.Errorf("failed to ensure GHCR pull secret: %w", err)
 	}
 
 	if err := runSkaffoldDeploy(profile, "jetscale-ci"); err != nil {
