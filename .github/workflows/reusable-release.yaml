@@ -19,7 +19,7 @@ on:
 
 jobs:
   release:
-    name: "Release Chart"
+    name: "CD: Publish Chart"
     runs-on: ubuntu-latest
     permissions:
       contents: write

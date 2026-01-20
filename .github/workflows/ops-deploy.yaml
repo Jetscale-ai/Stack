@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate Configuration
+    name: "Ops: Validate Config"
     runs-on: ubuntu-latest
     outputs:
       values_files: ${{ steps.build_values.outputs.files }}
@@ -84,7 +84,7 @@ jobs:
           echo "$VALUES_FILES" | tr ',' '\n' | sed 's/^/  - /'
 
   helm-diff:
-    name: Helm Diff
+    name: "Ops: Helm Diff"
     needs: validate
     runs-on: ubuntu-latest
     # Use GitHub environment-type for seeing the diff (read-only role)
@@ -175,7 +175,7 @@ jobs:
           echo "If you expected changes, verify your values files."
 
   helm-deploy:
-    name: Helm Deploy
+    name: "Ops: Helm Deploy"
     needs: [validate, helm-diff]
     runs-on: ubuntu-latest
     # Use GitHub environment for manual approval (staging has required reviewers configured).

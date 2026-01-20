@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   manage-env:
-    name: "${{ inputs.action || 'deploy' }} Ephemeral Env"
+    name: "Env: Ephemeral (${{ inputs.action || 'deploy' }})"
     runs-on: ubuntu-latest
     env:
       # ✅ Justified Action: Disable pagers in automation

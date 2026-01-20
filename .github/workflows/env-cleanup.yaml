@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   destroy:
+    name: "Env: Cleanup"
     runs-on: ubuntu-latest
     # IMPORTANT: use the per-PR GitHub Environment so the OIDC `sub` claim matches
     # the Live account trust policy (`repo:Jetscale-ai/Stack:environment:pr-*`).

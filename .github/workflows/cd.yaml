@@ -58,7 +58,7 @@ jobs:
   # STEP 2: DEPLOY TO LIVE (GATED)
   # ============================================================================
   deploy-live:
-    name: "Promote to Live"
+    name: "CD: Promote Live"
     needs: [publish]
     runs-on: ubuntu-latest
 

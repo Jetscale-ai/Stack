@@ -17,7 +17,7 @@ jobs:
   # STAGE 0: INTEGRITY
   # ============================================================================
   validate:
-    name: "0. Validate (Syntax)"
+    name: "CI: Validate"
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/jetscale-ai/booster-dev:latest
@@ -37,7 +37,7 @@ jobs:
   # STAGE 3: SIMULATION (Kind E2E)
   # ============================================================================
   e2e-kind:
-    name: "3. E2E (Kind)"
+    name: "CI: E2E (Kind)"
     needs: [validate]
     runs-on: ubuntu-latest
     steps:
