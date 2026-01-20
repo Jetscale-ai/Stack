@@ -61,7 +61,7 @@ jobs:
     name: Build Images
     if: inputs.build_images == true
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment_type }}-${{ inputs.client_name }}
+    environment: ${{ inputs.environment_type }}
     outputs:
       backend_tag: ${{ steps.build.outputs.backend_tag }}
       frontend_tag: ${{ steps.build.outputs.frontend_tag }}
@@ -293,8 +293,7 @@ jobs:
     # Always run, but build-images may be skipped
     if: always() && needs.validate.result == 'success' && needs.helm-diff.result == 'success'
     runs-on: ubuntu-latest
-    # Use GitHub environment for manual approval (staging has required reviewers configured).
-    environment: ${{ inputs.environment_type }}-${{ inputs.client_name }}
+    environment: ${{ inputs.environment_type }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
