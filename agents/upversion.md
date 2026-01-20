@@ -1,12 +1,12 @@
 # Chart Bump Protocol
 
 ## Overview
-Periodically upgrade backend/frontend charts and images to latest versions.
+Upgrade backend/frontend charts to the latest versions.
 
 **Versioning Strategy (Sovereign Source):**
-- **Human Role:** You update the **dependencies** (logic/composition) in the PR.
-- **CI Role:** The pipeline calculates the Semantic Version, updates `Chart.yaml`, publishes the OCI artifact, and **commits the new version back to main**.
-- **Result:** Code always reflects truth.
+- **Human Role:** Update the **dependencies** (logic/composition) in the PR.
+- **CI Role:** The pipeline calculates the SemVer, updates `Chart.yaml`, publishes the OCI artifact, and **commits the new version back to main**.
+- **Result:** `main` reflects the released artifact.
 
 ## Prerequisites
 - `gh` CLI installed
@@ -53,7 +53,7 @@ mage validate:envs aws
 ```
 
 ### 5. Commit
-The commit message triggers the release.
+The commit message triggers the release workflow.
 **Do not bump `version` manually.** CI will handle it.
 
 ```bash
