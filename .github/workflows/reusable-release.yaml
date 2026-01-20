@@ -86,6 +86,7 @@ jobs:
         env:
           VERSION: ${{ steps.semrel.outputs.version }}
           CHART_PATH: ${{ inputs.chart_path }}
+        shell: bash
         run: |
           set -euo pipefail
 
