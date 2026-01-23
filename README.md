@@ -84,32 +84,16 @@ For historical reference:
 - **Helm**: `brew install helm`
 - **Mage**: `go install github.com/magefile/mage@latest`
 
-### 1.5. Cluster Setup (Optional - Recommended for faster development)
+### 1.5. Cluster Setup (Required for local dev)
 
-For faster image builds during development, set up a local Kind cluster with a registry using ctlptl:
+Local development uses a Kind cluster wired to a local registry via `ctlptl`. This is required for
+both `tilt up` and `mage test:localE2E`.
 
 ```bash
-# Create a Kind cluster with local registry (stable port 5000)
-ctlptl create registry ctlptl-registry --port=5000
-ctlptl create cluster kind --registry=ctlptl-registry
+ctlptl apply -f kind/ctlptl-registry.yaml
 ```
 
-Or using YAML configuration:
-```bash
-cat <<EOF | ctlptl apply -f -
-apiVersion: ctlptl.dev/v1alpha1
-kind: Registry
-name: ctlptl-registry
-port: 5000
----
-apiVersion: ctlptl.dev/v1alpha1
-kind: Cluster
-product: kind
-registry: ctlptl-registry
-EOF
-```
-
-This creates a local registry at `localhost:45857` that caches Docker images, significantly speeding up `tilt up` iterations.
+This creates a local registry at `localhost:5000` that caches Docker images and keeps image pulls fast.
 
 ### 2. Boot the Local Dev Platform (Inner Loop)
 
