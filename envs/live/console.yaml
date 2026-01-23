@@ -19,7 +19,7 @@ backend-api:
   replicaCount: 3
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "3.1.4"
+    tag: "4.0.0"
 
   # Production schedule
   cronJobs:
@@ -46,7 +46,7 @@ backend-ws:
   replicaCount: 3
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "1.2.4"
+    tag: "4.0.0"
 
 # 3. FRONTEND
 frontend:
@@ -54,7 +54,7 @@ frontend:
   replicaCount: 3
   image:
     repository: ghcr.io/jetscale-ai/frontend
-    tag: "2.1.1"
+    tag: "2.3.0"
   env:
     # This should point at the same host the Ingress serves for /api
     VITE_API_BASE_URL: "https://console.jetscale.ai"

@@ -28,11 +28,13 @@ externalSecret:
 
 # 3. BACKEND API (Dev Image + Hot Reload)
 backend-api:
+  enabled: true
+  fullnameOverride: "jetscale-local-backend-api"
   serviceAccount:
     create: true
     name: "jetscale-service-account"
   image:
-    repository: ghcr.io/jetscale-ai/backend-dev
+    repository: localhost:5000/backend-dev
     tag: "tilt"
     pullPolicy: Always
   imagePullSecrets: []
@@ -42,7 +44,7 @@ backend-api:
   # Relaxed probes for local development
   livenessProbe:
     httpGet:
-      path: /api/v1/health/
+      path: /api/v2/system/live
       port: 8000
     initialDelaySeconds: 60
     periodSeconds: 60
@@ -50,7 +52,7 @@ backend-api:
     failureThreshold: 5
   readinessProbe:
     httpGet:
-      path: /api/v1/health/
+      path: /api/v2/system/ready
       port: 8000
     initialDelaySeconds: 10
     periodSeconds: 30
@@ -91,11 +93,16 @@ backend-api:
 
 # 4. BACKEND WS (Dev Image + Hot Reload)
 backend-ws:
+  enabled: true
+  fullnameOverride: "jetscale-local-backend-ws"
   serviceAccount:
     create: false
     name: "jetscale-service-account"
+  service:
+    port: 8001
+    portName: websocket
   image:
-    repository: ghcr.io/jetscale-ai/backend-dev
+    repository: localhost:5000/backend-dev
     tag: "tilt"
     pullPolicy: Always
   imagePullSecrets: []
@@ -150,16 +157,29 @@ backend-ws:
 # 5. FRONTEND WEB (Dev Image)
 frontend:
   image:
-    repository: ghcr.io/jetscale-ai/frontend-dev
+    repository: localhost:5000/frontend-dev
     tag: "tilt"
     pullPolicy: Always
   imagePullSecrets: []
-  # service:
-  #   type: NodePort
-  #   port: 80
-  #   nodePort: 30002
+  containerPort: 3000
+  service:
+    port: 3000
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
   env:
-    VITE_API_BASE_URL: "http://localhost:8000"
+    NODE_ENV: "development"
+    HOST: "0.0.0.0"
+    PORT: "3000"
+    VITE_API_BASE_URL: "http://jetscale-local-backend-api:8000"
+  command: ["pnpm"]
+  args: ["start"]
+  livenessProbe: null
+  readinessProbe: null
 
 ingress:
   enabled: false

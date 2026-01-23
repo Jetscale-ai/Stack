@@ -92,29 +92,41 @@ func databaseConnectivity(t *testing.T) {
 		t.Skip("BASE_URL not set, skipping database connectivity test")
 	}
 
-	// Test system health endpoint which includes database status
-	resp, err := httpClient.Get(baseURL + "/api/v1/health/")
+	// Test readiness endpoint which includes database status
+	resp, err := httpClient.Get(baseURL + "/api/v2/system/ready")
 	if err != nil {
 		t.Fatalf("❌ Health endpoint not available: %v", err)
 	}
 	defer drainAndClose(resp.Body)
 
-	if resp.StatusCode != 200 {
-		t.Errorf("❌ Health check failed: status %d", resp.StatusCode)
+	if resp.StatusCode != 200 && resp.StatusCode != 503 {
+		t.Errorf("❌ Readiness check failed: status %d", resp.StatusCode)
 		return
 	}
 
-	// Parse response to verify system is healthy (implies database works)
-	var health map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
-		t.Errorf("❌ Failed to parse health response: %v", err)
+	// Parse response to verify database status
+	var ready map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&ready); err != nil {
+		t.Errorf("❌ Failed to parse readiness response: %v", err)
 		return
 	}
 
-	if status, ok := health["status"].(string); ok && status == "healthy" {
-		t.Log("✅ Database connectivity verified (system status: healthy)")
+	data, ok := ready["data"].(map[string]interface{})
+	if !ok {
+		t.Errorf("❌ Readiness response missing data")
+		return
+	}
+
+	components, ok := data["components"].(map[string]interface{})
+	if !ok {
+		t.Errorf("❌ Readiness response missing components")
+		return
+	}
+
+	if dbStatus, ok := components["database"].(string); ok && dbStatus == "ok" {
+		t.Log("✅ Database connectivity verified (readiness database=ok)")
 	} else {
-		t.Errorf("❌ System health check failed: status %v", health["status"])
+		t.Errorf("❌ Database connectivity not confirmed (database=%v)", components["database"])
 	}
 }
 
@@ -124,29 +136,41 @@ func redisConnectivity(t *testing.T) {
 		t.Skip("BASE_URL not set, skipping Redis connectivity test")
 	}
 
-	// Test system health endpoint which includes Redis status
-	resp, err := httpClient.Get(baseURL + "/api/v1/health/")
+	// Test readiness endpoint which includes Redis status
+	resp, err := httpClient.Get(baseURL + "/api/v2/system/ready")
 	if err != nil {
 		t.Fatalf("❌ Health endpoint not available: %v", err)
 	}
 	defer drainAndClose(resp.Body)
 
-	if resp.StatusCode != 200 {
-		t.Errorf("❌ Health check returned status %d", resp.StatusCode)
+	if resp.StatusCode != 200 && resp.StatusCode != 503 {
+		t.Errorf("❌ Readiness check returned status %d", resp.StatusCode)
 		return
 	}
 
 	// Parse response to verify Redis connectivity
-	var health map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
-		t.Errorf("❌ Failed to parse health response: %v", err)
+	var ready map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&ready); err != nil {
+		t.Errorf("❌ Failed to parse readiness response: %v", err)
 		return
 	}
 
-	if redisConnected, ok := health["redis_connected"].(bool); ok && redisConnected {
+	data, ok := ready["data"].(map[string]interface{})
+	if !ok {
+		t.Errorf("❌ Readiness response missing data")
+		return
+	}
+
+	components, ok := data["components"].(map[string]interface{})
+	if !ok {
+		t.Errorf("❌ Readiness response missing components")
+		return
+	}
+
+	if redisStatus, ok := components["redis"].(string); ok && redisStatus == "ok" {
 		t.Log("✅ Redis connectivity verified")
 	} else {
-		t.Errorf("❌ Redis connectivity not confirmed (redis_connected=%v)", health["redis_connected"])
+		t.Errorf("❌ Redis connectivity not confirmed (redis=%v)", components["redis"])
 	}
 }
 
@@ -161,9 +185,9 @@ func webSocketConnectivity(t *testing.T) {
 		wsBaseURL = baseURL
 	}
 
-	// NOTE: `/api/v1/ws/health` is an HTTP endpoint (not a websocket upgrade route).
-	// Validate the websocket service by calling its health endpoint over HTTP.
-	resp, err := httpClient.Get(wsBaseURL + "/api/v1/ws/health")
+	// NOTE: `/api/v2/system/ws/ready` is an HTTP endpoint (not a websocket upgrade route).
+	// Validate the websocket service by calling its readiness endpoint over HTTP.
+	resp, err := httpClient.Get(wsBaseURL + "/api/v2/system/ws/ready")
 	if err != nil {
 		t.Fatalf("❌ WebSocket health endpoint not reachable: %v", err)
 	}
@@ -180,8 +204,14 @@ func webSocketConnectivity(t *testing.T) {
 		return
 	}
 
-	if payload["status"] != "healthy" {
-		t.Errorf("❌ WebSocket service not healthy: status=%v", payload["status"])
+	data, ok := payload["data"].(map[string]interface{})
+	if !ok {
+		t.Errorf("❌ WebSocket health response missing data")
+		return
+	}
+
+	if data["status"] != "healthy" {
+		t.Errorf("❌ WebSocket service not healthy: status=%v", data["status"])
 		return
 	}
 
@@ -302,37 +332,37 @@ func externalServiceConnectivity(t *testing.T) {
 		t.Skip("BASE_URL not set, skipping external service test")
 	}
 
-	// Check system health for external service indicators
-	resp, err := httpClient.Get(baseURL + "/api/v1/health/")
+	// Check diagnostics for external service indicators
+	resp, err := httpClient.Get(baseURL + "/api/v2/diagnostics")
 	if err != nil {
-		t.Fatalf("❌ Health endpoint not available: %v", err)
+		t.Fatalf("❌ Diagnostics endpoint not available: %v", err)
 	}
 	defer drainAndClose(resp.Body)
 
-	if resp.StatusCode != 200 {
-		t.Errorf("❌ Health check failed: status %d", resp.StatusCode)
+	if resp.StatusCode != 200 && resp.StatusCode != 503 {
+		t.Errorf("❌ Diagnostics check failed: status %d", resp.StatusCode)
 		return
 	}
 
-	// Parse health response for external service indicators
-	var health map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
-		t.Errorf("❌ Failed to parse health response: %v", err)
+	// Parse diagnostics response for external service indicators
+	var diagnostics map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&diagnostics); err != nil {
+		t.Errorf("❌ Failed to parse diagnostics response: %v", err)
 		return
 	}
 
-	// Check for Langfuse integration (mentioned in health response)
-	if langgraphEnabled, ok := health["langgraph_checkpointer_enabled"].(bool); ok {
-		if langgraphEnabled {
-			t.Log("✅ Langfuse integration verified")
-		} else {
-			t.Log("⚠️  Langfuse integration not enabled")
-		}
+	dependencies, ok := diagnostics["dependencies"].(map[string]interface{})
+	if !ok {
+		t.Log("⚠️  Diagnostics response missing dependencies")
+		t.Log("✅ External service connectivity assessment completed")
+		return
 	}
 
-	// Check for other external integrations that might be indicated in health
-	if agentsAvailable, ok := health["agents_available"].(float64); ok && agentsAvailable > 0 {
-		t.Log("✅ External AI services integration verified (agents available)")
+	if aws, ok := dependencies["aws_sts"].(map[string]interface{}); ok {
+		t.Logf("ℹ️  AWS STS status: %v", aws["status"])
+	}
+	if anthropic, ok := dependencies["anthropic_api"].(map[string]interface{}); ok {
+		t.Logf("ℹ️  Anthropic API status: %v", anthropic["status"])
 	}
 
 	t.Log("✅ External service connectivity assessment completed")

@@ -40,7 +40,7 @@ if not frontend_dir:
     fail('Could not find frontend directory (tried: frontend, Frontend, FRONTEND)')
 
 docker_build(
-    'ghcr.io/jetscale-ai/backend-dev:tilt',
+    'localhost:5000/backend-dev:tilt',
     backend_dir,
     dockerfile=backend_dir + '/Dockerfile',
     target='backend-dev',
@@ -75,15 +75,15 @@ docker_build(
     ],
 )
 
+# frontend Docker build
 docker_build(
-    'ghcr.io/jetscale-ai/frontend-dev:tilt',
-    frontend_dir,
-    dockerfile=frontend_dir + '/Dockerfile',
-    target='frontend',  # runtime stage in frontend Dockerfile (nginx)
-    platform='linux/amd64',
+    'localhost:5000/frontend-dev',
+    context='../frontend',
+    target='frontend-dev', # <--- CRITICAL: Stops before Nginx stage
     live_update=[
-        sync(frontend_dir, '/app'),
-    ],
+        sync('../frontend', '/app'),
+        # If using Nuxt/Vue, it will auto-detect changes if 'pnpm run dev' is running
+    ]
 )
 
 # ---------------------------
@@ -130,10 +130,10 @@ k8s_resource(
     port_forwards=[port_forward(8001, 8001)],
 )
 
-# frontend (Nginx serving SPA)
+# frontend (Vite dev server)
 k8s_resource(
     'jetscale-local-frontend',
-    port_forwards=[port_forward(8080, 80)],
+    port_forwards=[port_forward(3000, 3000)],
 )
 
 # postgres

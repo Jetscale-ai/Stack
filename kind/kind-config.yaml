@@ -27,3 +27,12 @@ nodes:
   - containerPort: 30002
     hostPort: 80
     protocol: TCP
+# Configure containerd to use the local registry created by ctlptl
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry]
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+        endpoint = ["http://ctlptl-registry:5000"]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.ctlptl.dev"]
+        endpoint = ["http://ctlptl-registry:5000"]

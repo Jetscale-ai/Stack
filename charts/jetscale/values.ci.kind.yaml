@@ -38,7 +38,7 @@ backend-api:
     - name: regcred
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "3.1.3"
+    tag: "4.0.0"
     pullPolicy: Always
   envFrom: null
   env:
@@ -69,7 +69,7 @@ backend-ws:
     name: "jetscale-service-account"
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "3.1.3"
+    tag: "4.0.0"
     pullPolicy: Always
   imagePullSecrets:
     - name: regcred
@@ -105,7 +105,7 @@ frontend:
     - name: regcred
   image:
     repository: ghcr.io/jetscale-ai/frontend
-    tag: "2.1.1"
+    tag: "2.3.0"
     pullPolicy: Always
   env:
     VITE_API_BASE_URL: "http://jetscale-ci-backend:8000"

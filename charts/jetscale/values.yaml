@@ -29,6 +29,20 @@ backend-api:
     limits:
       memory: "2.5Gi"  # Increased from 1.5Gi to prevent OOM during batch recommendation processing with agents
       cpu: "1000m"     # Increased from 500m for parallel agent processing (50 EventBus workers)
+  livenessProbe:
+    httpGet:
+      path: /api/v2/system/live
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+  readinessProbe:
+    httpGet:
+      path: /api/v2/system/ready
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
   env:
     JETSCALE_COMPONENT: "api"
   volumes:
@@ -146,14 +160,14 @@ backend-ws:
       cpu: "250m"
   livenessProbe:
     httpGet:
-      path: /api/v1/ws/health
+      path: /api/v2/system/ws/live
       port: 8001
     initialDelaySeconds: 30
     periodSeconds: 10
     timeoutSeconds: 5
   readinessProbe:
     httpGet:
-      path: /api/v1/ws/health
+      path: /api/v2/system/ws/ready
       port: 8001
     initialDelaySeconds: 5
     periodSeconds: 5

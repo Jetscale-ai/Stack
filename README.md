@@ -77,10 +77,39 @@ For historical reference:
 ### 1. Prerequisites
 
 - **Docker**
+- **ctlptl**: `go install github.com/tilt-dev/ctlptl/cmd/ctlptl@latest` (for local Kubernetes clusters with registry)
 - **Kind**: `go install sigs.k8s.io/kind@latest`
 - **Tilt**: `curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash`
+- **Skaffold**: `curl -fsSL https://raw.githubusercontent.com/GoogleContainerTools/skaffold/main/install-skaffold.sh | bash`
 - **Helm**: `brew install helm`
 - **Mage**: `go install github.com/magefile/mage@latest`
+
+### 1.5. Cluster Setup (Optional - Recommended for faster development)
+
+For faster image builds during development, set up a local Kind cluster with a registry using ctlptl:
+
+```bash
+# Create a Kind cluster with local registry (stable port 5000)
+ctlptl create registry ctlptl-registry --port=5000
+ctlptl create cluster kind --registry=ctlptl-registry
+```
+
+Or using YAML configuration:
+```bash
+cat <<EOF | ctlptl apply -f -
+apiVersion: ctlptl.dev/v1alpha1
+kind: Registry
+name: ctlptl-registry
+port: 5000
+---
+apiVersion: ctlptl.dev/v1alpha1
+kind: Cluster
+product: kind
+registry: ctlptl-registry
+EOF
+```
+
+This creates a local registry at `localhost:45857` that caches Docker images, significantly speeding up `tilt up` iterations.
 
 ### 2. Boot the Local Dev Platform (Inner Loop)
 
