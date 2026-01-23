@@ -102,11 +102,17 @@ jobs:
           echo -e "\n2. Pod Status:"
           kubectl get pods -n jetscale-ci -o wide
           
-          echo -e "\n3. Backend Logs (Current):"
-          kubectl logs -n jetscale-ci -l app.kubernetes.io/name=backend --tail=100
+          echo -e "\n3. Backend API Logs (Current):"
+          kubectl logs -n jetscale-ci -l app.kubernetes.io/name=backend-api --tail=200
+          echo -e "\n3b. Backend WS Logs (Current):"
+          kubectl logs -n jetscale-ci -l app.kubernetes.io/name=backend-ws --tail=200
           
-          echo -e "\n4. Backend Logs (Previous Crash - If Exists):"
-          kubectl logs -n jetscale-ci -l app.kubernetes.io/name=backend --previous --tail=100 || echo "No previous instance found."
+          echo -e "\n4. Backend API Logs (Previous Crash - If Exists):"
+          kubectl logs -n jetscale-ci -l app.kubernetes.io/name=backend-api --previous --tail=200 || echo "No previous instance found."
+          echo -e "\n4b. Backend WS Logs (Previous Crash - If Exists):"
+          kubectl logs -n jetscale-ci -l app.kubernetes.io/name=backend-ws --previous --tail=200 || echo "No previous instance found."
           
-          echo -e "\n5. Describe Backend Pod:"
-          kubectl describe pods -n jetscale-ci -l app.kubernetes.io/name=backend
+          echo -e "\n5. Describe Backend API Pod:"
+          kubectl describe pods -n jetscale-ci -l app.kubernetes.io/name=backend-api
+          echo -e "\n5b. Describe Backend WS Pod:"
+          kubectl describe pods -n jetscale-ci -l app.kubernetes.io/name=backend-ws

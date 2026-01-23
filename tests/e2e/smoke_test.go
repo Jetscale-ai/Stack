@@ -248,7 +248,8 @@ func authenticationFlow(t *testing.T) {
 	defer drainAndClose(resp.Body)
 
 	if resp.StatusCode != 200 {
-		t.Errorf("❌ Auth login failed: status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		t.Errorf("❌ Auth login failed: status %d body=%s", resp.StatusCode, string(body))
 		return
 	}
 
@@ -287,7 +288,8 @@ func authenticationFlow(t *testing.T) {
 	if resp.StatusCode == 200 {
 		t.Log("✅ Authentication flow verified")
 	} else {
-		t.Errorf("❌ Protected endpoint returned status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		t.Errorf("❌ Protected endpoint returned status %d body=%s", resp.StatusCode, string(body))
 	}
 }
 
