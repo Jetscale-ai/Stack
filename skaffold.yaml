@@ -21,7 +21,9 @@ profiles:
   - name: local-kind
     build:
       local:
-        push: false  # Don't push to registry, load directly to Kind
+        # When a ctlptl local registry is configured, Skaffold should push
+        # to it so Kind can pull images reliably.
+        push: true
       artifacts:
         - image: jetscale-backend-local
           context: ../backend

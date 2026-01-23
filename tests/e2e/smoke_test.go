@@ -240,7 +240,8 @@ func authenticationFlow(t *testing.T) {
 	}
 
 	jsonData, _ := json.Marshal(loginPayload)
-	resp, err := httpClient.Post(baseURL+"/api/v1/auth/login", "application/json", bytes.NewBuffer(jsonData))
+	loginURL := baseURL + "/api/v2/auth/signin"
+	resp, err := httpClient.Post(loginURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		t.Fatalf("❌ Auth login endpoint not available: %v", err)
 	}
@@ -258,7 +259,7 @@ func authenticationFlow(t *testing.T) {
 		return
 	}
 
-	// Response shape is SessionApiResponse: data.tokens.access_token
+	// Response shape is BaseApiResponse: data.tokens.access_token
 	var token string
 	if data, ok := response["data"].(map[string]interface{}); ok {
 		if tokens, ok := data["tokens"].(map[string]interface{}); ok {
@@ -273,7 +274,7 @@ func authenticationFlow(t *testing.T) {
 	}
 
 	// Test protected endpoint with JWT
-	req, _ := http.NewRequest("GET", baseURL+"/api/v1/auth/me", nil)
+	req, _ := http.NewRequest("GET", baseURL+"/api/v2/auth/me", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err = httpClient.Do(req)
@@ -333,7 +334,7 @@ func externalServiceConnectivity(t *testing.T) {
 	}
 
 	// Check diagnostics for external service indicators
-	resp, err := httpClient.Get(baseURL + "/api/v2/diagnostics")
+	resp, err := httpClient.Get(baseURL + "/api/v2/system/diagnostics")
 	if err != nil {
 		t.Fatalf("❌ Diagnostics endpoint not available: %v", err)
 	}
