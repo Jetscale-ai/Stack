@@ -354,18 +354,53 @@ func externalServiceConnectivity(t *testing.T) {
 		return
 	}
 
-	dependencies, ok := diagnostics["dependencies"].(map[string]interface{})
+	data, ok := diagnostics["data"].(map[string]interface{})
 	if !ok {
-		t.Log("⚠️  Diagnostics response missing dependencies")
-		t.Log("✅ External service connectivity assessment completed")
+		t.Errorf("❌ Diagnostics response missing data")
 		return
 	}
 
+	dependencies, ok := data["dependencies"].(map[string]interface{})
+	if !ok {
+		t.Errorf("❌ Diagnostics response missing dependencies")
+		return
+	}
+
+	// Hard failures for core infra.
+	if db, ok := dependencies["database"].(map[string]interface{}); ok {
+		if status, ok := db["status"].(string); ok && status != "ok" {
+			t.Errorf("❌ Diagnostics reports database status=%s", status)
+			return
+		}
+	} else {
+		t.Errorf("❌ Diagnostics missing database dependency status")
+		return
+	}
+
+	if redis, ok := dependencies["redis"].(map[string]interface{}); ok {
+		if status, ok := redis["status"].(string); ok && status != "ok" {
+			t.Errorf("❌ Diagnostics reports redis status=%s", status)
+			return
+		}
+	} else {
+		t.Errorf("❌ Diagnostics missing redis dependency status")
+		return
+	}
+
+	// Warnings for external deps when degraded.
 	if aws, ok := dependencies["aws_sts"].(map[string]interface{}); ok {
-		t.Logf("ℹ️  AWS STS status: %v", aws["status"])
+		if status, ok := aws["status"].(string); ok && status != "ok" {
+			t.Logf("⚠️  AWS STS status: %s", status)
+		} else {
+			t.Logf("ℹ️  AWS STS status: %v", aws["status"])
+		}
 	}
 	if anthropic, ok := dependencies["anthropic_api"].(map[string]interface{}); ok {
-		t.Logf("ℹ️  Anthropic API status: %v", anthropic["status"])
+		if status, ok := anthropic["status"].(string); ok && status != "ok" {
+			t.Logf("⚠️  Anthropic API status: %s", status)
+		} else {
+			t.Logf("ℹ️  Anthropic API status: %v", anthropic["status"])
+		}
 	}
 
 	t.Log("✅ External service connectivity assessment completed")
