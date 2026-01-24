@@ -605,6 +605,8 @@ func (Test) Live() error {
 // -----------------------------------------------------------------------------
 
 func runSkaffoldDeploy(profile, namespace string, extraArgs ...string) error {
+	envs := setSkaffoldBuildMetadata()
+
 	args := []string{"run", "-p", profile}
 	if namespace != "" {
 		args = append(args, "--namespace", namespace)
@@ -614,9 +616,176 @@ func runSkaffoldDeploy(profile, namespace string, extraArgs ...string) error {
 	fmt.Printf("   > skaffold %s\n", strings.Join(args, " "))
 
 	deploy := exec.Command("skaffold", args...)
+	deploy.Env = mergeEnv(os.Environ(), envs)
 	deploy.Stdout = os.Stdout
 	deploy.Stderr = os.Stderr
 	return deploy.Run()
+}
+
+func setSkaffoldBuildMetadata() map[string]string {
+	envs := map[string]string{}
+
+	buildTime := time.Now().UTC().Format(time.RFC3339)
+	envs["BUILD_TIME"] = buildTime
+	envs["BACKEND_BRANCH"] = "unknown"
+	envs["BACKEND_VERSION"] = "unknown-dev"
+	envs["BACKEND_GIT_SHA"] = "unknown"
+	envs["BACKEND_GIT_REF"] = "unknown"
+	envs["BACKEND_BUILD_TIME"] = buildTime
+	envs["FRONTEND_BRANCH"] = "unknown"
+	envs["FRONTEND_VERSION"] = "unknown-dev"
+	envs["FRONTEND_GIT_SHA"] = "unknown"
+	envs["FRONTEND_BUILD_TIME"] = buildTime
+
+	envs["JETSCALE_GIT_REF"] = "unknown"
+
+	backendDir, err := findSiblingDir("backend")
+	if err != nil {
+		fmt.Printf("⚠️  Could not find backend repo for metadata: %v\n", err)
+	} else {
+		branch := gitOutputOr(backendDir, "unknown", "rev-parse", "--abbrev-ref", "HEAD")
+		describe := gitOutputOr(backendDir, "unknown-dev", "describe", "--tags", "--always", "--dirty")
+		sha := gitOutputOr(backendDir, "unknown", "rev-parse", "--short", "HEAD")
+		ref := fmt.Sprintf("refs/heads/%s", branch)
+
+		envs["BACKEND_BRANCH"] = branch
+		envs["BACKEND_VERSION"] = describe
+		envs["BACKEND_GIT_SHA"] = sha
+		envs["BACKEND_GIT_REF"] = ref
+		envs["BACKEND_BUILD_TIME"] = buildTime
+
+		envs["JETSCALE_VERSION"] = describe
+		envs["JETSCALE_BRANCH"] = branch
+		envs["JETSCALE_GIT_SHA"] = sha
+		envs["JETSCALE_GIT_REF"] = ref
+		envs["JETSCALE_BUILD_TIME"] = buildTime
+	}
+
+	frontendDir, err := findSiblingDir("frontend")
+	if err != nil {
+		fmt.Printf("⚠️  Could not find frontend repo for metadata: %v\n", err)
+	} else {
+		branch := gitOutputOr(frontendDir, "unknown", "rev-parse", "--abbrev-ref", "HEAD")
+		describe := gitOutputOr(frontendDir, "unknown-dev", "describe", "--tags", "--always", "--dirty")
+		sha := gitOutputOr(frontendDir, "unknown", "rev-parse", "--short", "HEAD")
+
+		envs["FRONTEND_BRANCH"] = branch
+		envs["FRONTEND_VERSION"] = describe
+		envs["FRONTEND_GIT_SHA"] = sha
+		envs["FRONTEND_BUILD_TIME"] = buildTime
+	}
+
+	for key, value := range envs {
+		_ = os.Setenv(key, value)
+	}
+
+	return envs
+}
+
+func gitOutputOr(dir, fallback string, args ...string) string {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return fallback
+	}
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" {
+		return fallback
+	}
+	return trimmed
+}
+
+func mergeEnv(base []string, overrides map[string]string) []string {
+	merged := map[string]string{}
+	order := make([]string, 0, len(base)+len(overrides))
+
+	for _, kv := range base {
+		parts := strings.SplitN(kv, "=", 2)
+		key := parts[0]
+		value := ""
+		if len(parts) == 2 {
+			value = parts[1]
+		}
+		if _, exists := merged[key]; !exists {
+			order = append(order, key)
+		}
+		merged[key] = value
+	}
+
+	for key, value := range overrides {
+		if _, exists := merged[key]; !exists {
+			order = append(order, key)
+		}
+		merged[key] = value
+	}
+
+	out := make([]string, 0, len(order))
+	for _, key := range order {
+		out = append(out, fmt.Sprintf("%s=%s", key, merged[key]))
+	}
+	return out
+}
+
+func writeSkaffoldMetadataValues(envs map[string]string) error {
+	valueOr := func(key, fallback string) string {
+		if v := strings.TrimSpace(envs[key]); v != "" {
+			return v
+		}
+		return fallback
+	}
+
+	version := valueOr("BACKEND_VERSION", "unknown-dev")
+	gitSHA := valueOr("BACKEND_GIT_SHA", "unknown")
+	gitRef := valueOr("BACKEND_GIT_REF", "unknown")
+	branch := valueOr("BACKEND_BRANCH", "unknown")
+	buildTime := valueOr("BUILD_TIME", "unknown")
+
+	payload := fmt.Sprintf(
+		`backend-api:
+  env:
+    JETSCALE_VERSION: %q
+    JETSCALE_GIT_SHA: %q
+    JETSCALE_GIT_REF: %q
+    JETSCALE_BRANCH: %q
+    JETSCALE_BUILD_TIME: %q
+backend-ws:
+  env:
+    JETSCALE_VERSION: %q
+    JETSCALE_GIT_SHA: %q
+    JETSCALE_GIT_REF: %q
+    JETSCALE_BRANCH: %q
+    JETSCALE_BUILD_TIME: %q
+`,
+		version, gitSHA, gitRef, branch, buildTime,
+		version, gitSHA, gitRef, branch, buildTime,
+	)
+
+	path := filepath.Join("charts", "jetscale", "values.skaffold.metadata.yaml")
+	if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
+		return fmt.Errorf("failed writing skaffold metadata values: %w", err)
+	}
+	return nil
+}
+
+func findSiblingDir(baseName string) (string, error) {
+	parentDir, err := filepath.Abs("..")
+	if err != nil {
+		return "", err
+	}
+	variations := []string{
+		baseName,
+		strings.ToLower(baseName),
+		strings.Title(baseName),
+		strings.ToUpper(baseName),
+	}
+	for _, v := range variations {
+		candidate := filepath.Join(parentDir, v)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("could not find sibling directory %q (tried: %s)", baseName, strings.Join(variations, ", "))
 }
 
 func runTestRunner(url string, wsURL ...string) error {

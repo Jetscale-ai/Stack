@@ -39,12 +39,32 @@ frontend_dir = find_sibling_dir('frontend')
 if not frontend_dir:
     fail('Could not find frontend directory (tried: frontend, Frontend, FRONTEND)')
 
+backend_version = str(local(
+    'cd {} && git describe --tags --always --dirty || echo "unknown-dev"'.format(backend_dir)
+)).strip()
+backend_branch = str(local('cd {} && git rev-parse --abbrev-ref HEAD'.format(backend_dir))).strip()
+backend_git_sha = str(local('cd {} && git rev-parse --short HEAD'.format(backend_dir))).strip()
+build_time = str(local('date -u +%Y-%m-%dT%H:%M:%SZ')).strip()
+
+frontend_version = str(local(
+    'cd {} && git describe --tags --always --dirty || echo "unknown-dev"'.format(frontend_dir)
+)).strip()
+frontend_branch = str(local('cd {} && git rev-parse --abbrev-ref HEAD'.format(frontend_dir))).strip()
+frontend_git_sha = str(local('cd {} && git rev-parse --short HEAD'.format(frontend_dir))).strip()
+
 docker_build(
     'localhost:5000/backend-dev:tilt',
     backend_dir,
     dockerfile=backend_dir + '/Dockerfile',
     target='backend-dev',
     platform='linux/amd64',
+    build_args={
+        'GIT_REF_NAME': backend_branch,
+        'GIT_DESCRIBE': backend_version,
+        'GIT_REF': 'refs/heads/{}'.format(backend_branch),
+        'GIT_SHA': backend_git_sha,
+        'BUILD_TIME': build_time,
+    },
     ignore=[
         '**/*.tmp',
         '**/*.tmp.*',
@@ -80,6 +100,12 @@ docker_build(
     'localhost:5000/frontend-dev',
     context='../frontend',
     target='frontend-dev', # <--- CRITICAL: Stops before Nginx stage
+    build_args={
+        'REACT_APP_VERSION': frontend_version,
+        'REACT_APP_GIT_SHA': frontend_git_sha,
+        'REACT_APP_BRANCH': frontend_branch,
+        'REACT_APP_BUILD_TIME': build_time,
+    },
     live_update=[
         sync('../frontend', '/app'),
         # If using Nuxt/Vue, it will auto-detect changes if 'pnpm run dev' is running

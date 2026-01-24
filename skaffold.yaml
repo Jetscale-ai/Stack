@@ -30,11 +30,22 @@ profiles:
           docker:
             dockerfile: Dockerfile
             target: backend
+            buildArgs:
+              GIT_REF_NAME: "{{if .BACKEND_BRANCH}}{{.BACKEND_BRANCH}}{{else}}unknown{{end}}"
+              GIT_DESCRIBE: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}0.0.0-dev{{end}}"
+              GIT_REF: "{{if .BACKEND_GIT_REF}}{{.BACKEND_GIT_REF}}{{else}}unknown{{end}}"
+              GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
+              BUILD_TIME: "{{if .BUILD_TIME}}{{.BUILD_TIME}}{{else}}unknown{{end}}"
         - image: jetscale-frontend-local
           context: ../frontend
           docker:
             dockerfile: Dockerfile
             target: frontend
+            buildArgs:
+              REACT_APP_VERSION: "{{.FRONTEND_VERSION}}"
+              REACT_APP_GIT_SHA: "{{.FRONTEND_GIT_SHA}}"
+              REACT_APP_BRANCH: "{{.FRONTEND_BRANCH}}"
+              REACT_APP_BUILD_TIME: "{{.BUILD_TIME}}"
     deploy:
       kubeContext: kind-kind
       helm:
@@ -45,6 +56,17 @@ profiles:
             createNamespace: true
             valuesFiles:
               - charts/jetscale/values.local.e2e.yaml
+            setValueTemplates:
+              backend-api.env.JETSCALE_VERSION: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}unknown-dev{{end}}"
+              backend-api.env.JETSCALE_GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
+              backend-api.env.JETSCALE_GIT_REF: "{{if .BACKEND_GIT_REF}}{{.BACKEND_GIT_REF}}{{else}}unknown{{end}}"
+              backend-api.env.JETSCALE_BRANCH: "{{if .BACKEND_BRANCH}}{{.BACKEND_BRANCH}}{{else}}unknown{{end}}"
+              backend-api.env.JETSCALE_BUILD_TIME: "{{if .BUILD_TIME}}{{.BUILD_TIME}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_VERSION: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}unknown-dev{{end}}"
+              backend-ws.env.JETSCALE_GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_GIT_REF: "{{if .BACKEND_GIT_REF}}{{.BACKEND_GIT_REF}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_BRANCH: "{{if .BACKEND_BRANCH}}{{.BACKEND_BRANCH}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_BUILD_TIME: "{{if .BUILD_TIME}}{{.BUILD_TIME}}{{else}}unknown{{end}}"
 
   # --------------------------------------------------------
   # CI PROFILE (Kind on Runner)
@@ -63,6 +85,17 @@ profiles:
             valuesFiles:
               # Kind CI must be self-contained (no Terraform-managed Secrets/DB/Redis, no ALB)
               - charts/jetscale/values.ci.kind.yaml
+            setValueTemplates:
+              backend-api.env.JETSCALE_VERSION: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}unknown-dev{{end}}"
+              backend-api.env.JETSCALE_GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
+              backend-api.env.JETSCALE_GIT_REF: "{{if .BACKEND_GIT_REF}}{{.BACKEND_GIT_REF}}{{else}}unknown{{end}}"
+              backend-api.env.JETSCALE_BRANCH: "{{if .BACKEND_BRANCH}}{{.BACKEND_BRANCH}}{{else}}unknown{{end}}"
+              backend-api.env.JETSCALE_BUILD_TIME: "{{if .BUILD_TIME}}{{.BUILD_TIME}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_VERSION: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}unknown-dev{{end}}"
+              backend-ws.env.JETSCALE_GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_GIT_REF: "{{if .BACKEND_GIT_REF}}{{.BACKEND_GIT_REF}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_BRANCH: "{{if .BACKEND_BRANCH}}{{.BACKEND_BRANCH}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_BUILD_TIME: "{{if .BUILD_TIME}}{{.BUILD_TIME}}{{else}}unknown{{end}}"
 
   # --------------------------------------------------------
   # CI PROFILE (Kind on laptop - local builds)
@@ -77,11 +110,22 @@ profiles:
           docker:
             dockerfile: Dockerfile
             target: backend
+            buildArgs:
+              GIT_REF_NAME: "{{if .BACKEND_BRANCH}}{{.BACKEND_BRANCH}}{{else}}unknown{{end}}"
+              GIT_DESCRIBE: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}0.0.0-dev{{end}}"
+              GIT_REF: "{{if .BACKEND_GIT_REF}}{{.BACKEND_GIT_REF}}{{else}}unknown{{end}}"
+              GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
+              BUILD_TIME: "{{if .BUILD_TIME}}{{.BUILD_TIME}}{{else}}unknown{{end}}"
         - image: jetscale-frontend-local
           context: ../frontend
           docker:
             dockerfile: Dockerfile
             target: frontend
+            buildArgs:
+              REACT_APP_VERSION: "{{.FRONTEND_VERSION}}"
+              REACT_APP_GIT_SHA: "{{.FRONTEND_GIT_SHA}}"
+              REACT_APP_BRANCH: "{{.FRONTEND_BRANCH}}"
+              REACT_APP_BUILD_TIME: "{{.BUILD_TIME}}"
     deploy:
       kubeContext: kind-kind
       helm:
@@ -92,6 +136,17 @@ profiles:
             createNamespace: true
             valuesFiles:
               - charts/jetscale/values.ci.kind.local.yaml
+            setValueTemplates:
+              backend-api.env.JETSCALE_VERSION: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}unknown-dev{{end}}"
+              backend-api.env.JETSCALE_GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
+              backend-api.env.JETSCALE_GIT_REF: "{{if .BACKEND_GIT_REF}}{{.BACKEND_GIT_REF}}{{else}}unknown{{end}}"
+              backend-api.env.JETSCALE_BRANCH: "{{if .BACKEND_BRANCH}}{{.BACKEND_BRANCH}}{{else}}unknown{{end}}"
+              backend-api.env.JETSCALE_BUILD_TIME: "{{if .BUILD_TIME}}{{.BUILD_TIME}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_VERSION: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}unknown-dev{{end}}"
+              backend-ws.env.JETSCALE_GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_GIT_REF: "{{if .BACKEND_GIT_REF}}{{.BACKEND_GIT_REF}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_BRANCH: "{{if .BACKEND_BRANCH}}{{.BACKEND_BRANCH}}{{else}}unknown{{end}}"
+              backend-ws.env.JETSCALE_BUILD_TIME: "{{if .BUILD_TIME}}{{.BUILD_TIME}}{{else}}unknown{{end}}"
 
   # --------------------------------------------------------
   # NOTE:

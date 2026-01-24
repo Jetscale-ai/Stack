@@ -71,6 +71,9 @@ func TestSystemHealth(t *testing.T) {
 		t.Fatalf("❌ Failed to reach system after %d attempts. Last error: %v", maxRetries, lastErr)
 	}
 
+	logVersion(t, baseURL)
+	logBuildMetadata(t)
+
 	// Run comprehensive integration tests as subtests
 	t.Run("DatabaseConnectivity", databaseConnectivity)
 	t.Run("RedisConnectivity", redisConnectivity)
@@ -84,6 +87,65 @@ func TestSystemHealth(t *testing.T) {
 	} else {
 		fmt.Println("🎉 All smoke tests completed!")
 	}
+}
+
+func logVersion(t *testing.T, baseURL string) {
+	resp, err := httpClient.Get(baseURL + "/api/v2/system/version")
+	if err != nil {
+		t.Logf("⚠️  Version endpoint not reachable: %v", err)
+		return
+	}
+	defer drainAndClose(resp.Body)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Logf("⚠️  Failed reading version response: %v", err)
+		return
+	}
+
+	var payload interface{}
+	if err := json.Unmarshal(bytes.TrimSpace(body), &payload); err != nil {
+		t.Logf("📦 Version: %s", bytes.TrimSpace(body))
+		return
+	}
+
+	pretty, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Logf("📦 Version: %s", bytes.TrimSpace(body))
+		return
+	}
+
+	t.Logf("📦 Version:\n%s", pretty)
+}
+
+func logBuildMetadata(t *testing.T) {
+	backend := map[string]string{
+		"version":    os.Getenv("BACKEND_VERSION"),
+		"git_sha":    os.Getenv("BACKEND_GIT_SHA"),
+		"branch":     os.Getenv("BACKEND_BRANCH"),
+		"build_time": os.Getenv("BACKEND_BUILD_TIME"),
+	}
+	frontend := map[string]string{
+		"version":    os.Getenv("FRONTEND_VERSION"),
+		"git_sha":    os.Getenv("FRONTEND_GIT_SHA"),
+		"branch":     os.Getenv("FRONTEND_BRANCH"),
+		"build_time": os.Getenv("FRONTEND_BUILD_TIME"),
+	}
+
+	if backend["version"] == "" && frontend["version"] == "" {
+		return
+	}
+
+	payload := map[string]map[string]string{
+		"backend":  backend,
+		"frontend": frontend,
+	}
+	pretty, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Logf("📦 Build metadata: backend=%v frontend=%v", backend, frontend)
+		return
+	}
+	t.Logf("📦 Build metadata:\n%s", pretty)
 }
 
 func databaseConnectivity(t *testing.T) {
