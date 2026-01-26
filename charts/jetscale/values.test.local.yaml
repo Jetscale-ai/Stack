@@ -1,5 +1,5 @@
 # ==========================================================
-# TEST: LOCAL DEFAULT (Mage test:localE2E)
+# TEST: LOCAL (mage test:local)
 # Base: values.test.yaml
 # ==========================================================
 global:

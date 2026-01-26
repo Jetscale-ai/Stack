@@ -442,14 +442,19 @@ func (Validate) Envs(cloudName string) error {
 
 type Test mg.Namespace
 
-// LocalDev runs a quick test against the running Tilt environment.
-func (Test) LocalDev() error {
-	fmt.Println("🧪 [TEST] Target: Local Dev (Tilt)")
+// Dev runs a quick test against the running Tilt environment.
+func (Test) Dev() error {
+	fmt.Println("🧪 [TEST] Target: Dev Loop (Tilt)")
+
+	// Set credentials matching values.local.dev.yaml
+	os.Setenv("E2E_ADMIN_EMAIL", "devops@jetscale.ai")
+	os.Setenv("E2E_ADMIN_PASSWORD", "njPhTFWWrwoTG7gKHBiY")
+
 	return runTestRunner("http://localhost:8000")
 }
 
-// LocalE2E runs Kind tests using values.test.local.yaml.
-func (Test) LocalE2E() error {
+// Local runs Kind E2E tests using locally-built images (values.test.local.yaml).
+func (Test) Local() error {
 	fmt.Println("🧪 [TEST] Target: Kind Local (Local Images)")
 
 	// ✅ FIX: Force-refresh the kind-kind context to prevent it from pointing to EKS/AWS.

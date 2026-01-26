@@ -41,6 +41,61 @@ backend-api:
   command: ["./entrypoint.sh"]
   args: ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
   envFrom: null
+  # Init container to set up database schema and seed admin user
+  initContainer:
+    name: setup-db
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        set -e
+        echo "⏳ Waiting for PostgreSQL server to be ready..."
+        set +e
+        until python3 -c "
+        import asyncio
+        import asyncpg
+        import os
+        import sys
+
+        async def check_server():
+            try:
+                db_host = os.getenv('JETSCALE_DB_HOST', '')
+                db_port = os.getenv('JETSCALE_DB_PORT', '5432')
+                db_user = os.getenv('JETSCALE_DB_USER', '')
+                db_password = os.getenv('JETSCALE_DB_PASSWORD', '')
+                db_name = os.getenv('JETSCALE_DB_NAME', 'postgres')
+
+                if not all([db_host, db_user, db_password]):
+                    print('❌ Database connection environment variables not set')
+                    return False
+
+                conn = await asyncpg.connect(
+                    host=db_host,
+                    port=int(db_port),
+                    user=db_user,
+                    password=db_password,
+                    database=db_name,
+                    ssl='prefer',
+                )
+                await conn.close()
+                print('✅ PostgreSQL server is ready')
+                return True
+            except Exception as exc:
+                print(f'❌ PostgreSQL server not ready: {exc}')
+                return False
+
+        sys.exit(0 if asyncio.run(check_server()) else 1)
+        "
+        do
+          echo "⏳ PostgreSQL not ready, waiting 5 seconds..."
+          sleep 5
+        done
+        set -e
+
+        echo "🔧 Running database setup..."
+        python3 setup_db.py
+        echo "📦 Loading fixtures..."
+        python3 load_fixtures.py
+        echo "✅ Database initialization complete"
   # Relaxed probes for local development
   livenessProbe:
     httpGet:

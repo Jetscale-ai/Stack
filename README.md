@@ -27,15 +27,64 @@ To ensure our Helm chart remains **Cloud Agnostic** (deployable on AWS, Azure, o
 
 **The Contract:** Terraform provides the "Pipe" (SecretStore, Ingress Class, DNS automation); Helm declares the "Tap" (ExternalSecret, Ingress Resource).
 
-## 4. The 5-Stage Lifecycle
+## 4. Developer Lifecycle
 
-| Stage | Loop Name | Tooling | Environment | Strategy |
-| :-- | :-- | :-- | :-- | :-- |
-| **1** | **Inner Loop** | Tilt | Kind (Local) | **Speed.** Hot reload, fat images. |
-| **2** | **Outer Loop** | Skaffold | Kind (Local) | **Parity.** Builds local code -> Alpine images. |
-| **3** | **CI Loop** | Skaffold | Kind (CI Runner) | **Gating.** Deploys remote OCI artifacts. |
-| **4** | **Preview Loop** | TF + ArgoCD | **Ephemeral EKS** | **Sovereignty.** Cluster-per-PR + GitOps sync from `../fleet`. |
-| **5** | **Live Verify** | TF + ArgoCD | **Live EKS** | **Availability.** Persistent infra + GitOps upgrades via `../fleet`. |
+We define **6 distinct phases** to ensure code flows safely from laptop to production.
+
+| Phase | Goal | Env | Command | Config |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. Dev Loop** | **Speed** | Local | `tilt up` | `values.local.dev.yaml` |
+| **2. Verify** | **Accuracy** | Local | `mage test:local` | `values.test.local.yaml` |
+| **3. CI Loop** | **Gating** | CI Runner | `mage test:ci` | `values.test.ci.yaml` |
+| **4. Debug** | **Reproduction** | Local | *(Manual Helm)* | `values.local.live.yaml` |
+| **5. Preview** | **Integration** | Ephemeral | `/preview` | `envs/preview/` |
+| **6. Live** | **Production** | Live | *(ArgoCD)* | `envs/live/` |
+
+<details>
+<summary>**1. The Dev Loop (Inner Loop)**</summary>
+
+- **Context:** Daily coding. Hot reload, fat images, rapid iteration.
+- **Command:** `tilt up`
+- **Behavior:** Builds images locally, mounts source code into running containers for live updates.
+- **Prereqs:** Kind cluster (`ctlptl apply -f kind/ctlptl-registry.yaml`), Docker.
+
+</details>
+
+<details>
+<summary>**2. The Verify Loop (Pre-Commit)**</summary>
+
+- **Context:** Before you push. Ensures the Helm chart and containers actually build/start in a "cold" environment.
+- **Command:** `mage test:local`
+- **Behavior:** Uses Skaffold to build immutable Alpine images (no hot reload) and runs the Go E2E test suite against them.
+- **When to use:** Before opening a PR, after significant changes.
+
+</details>
+
+<details>
+<summary>**3. The CI Loop (Outer Loop)**</summary>
+
+- **Context:** "It failed in GitHub but works on my machine."
+- **Command:** `mage test:ci`
+- **Behavior:** Pulls the *exact* remote images used by CI from GHCR instead of building locally.
+- **Prereqs:** `GITHUB_TOKEN` with `read:packages` scope (set in `.env` or environment).
+
+</details>
+
+<details>
+<summary>**4. The Debug Loop (Ad-hoc)**</summary>
+
+- **Context:** Investigating a production bug locally with frozen production artifacts.
+- **Command:**
+
+```bash
+helm upgrade --install debug charts/jetscale \
+  -f charts/jetscale/values.local.live.yaml \
+  --namespace debug --create-namespace
+```
+
+- **When to use:** Reproducing issues reported in Live/Preview with exact image versions.
+
+</details>
 
 ## 🚀 Pull Request Workflows
 
@@ -95,7 +144,7 @@ For historical reference:
 ### 1.5. Cluster Setup (Required for local dev)
 
 Local development uses a Kind cluster wired to a local registry via `ctlptl`. This is required for
-both `tilt up` and `mage test:localE2E`.
+both `tilt up` and `mage test:local`.
 
 ```bash
 ctlptl apply -f kind/ctlptl-registry.yaml
@@ -151,7 +200,8 @@ tilt up
 ## 🧙‍♂️ Mage Tasks
 
 ```bash
-mage validate:envs aws    # Check structural integrity of all YAML files in envs/
-mage test:locale2e     # Run Stage 2 (Local Parity)
-mage test:ci           # Run Stage 3 (CI Mode)
+mage validate:envs aws    # Validate all envs/ configs against chart schema
+mage test:local           # Phase 2: Verify Loop (builds local images)
+mage test:ci              # Phase 3: CI Loop (pulls GHCR images)
+mage test:dev             # Quick smoke test against running Tilt
 ```

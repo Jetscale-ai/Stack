@@ -1,7 +1,6 @@
 # ==========================================================
 # TEST BASE CONFIGURATION
-# Shared by: values.test.ci.yaml, values.test.local.yaml,
-#            values.test.local.ci.yaml
+# Shared by: values.test.ci.yaml, values.test.local.yaml
 # ==========================================================
 
 # 1. DATABASE (Ephemeral for Tests)
