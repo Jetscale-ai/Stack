@@ -191,7 +191,7 @@ terraform_apply_with_retry() {
     fi
   fi
 
+  # shellcheck disable=SC2034  # Used by sourcing scripts
   TF_FAILURE_STAGE="apply"
   return "${rc}"
 }
-

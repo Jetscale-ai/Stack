@@ -6,8 +6,8 @@ import sys
 from typing import List
 
 from .awscli import AwsCli
-from .cleanup_elasticache import elasticache_serverless_delete
 from .cleanup_eks import eks_delete
+from .cleanup_elasticache import elasticache_serverless_delete
 from .cleanup_iam import delete_tagged_oidc_providers, iam_cleanup_ephemeral_roles
 from .cleanup_misc import delete_elbv2_by_cluster_tag, delete_non_vpc_tagged
 from .cleanup_rds import rds_delete
@@ -73,7 +73,12 @@ def _print_summary(ctx: Ctx, summary: Summary) -> None:
         print("- **stale (verified not found)**:")
         for arn in summary.final_stale:
             print(f"  - {arn}")
-    if not (summary.final_existing or summary.final_eventual or summary.final_unknown or summary.final_stale):
+    if not (
+        summary.final_existing
+        or summary.final_eventual
+        or summary.final_unknown
+        or summary.final_stale
+    ):
         print("- (none)")
 
 
@@ -81,7 +86,10 @@ def main(argv: List[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="ephemeral_cleanup.py",
         add_help=True,
-        description="Ephemeral cleanup via tag discovery (jetscale.env_id) and dependency-aware deletes.",
+        description=(
+            "Ephemeral cleanup via tag discovery (jetscale.env_id) "
+            "and dependency-aware deletes."
+        ),
     )
     parser.add_argument("mode", choices=["plan", "apply", "verify"])
     parser.add_argument("env_id", help="e.g. pr-123")
@@ -94,7 +102,12 @@ def main(argv: List[str]) -> int:
     os.environ["AWS_REGION"] = args.region
     os.environ["AWS_DEFAULT_REGION"] = args.region
 
-    ctx = Ctx(mode=args.mode, env_id=args.env_id, region=args.region, expected_account_id=args.expected_account_id)
+    ctx = Ctx(
+        mode=args.mode,
+        env_id=args.env_id,
+        region=args.region,
+        expected_account_id=args.expected_account_id,
+    )
     aws = AwsCli()
     summary = Summary()
     doer = Doer(ctx=ctx, aws=aws, summary=summary)
@@ -162,4 +175,3 @@ def main(argv: List[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))
-

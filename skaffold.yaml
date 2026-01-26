@@ -11,8 +11,8 @@ build:
     push: false
     useDockerCLI: true
     tryImportMissing: true
-  # ⚠️ CRITICAL: Do not define artifacts here. 
-  # They require relative paths (../backend) which do not exist in CI.
+    # ⚠️ CRITICAL: Do not define artifacts here.
+    # They require relative paths (../backend) which do not exist in CI.
 
 profiles:
   # --------------------------------------------------------
@@ -55,7 +55,8 @@ profiles:
             namespace: jetscale-test-local
             createNamespace: true
             valuesFiles:
-              - charts/jetscale/values.local.e2e.yaml
+              - charts/jetscale/values.test.yaml
+              - charts/jetscale/values.test.local.yaml
             setValueTemplates:
               backend-api.env.JETSCALE_VERSION: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}unknown-dev{{end}}"
               backend-api.env.JETSCALE_GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
@@ -73,7 +74,7 @@ profiles:
   # --------------------------------------------------------
   - name: ci-kind
     # No build section needed.
-    # Skaffold will simply deploy the remote images defined in values.yaml.
+    # Skaffold will simply deploy the remote images defined in values.test.ci.yaml.
     deploy:
       kubeContext: kind-kind
       helm:
@@ -84,7 +85,8 @@ profiles:
             createNamespace: true
             valuesFiles:
               # Kind CI must be self-contained (no Terraform-managed Secrets/DB/Redis, no ALB)
-              - charts/jetscale/values.ci.kind.yaml
+              - charts/jetscale/values.test.yaml
+              - charts/jetscale/values.test.ci.yaml
             setValueTemplates:
               backend-api.env.JETSCALE_VERSION: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}unknown-dev{{end}}"
               backend-api.env.JETSCALE_GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
@@ -135,7 +137,8 @@ profiles:
             namespace: jetscale-ci
             createNamespace: true
             valuesFiles:
-              - charts/jetscale/values.ci.kind.local.yaml
+              - charts/jetscale/values.test.yaml
+              - charts/jetscale/values.test.local.ci.yaml
             setValueTemplates:
               backend-api.env.JETSCALE_VERSION: "{{if .BACKEND_VERSION}}{{.BACKEND_VERSION}}{{else}}unknown-dev{{end}}"
               backend-api.env.JETSCALE_GIT_SHA: "{{if .BACKEND_GIT_SHA}}{{.BACKEND_GIT_SHA}}{{else}}unknown{{end}}"
@@ -148,8 +151,8 @@ profiles:
               backend-ws.env.JETSCALE_BRANCH: "{{if .BACKEND_BRANCH}}{{.BACKEND_BRANCH}}{{else}}unknown{{end}}"
               backend-ws.env.JETSCALE_BUILD_TIME: "{{if .BUILD_TIME}}{{.BUILD_TIME}}{{else}}unknown{{end}}"
 
-  # --------------------------------------------------------
-  # NOTE:
-  # Preview + Live EKS deployments are Helm-only (and later ArgoCD), not Skaffold.
-  # Skaffold is intentionally scoped to Kind workflows (local + CI) where it shines
-  # at building artifacts + deploying ephemeral test stacks.
+# --------------------------------------------------------
+# NOTE:
+# Preview + Live EKS deployments are Helm-only (and later ArgoCD), not Skaffold.
+# Skaffold is intentionally scoped to Kind workflows (local + CI) where it shines
+# at building artifacts + deploying ephemeral test stacks.

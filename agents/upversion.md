@@ -1,14 +1,17 @@
 # Chart Bump Protocol
 
 ## Overview
+
 Upgrade backend/frontend charts to the latest versions.
 
 **Versioning Strategy (Sovereign Source):**
+
 - **Human Role:** Update the **dependencies** (logic/composition) in the PR.
 - **CI Role:** The pipeline calculates the SemVer, updates `Chart.yaml`, publishes the OCI artifact, and **commits the new version back to main**.
 - **Result:** `main` reflects the released artifact.
 
 ## Prerequisites
+
 - `gh` CLI installed
 - `helm` installed
 - `mage` installed
@@ -16,27 +19,33 @@ Upgrade backend/frontend charts to the latest versions.
 ## Protocol Steps
 
 ### 1. Query Latest Versions
+
 Find the latest tags for the sub-services.
+
 ```bash
 # Backend
 gh api repos/Jetscale-ai/backend/packages/container/charts%2Fbackend/versions --jq '.[].metadata.container.tags[]' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1
+
 
 # Frontend
 gh api repos/Jetscale-ai/frontend/packages/container/charts%2Ffrontend/versions --jq '.[].metadata.container.tags[]' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1
 ```
 
 ### 2. Update Chart Dependencies
+
 Edit `charts/jetscale/Chart.yaml` with the versions found above.
 
 ```yaml
 dependencies:
   - name: backend
+
     version: "3.1.5" # <--- Update
   - name: frontend
     version: "2.1.3" # <--- Update
 ```
 
 ### 3. Regenerate Lockfile (CRITICAL)
+
 This validates that the new dependencies exist in the registry and binds the chart to them.
 
 ```bash
@@ -45,6 +54,7 @@ helm dependency update
 ```
 
 ### 4. Validate Integrity
+
 Ensure the chart is valid and compatible with our environment configurations.
 
 ```bash
@@ -53,19 +63,23 @@ mage validate:envs aws
 ```
 
 ### 5. Commit
+
 The commit message triggers the release workflow.
 **Do not bump `version` manually.** CI will handle it.
 
 ```bash
+
 # Use "fix" (patch) or "feat" (minor) to trigger the appropriate bump.
 pnpm commit -- "fix(deps): bump backend to 3.1.5 and frontend to 2.1.3"
 ```
 
 ## Files to Update
+
 - `charts/jetscale/Chart.yaml` (dependencies only)
 - `charts/jetscale/Chart.lock` (regenerate)
 
 ## Validation Checklist
+
 - [ ] Latest versions queried successfully
 - [ ] Chart dependencies updated
 - [ ] Chart.lock regenerated

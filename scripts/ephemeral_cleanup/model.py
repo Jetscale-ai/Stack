@@ -38,4 +38,3 @@ class Summary:
 
     def failed_actions(self) -> List[ActionRecord]:
         return [a for a in self.actions if not a.ok and a.mode == "apply"]
-

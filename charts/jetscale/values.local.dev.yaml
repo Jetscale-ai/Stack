@@ -83,9 +83,10 @@ backend-api:
     JETSCALE_REDIS_PORT: "6379"
     JETSCALE_REDIS_DB: "0"
     JETSCALE_AWS_REGION: "us-east-1"
-    JETSCALE_DEFAULT_ADMIN_EMAIL: "admin@jetscale.ai"
+    # Dev-only admin credentials (NOT for production use)
+    JETSCALE_DEFAULT_ADMIN_EMAIL: "devops@jetscale.ai"
     JETSCALE_DEFAULT_ADMIN_USERNAME: "admin"
-    JETSCALE_DEFAULT_ADMIN_PASSWORD: "admin123"
+    JETSCALE_DEFAULT_ADMIN_PASSWORD: "njPhTFWWrwoTG7gKHBiY"
     PYTHONDONTWRITEBYTECODE: "1"
     PYTHONUNBUFFERED: "1"
   # Background Jobs Configuration
@@ -151,6 +152,10 @@ backend-ws:
     JETSCALE_REDIS_PORT: "6379"
     JETSCALE_REDIS_DB: "0"
     JETSCALE_AWS_REGION: "us-east-1"
+    # Dev-only admin credentials (NOT for production use)
+    JETSCALE_DEFAULT_ADMIN_EMAIL: "devops@jetscale.ai"
+    JETSCALE_DEFAULT_ADMIN_USERNAME: "admin"
+    JETSCALE_DEFAULT_ADMIN_PASSWORD: "njPhTFWWrwoTG7gKHBiY"
     PYTHONDONTWRITEBYTECODE: "1"
     PYTHONUNBUFFERED: "1"
 

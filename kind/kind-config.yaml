@@ -1,38 +1,38 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
-- role: control-plane
-  kubeadmConfigPatches:
-  - |
-    kind: InitConfiguration
-    nodeRegistration:
-      kubeletExtraArgs:
-        node-labels: "ingress-ready=true"
-  extraPortMappings:
-  - containerPort: 80
-    hostPort: 8090
-    protocol: TCP
-  - containerPort: 443
-    hostPort: 443
-    protocol: TCP
-  # Backend API
-  - containerPort: 30000
-    hostPort: 8000
-    protocol: TCP
-  # Backend WS
-  - containerPort: 30001
-    hostPort: 8001
-    protocol: TCP
-  # Frontend
-  - containerPort: 30002
-    hostPort: 80
-    protocol: TCP
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 8090
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+      # Backend API
+      - containerPort: 30000
+        hostPort: 8000
+        protocol: TCP
+      # Backend WS
+      - containerPort: 30001
+        hostPort: 8001
+        protocol: TCP
+      # Frontend
+      - containerPort: 30002
+        hostPort: 80
+        protocol: TCP
 # Configure containerd to use the local registry created by ctlptl
 containerdConfigPatches:
-- |-
-  [plugins."io.containerd.grpc.v1.cri".registry]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
-        endpoint = ["http://ctlptl-registry:5000"]
-      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.ctlptl.dev"]
-        endpoint = ["http://ctlptl-registry:5000"]
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+        [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+          endpoint = ["http://ctlptl-registry:5000"]
+        [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.ctlptl.dev"]
+          endpoint = ["http://ctlptl-registry:5000"]

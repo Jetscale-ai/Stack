@@ -13,6 +13,7 @@ We operate under the **Fractal Franchise Model**. This repository is one part of
 | **`fleet`** | **The State** | Live Cluster | Defines **Instances**. Pins versions and connects Infra to Apps. |
 
 **Related Documentation:**
+
 - Infrastructure provisioning: `../iac/README.md` (The Soil)
 - Deployment state management: `../fleet/README.md` (Instances)
 - Blueprint patterns: `../catalog/README.md` (Patterns)
@@ -52,23 +53,27 @@ We represent a shift from "Container Orchestration" (Docker Compose) to "Platfor
 
 ### 3.4. The Sovereign Boundary (Autonomy)
 
-- **Chart Agnosticism:** The Helm chart must remain "Platform Agnostic." It declares _intent_ (e.g., standard `Ingress` resources, `ExternalSecret` references), never _implementation_ (e.g., AWS ALB creation logic, Route53 updates).
-- **Infrastructure Responsibility:** The Infrastructure layer (Terraform/OpenTofu) is responsible for installing the "Drivers" that fulfill the Chart's intent. The Chart does not care _how_ the Ingress is fulfilled, only that it _is_.
+****
+
+- **Chart Agnosticism:** The Helm chart must remain "Platform Agnostic." It declares *intent* (e.g., standard `Ingress` resources, `ExternalSecret` references), never *implementation* *e.g*, AWS ALB creation logic, Route53 update*).*
+- **Infrastructure Responsibility:** The Infrastructure layer (Terraform/OpenTofu) is responsible for installing the "Drivers" that fulfill the Chart's intent. The Chart does not care *how* the Ingress is fulfilled, only that it *is*.
 - **The "Client Rule":** We never force a client to perform manual infrastructure work to install our App. The Chart is a self-contained deployable unit.
 - **Multi-Cloud Portability:**
-  - **AWS (SaaS):** Infra installs **AWS LB Controller** + **ExternalDNS**. The Chart's `Ingress` becomes an ALB.
-  - **Azure (AKS):** Infra installs **AGIC** (App Gateway Ingress Controller) or **Nginx**. The _same_ Chart's `Ingress` becomes an Azure App Gateway.
-  - **OpenStack/On-Prem:** Infra installs **Octavia** or **MetalLB**. The _same_ Chart's `Ingress` becomes a LoadBalancer IP.
+  - **AWS (SaaS):** Infra installs **AWS LB Controller** + **ExternalDNS**. The Chart's `Ingress*bec*mes an ALB.
+  - **Azure (AKS):** Infra installs **AGIC** (App Gateway Ingress Controll*r) o* **Nginx**. The *same* Chart's `Ingress` becomes an Azure App Gateway.
+  - **OpenStack/On-Prem:** Infra installs **Octavia** or **MetalLB**. The *same* Chart's `Ingress` becomes a LoadBalancer IP.
 
 ### The Artifact Boundary
+
 We produce an **Immutable OCI Artifact**.
+
 - We do **not** manage environment-specific values (replicas, domains) in this repo. Those belong in `../fleet`.
 - We do **not** manage infrastructure dependencies (RDS, S3). Those belong in `../iac`.
 
 ## 4. The Eudaimonia Framework
 
 All architectural decisions must be justified by the 12 Invariants:
-_Ethos (Identity), Logos (Reason), Praxis (Action)._
+*Ethos (Identity), Logos (Reason), Praxis (Action).*
 
 ## 5. Operational Details
 
@@ -78,9 +83,11 @@ _Ethos (Identity), Logos (Reason), Praxis (Action)._
 - gh act cli locally installed
 - aws cli installed; except when the human needs to use the breakglass mechanism, in which case instruct the human with commands to run
 - git commits require -S gpg signature by a human, so you may not commit; never push unless asked explicitly
+
 - you may propose git commit messages in the style of past commits, but never commit yourself. Aim for `git commit -F - <<'EOF'...` style multiline commit messages
 
 **Chart maintenance:**
+
 - Chart upversion protocol: @agents/upversion.md
 
 ## 6. Ephemeral Environments: No-Loop Playbook

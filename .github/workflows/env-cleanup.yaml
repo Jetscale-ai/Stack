@@ -25,7 +25,7 @@ jobs:
       name: ${{ format('pr-{0}', github.event.number) }}
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Calculate Identity
         run: |
           set -euo pipefail
@@ -47,7 +47,7 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        with: { terraform_wrapper: false }
+        with: {terraform_wrapper: false}
 
       - name: Setup Python
         uses: actions/setup-python@v5

@@ -36,7 +36,13 @@ class AwsCli:
 
     def json(self, args: Sequence[str]) -> Any:
         cmd = ["aws", *args, "--output", "json"]
-        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self._merged_env())
+        p = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self._merged_env(),
+        )
         if p.returncode != 0:
             raise AwsCliError(f"aws {_fmt(args)} failed: {p.stderr.strip()}")
         out = p.stdout.strip()
@@ -44,13 +50,26 @@ class AwsCli:
 
     def text(self, args: Sequence[str]) -> str:
         cmd = ["aws", *args, "--output", "text"]
-        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self._merged_env())
+        p = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self._merged_env(),
+        )
         if p.returncode != 0:
             raise AwsCliError(f"aws {_fmt(args)} failed: {p.stderr.strip()}")
         return p.stdout.strip()
 
     def run(self, args: Sequence[str]) -> AwsResult:
         cmd = ["aws", *args]
-        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self._merged_env())
-        return AwsResult(rc=p.returncode, stdout=p.stdout.strip(), stderr=p.stderr.strip())
-
+        p = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self._merged_env(),
+        )
+        return AwsResult(
+            rc=p.returncode, stdout=p.stdout.strip(), stderr=p.stderr.strip()
+        )

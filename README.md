@@ -3,6 +3,7 @@
 The Helm **umbrella chart** (and local dev orchestration) for the JetScale Platform.
 
 **Important:** This repository produces an **immutable OCI Helm artifact**. It does **not** own deployment state.
+
 - **State & version pins:** `../fleet/`
 - **Installation patterns (Blueprints):** `../catalog/`
 
@@ -39,6 +40,7 @@ To ensure our Helm chart remains **Cloud Agnostic** (deployable on AWS, Azure, o
 ## 🚀 Pull Request Workflows
 
 ### Launching an Ephemeral Environment
+
 To save costs, Preview environments are **manual-trigger only**.
 
 1. **Open a Pull Request.**
@@ -51,24 +53,30 @@ To save costs, Preview environments are **manual-trigger only**.
 - Architecture: `docs/ephemeral-architecture.md`
 
 ### The Janitor (Auto-Cleanup)
+
 When a PR is **closed** or **merged**, the `Janitor` workflow automatically destroys the cluster.
-* **Manual Fallback:** If the Janitor fails, you can manually trigger the `Ephemeral Fleet` workflow with **Action: destroy**.
+
+- **Manual Fallback:** If the Janitor fails, you can manually trigger the `Ephemeral Fleet` workflow with **Action: destroy**.
 
 ## 📦 Release Workflow
 
 This repository is the **Source of Truth** for the Application Code, but **NOT** the Deployment State.
 
 ### How to Deploy
-1.  **Build:** CI packages and pushes the `jetscale` chart to `oci://ghcr.io/jetscale-ai/charts` (version `X.Y.Z`).
-2.  **Deploy:** Go to `../fleet`, find your cluster, and update `clusters/<name>/values.yaml`:
-    - `versions.stack: X.Y.Z`
-3.  **Sync:** ArgoCD detects the change in Fleet and pulls the OCI artifact from here.
+
+1. **Build:** CI packages and pushes the `jetscale` chart to `oci://ghcr.io/jetscale-ai/charts` (version `X.Y.Z`).
+2. **Deploy:** Go to `../fleet`, find your cluster, and update `clusters/<name>/values.yaml`:
+   - `versions.stack: X.Y.Z`
+3. **Sync:** ArgoCD detects the change in Fleet and pulls the OCI artifact from here.
 
 ### Local Development (Tilt)
+
 Tilt still uses this directory directly for the Inner Loop.
 
 ### Legacy Deployment (Pre-ArgoCD)
+
 For historical reference:
+
 - Runbook: `docs/live-deploy.md`
 - Script: `scripts/deploy-live.sh`
 
@@ -97,17 +105,19 @@ This creates a local registry at `localhost:5000` that caches Docker images and 
 
 ### 2. Boot the Local Dev Platform (Inner Loop)
 
-#### Helm/Container Registry Github auth.
+#### Helm/Container Registry Github auth
 
-Documentation: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry
+Documentation: <https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry>
 
 To use the OCI published Helm charts and GHCR images by our pipelines, we need to auth. our CLIs
+
 1. Create a classic PAT with those minimal permissions:
-  - read:packages
+   - read:packages
 2. [HELM] Login with your username: `helm registry login ghcr.io --username <USERNAME>`
 3. [Docker] Login with your username: `docker login ghcr.io --username <USERNAME>`
 
 #### How-tos
+
 Run these commands from the `Stack/` directory (root of this repo):
 
 ```bash
@@ -137,6 +147,7 @@ tilt up
 - `envs/` — **The Instantiation.**
   - All `.yaml` and `.yml` files in subdirectories are automatically validated.
   - See [envs/](envs/README.md) documentation
+
 ## 🧙‍♂️ Mage Tasks
 
 ```bash

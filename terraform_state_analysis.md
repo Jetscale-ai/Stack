@@ -1,6 +1,7 @@
 # Terraform State Analysis: Import vs Data Sources for VPC Reuse
 
 ## Current Approach (Data Sources)
+
 ```hcl
 variable "reuse_existing_vpc" { type = bool }
 
@@ -25,6 +26,7 @@ resource "aws_subnet" "public" {
 ```
 
 ## Alternative Approach (Import)
+
 ```bash
 # Manual import command
 terraform import aws_vpc.main vpc-12345678
@@ -38,18 +40,23 @@ resource "aws_vpc" "main" {
 ## Why Data Sources Are Better
 
 ### 1. Declarative vs Imperative
+
 - **Data Sources**: Terraform automatically resolves VPC by tags
+
 - **Import**: Requires manual intervention and scripting
 
-### 2. State Management  
+### 2. State Management
+
 - **Data Sources**: No VPC resource in state when reusing
 - **Import**: VPC always in state, even when "imported"
 
 ### 3. Error Recovery
+
 - **Data Sources**: If state lost, next run finds VPC by tags
 - **Import**: If state lost, need to re-import manually
 
 ### 4. Workflow Complexity
+
 - **Data Sources**: Simple flag flip in variables
 - **Import**: Need to detect missing state + run import command
 
@@ -74,7 +81,8 @@ This adds significant complexity and potential for race conditions.
 ## Recommendation: Stick with Data Sources
 
 The current data source approach is:
-- ✅ Automatic and declarative  
+
+- ✅ Automatic and declarative
 - ✅ Handles state loss gracefully
 - ✅ Simple workflow logic
 - ✅ No manual import steps needed

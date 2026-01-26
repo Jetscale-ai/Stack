@@ -69,5 +69,3 @@ helm upgrade --install "${RELEASE}" "${CHART_PATH}" \
   "${VALUES_ARGS[@]}"
 
 echo "[deploy-live] done"
-
-

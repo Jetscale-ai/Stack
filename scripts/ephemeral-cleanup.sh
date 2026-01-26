@@ -271,7 +271,7 @@ delete_iam_policy_by_name() {
     local arn
     arn="$(aws iam list-policies --scope Local --query "Policies[?PolicyName=='${name}'].Arn | [0]" --output text 2>/dev/null || true)"
     if [ -z "$arn" ] || [ "$arn" = "None" ]; then return 0; fi
-    
+
     if [ "$DRY_RUN" = "true" ]; then
         echo "📋 Would delete Policy: $name"
         return 0
@@ -288,7 +288,7 @@ delete_iam_policy_by_name() {
     for g in $(aws iam list-entities-for-policy --policy-arn "$arn" --query 'PolicyGroups[].GroupName' --output text || true); do
         aws iam detach-group-policy --group-name "$g" --policy-arn "$arn" || true
     done
-    
+
     # Delete versions
     for v in $(aws iam list-policy-versions --policy-arn "$arn" --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text || true); do
         aws iam delete-policy-version --policy-arn "$arn" --version-id "$v" || true
@@ -299,7 +299,7 @@ delete_iam_policy_by_name() {
 delete_iam_role_by_name() {
     local role="$1"
     aws iam get-role --role-name "$role" >/dev/null 2>&1 || return 0
-    
+
     if [ "$DRY_RUN" = "true" ]; then
         echo "📋 Would delete Role: $role"
         return 0
@@ -316,12 +316,12 @@ delete_iam_role_by_name() {
     for p in $(aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text || true); do
         aws iam detach-role-policy --role-name "$role" --policy-arn "$p" || true
     done
-    
+
     # Delete inline policies
     for ip in $(aws iam list-role-policies --role-name "$role" --query 'PolicyNames[]' --output text || true); do
         aws iam delete-role-policy --role-name "$role" --policy-name "$ip" || true
     done
-    
+
     aws iam delete-role --role-name "$role" || true
 }
 

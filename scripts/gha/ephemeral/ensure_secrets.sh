@@ -45,7 +45,7 @@ fi
 kubectl -n external-secrets-system rollout restart deploy/external-secrets || true
 
 echo "⏳ Waiting for ESO to create Kubernetes secret: ${ENV_ID}-aws-client-secret"
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
   if kubectl -n "${ENV_ID}" get secret "${ENV_ID}-aws-client-secret" >/dev/null 2>&1; then
     echo "✅ Found Kubernetes secret: ${ENV_ID}-aws-client-secret"
     exit 0

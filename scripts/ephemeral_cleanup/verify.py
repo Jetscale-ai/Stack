@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from typing import List
 
 from .awscli import AwsCli
@@ -32,7 +32,9 @@ def _ec2_instance_exists(ctx: Ctx, aws: AwsCli, instance_id: str) -> bool:
     return bool(data)
 
 
-def _ec2_simple_exists(ctx: Ctx, aws: AwsCli, args: list[str], not_found_substrings: list[str]) -> bool | None:
+def _ec2_simple_exists(
+    ctx: Ctx, aws: AwsCli, args: list[str], not_found_substrings: list[str]
+) -> bool | None:
     res = aws.run(args + ["--region", ctx.region])
     if res.rc == 0:
         return True
@@ -52,10 +54,23 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
     for arn in arns:
         try:
             # Secrets Manager secrets
-            # - If DeletedDate is present, AWS still returns it for some time after deletion requests.
-            # - We classify those as "eventual" to avoid failing the cleanup run on async deletion.
+            # - If DeletedDate is present, AWS still returns it for some
+            #   time after deletion requests.
+            # - We classify those as "eventual" to avoid failing the
+            #   cleanup run on async deletion.
             if ":secretsmanager:" in arn and ":secret:" in arn:
-                res = aws.run(["secretsmanager", "describe-secret", "--secret-id", arn, "--region", ctx.region, "--output", "json"])
+                res = aws.run(
+                    [
+                        "secretsmanager",
+                        "describe-secret",
+                        "--secret-id",
+                        arn,
+                        "--region",
+                        ctx.region,
+                        "--output",
+                        "json",
+                    ]
+                )
                 if res.rc == 0:
                     try:
                         payload = json.loads(res.stdout) if res.stdout else {}
@@ -77,7 +92,18 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
             # EBS volumes
             if ":volume/" in arn:
                 vol = arn.split(":volume/", 1)[-1]
-                res = aws.run(["ec2", "describe-volumes", "--volume-ids", vol, "--region", ctx.region, "--output", "json"])
+                res = aws.run(
+                    [
+                        "ec2",
+                        "describe-volumes",
+                        "--volume-ids",
+                        vol,
+                        "--region",
+                        ctx.region,
+                        "--output",
+                        "json",
+                    ]
+                )
                 if res.rc == 0:
                     try:
                         payload = json.loads(res.stdout) if res.stdout else {}
@@ -86,7 +112,8 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
                     except Exception:
                         unknown.append(arn)
                         continue
-                    # States include: creating, available, in-use, deleting, deleted, error
+                    # States: creating, available, in-use, deleting,
+                    # deleted, error
                     if state in ("deleting", "deleted"):
                         eventual.append(arn)
                     elif state:
@@ -103,7 +130,18 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
 
             if ":natgateway/" in arn:
                 nat = arn.split(":natgateway/", 1)[-1]
-                res = aws.run(["ec2", "describe-nat-gateways", "--nat-gateway-ids", nat, "--region", ctx.region, "--output", "json"])
+                res = aws.run(
+                    [
+                        "ec2",
+                        "describe-nat-gateways",
+                        "--nat-gateway-ids",
+                        nat,
+                        "--region",
+                        ctx.region,
+                        "--output",
+                        "json",
+                    ]
+                )
                 if res.rc == 0:
                     try:
                         payload = json.loads(res.stdout) if res.stdout else {}
@@ -121,7 +159,11 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
                         unknown.append(arn)
                 else:
                     err = (res.stderr or "").lower()
-                    if "invalidnatgatewayid.notfound" in err or "natgatewaynotfound" in err or "does not exist" in err:
+                    if (
+                        "invalidnatgatewayid.notfound" in err
+                        or "natgatewaynotfound" in err
+                        or "does not exist" in err
+                    ):
                         stale.append(arn)
                     else:
                         unknown.append(arn)
@@ -132,7 +174,12 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
                 ok = _ec2_simple_exists(
                     ctx,
                     aws,
-                    ["ec2", "describe-internet-gateways", "--internet-gateway-ids", igw],
+                    [
+                        "ec2",
+                        "describe-internet-gateways",
+                        "--internet-gateway-ids",
+                        igw,
+                    ],
                     ["InvalidInternetGatewayID.NotFound", "does not exist"],
                 )
                 if ok is True:
@@ -201,7 +248,12 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
 
             if ":vpc-endpoint/" in arn:
                 vpce_id = arn.split(":vpc-endpoint/", 1)[-1]
-                ok = _ec2_simple_exists(ctx, aws, ["ec2", "describe-vpc-endpoints", "--vpc-endpoint-ids", vpce_id], ["InvalidVpcEndpointId.NotFound", "does not exist"])
+                ok = _ec2_simple_exists(
+                    ctx,
+                    aws,
+                    ["ec2", "describe-vpc-endpoints", "--vpc-endpoint-ids", vpce_id],
+                    ["InvalidVpcEndpointId.NotFound", "does not exist"],
+                )
                 if ok is True:
                     existing.append(arn)
                 elif ok is False:
@@ -212,7 +264,17 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
 
             if ":network-interface/" in arn:
                 eni = arn.split(":network-interface/", 1)[-1]
-                ok = _ec2_simple_exists(ctx, aws, ["ec2", "describe-network-interfaces", "--network-interface-ids", eni], ["InvalidNetworkInterfaceID.NotFound", "does not exist"])
+                ok = _ec2_simple_exists(
+                    ctx,
+                    aws,
+                    [
+                        "ec2",
+                        "describe-network-interfaces",
+                        "--network-interface-ids",
+                        eni,
+                    ],
+                    ["InvalidNetworkInterfaceID.NotFound", "does not exist"],
+                )
                 if ok is True:
                     existing.append(arn)
                 elif ok is False:
@@ -223,7 +285,12 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
 
             if ":launch-template/" in arn:
                 lt = arn.split(":launch-template/", 1)[-1]
-                ok = _ec2_simple_exists(ctx, aws, ["ec2", "describe-launch-templates", "--launch-template-ids", lt], ["InvalidLaunchTemplateId.NotFound", "does not exist"])
+                ok = _ec2_simple_exists(
+                    ctx,
+                    aws,
+                    ["ec2", "describe-launch-templates", "--launch-template-ids", lt],
+                    ["InvalidLaunchTemplateId.NotFound", "does not exist"],
+                )
                 if ok is True:
                     existing.append(arn)
                 elif ok is False:
@@ -234,7 +301,12 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
 
             if ":vpc/" in arn:
                 vpc_id = arn.split(":vpc/", 1)[-1]
-                ok = _ec2_simple_exists(ctx, aws, ["ec2", "describe-vpcs", "--vpc-ids", vpc_id], ["InvalidVpcID.NotFound", "does not exist"])
+                ok = _ec2_simple_exists(
+                    ctx,
+                    aws,
+                    ["ec2", "describe-vpcs", "--vpc-ids", vpc_id],
+                    ["InvalidVpcID.NotFound", "does not exist"],
+                )
                 if ok is True:
                     existing.append(arn)
                 elif ok is False:
@@ -245,7 +317,12 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
 
             if ":security-group/" in arn:
                 sg = arn.split(":security-group/", 1)[-1]
-                ok = _ec2_simple_exists(ctx, aws, ["ec2", "describe-security-groups", "--group-ids", sg], ["InvalidGroup.NotFound", "does not exist"])
+                ok = _ec2_simple_exists(
+                    ctx,
+                    aws,
+                    ["ec2", "describe-security-groups", "--group-ids", sg],
+                    ["InvalidGroup.NotFound", "does not exist"],
+                )
                 if ok is True:
                     existing.append(arn)
                 elif ok is False:
@@ -258,5 +335,6 @@ def verify_tagged_arns(ctx: Ctx, aws: AwsCli, arns: List[str]) -> VerificationRe
         except Exception:
             unknown.append(arn)
 
-    return VerificationResult(existing=existing, stale=stale, unknown=unknown, eventual=eventual)
-
+    return VerificationResult(
+        existing=existing, stale=stale, unknown=unknown, eventual=eventual
+    )

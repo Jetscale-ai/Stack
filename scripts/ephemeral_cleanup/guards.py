@@ -12,5 +12,6 @@ def identity_guard(ctx: Ctx, aws: AwsCli) -> None:
         raise SystemExit(str(e)) from e
     print(f"--- identity={arn}")
     if acct != ctx.expected_account_id:
-        raise SystemExit(f"ERROR: expected account {ctx.expected_account_id}, got {acct}")
-
+        raise SystemExit(
+            f"ERROR: expected account {ctx.expected_account_id}, got {acct}"
+        )

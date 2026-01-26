@@ -1,0 +1,28 @@
+# Markdownlint configuration
+# See: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+config:
+  # MD013 - Line length (disabled - markdown is readable at any length)
+  MD013: false
+
+  # MD024 - Multiple headings with the same content
+  MD024:
+    siblings_only: true
+
+  # MD033 - Inline HTML
+  MD033:
+    allowed_elements:
+      - br
+      - details
+      - summary
+
+  # MD036 - Emphasis used instead of a heading (use proper headings)
+  MD036: true
+
+  # MD041 - First line in file should be a top level heading
+  MD041: true
+
+# Ignore patterns
+ignores:
+  - node_modules/
+  - .git/

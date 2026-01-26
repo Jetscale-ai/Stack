@@ -63,7 +63,7 @@ jobs:
         run: |
           OWNER_LC=$(echo "${OWNER}" | tr '[:upper:]' '[:lower:]')
           OCI_BASE="oci://${REGISTRY}/${OWNER_LC}/charts/"
-          
+
           echo "🚀 Publishing Version: $VERSION"
           echo "📦 OCI Registry: $OCI_BASE"
 

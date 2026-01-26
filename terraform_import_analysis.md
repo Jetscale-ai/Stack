@@ -1,6 +1,7 @@
 # Terraform Import vs Data Sources: Reconsidered
 
 ## The Challenge
+
 When `reuse_existing_vpc=true`, the VPC exists in AWS but Terraform state might be lost. What happens to dependent resources?
 
 ## Problem with Pure Data Source Approach

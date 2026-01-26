@@ -442,15 +442,15 @@ func (Validate) Envs(cloudName string) error {
 
 type Test mg.Namespace
 
-// LocalDev runs a quick smoke test against the running Tilt environment.
+// LocalDev runs a quick test against the running Tilt environment.
 func (Test) LocalDev() error {
-	fmt.Println("🧪 [E2E] Target: Local Dev (Tilt)")
+	fmt.Println("🧪 [TEST] Target: Local Dev (Tilt)")
 	return runTestRunner("http://localhost:8000")
 }
 
-// LocalE2E runs high-fidelity tests in Kind using locally built images loaded directly into the cluster.
+// LocalE2E runs Kind tests using values.test.local.yaml.
 func (Test) LocalE2E() error {
-	fmt.Println("🧪 [E2E] Target: Kind Local (Local Images)")
+	fmt.Println("🧪 [TEST] Target: Kind Local (Local Images)")
 
 	// ✅ FIX: Force-refresh the kind-kind context to prevent it from pointing to EKS/AWS.
 	// This ensures Skaffold detects the local cluster correctly and loads images.
@@ -507,15 +507,15 @@ func (Test) LocalE2E() error {
 	}
 	defer stopWSPF()
 
-	os.Setenv("E2E_ADMIN_EMAIL", "admin@e2e.example.com")
-	os.Setenv("E2E_ADMIN_PASSWORD", "e2e-admin-password")
+	os.Setenv("E2E_ADMIN_EMAIL", "devops@jetscale.ai")
+	os.Setenv("E2E_ADMIN_PASSWORD", "njPhTFWWrwoTG7gKHBiY")
 
 	return runTestRunner(fmt.Sprintf("http://localhost:%d", localPort), fmt.Sprintf("http://localhost:%d", wsPort))
 }
 
-// CI runs E2E tests in Kind using CI-built artifacts.
+// CI runs Kind tests using values.test.ci.yaml.
 func (Test) CI() error {
-	fmt.Println("🧪 [E2E] Target: Kind CI (Artifacts)")
+	fmt.Println("🧪 [TEST] Target: Kind CI (Artifacts)")
 
 	// ✅ FIX: Force-refresh the kind-kind context.
 	fmt.Println("🔄 Refreshing kind-kind kubeconfig context...")
@@ -594,7 +594,7 @@ func (Test) CI() error {
 }
 
 func (Test) Live() error {
-	fmt.Println("🔥 [E2E] Target: EKS Live (Verification)")
+	fmt.Println("🔥 [TEST] Target: EKS Live (Verification)")
 	// Live console hostname (see envs/live/console.yaml)
 	host := "console.jetscale.ai"
 	return runTestRunner(fmt.Sprintf("https://%s", host))
@@ -789,7 +789,7 @@ func findSiblingDir(baseName string) (string, error) {
 }
 
 func runTestRunner(url string, wsURL ...string) error {
-	fmt.Printf("   > Running Go E2E Suite against %s\n", url)
+	fmt.Printf("   > Running Go Test Suite against %s\n", url)
 	os.Setenv("BASE_URL", url)
 	if len(wsURL) > 0 && wsURL[0] != "" {
 		os.Setenv("WS_BASE_URL", wsURL[0])

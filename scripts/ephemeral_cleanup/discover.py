@@ -36,4 +36,3 @@ def discover_vpc_id(ctx: Ctx, aws: AwsCli) -> Optional[str]:
     if not vpc_id or vpc_id == "None":
         return None
     return str(vpc_id)
-

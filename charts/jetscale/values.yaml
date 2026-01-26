@@ -13,7 +13,7 @@ appConfigMap:
 externalSecret:
   app:
     enabled: true
-    
+
 # ----------------------------------------------------------
 # 1. CORE SERVICES
 # ----------------------------------------------------------
@@ -27,8 +27,8 @@ backend-api:
       memory: "768Mi"
       cpu: "200m"
     limits:
-      memory: "2.5Gi"  # Increased from 1.5Gi to prevent OOM during batch recommendation processing with agents
-      cpu: "1000m"     # Increased from 500m for parallel agent processing (50 EventBus workers)
+      memory: "2.5Gi" # Increased from 1.5Gi to prevent OOM during batch recommendation processing with agents
+      cpu: "1000m" # Increased from 500m for parallel agent processing (50 EventBus workers)
   livenessProbe:
     httpGet:
       path: /api/v2/system/live
@@ -46,25 +46,25 @@ backend-api:
   env:
     JETSCALE_COMPONENT: "api"
   volumes:
-  - name: jetscale-data
-    emptyDir: {}
-  - name: jetscale-logs
-    emptyDir: {}
+    - name: jetscale-data
+      emptyDir: {}
+    - name: jetscale-logs
+      emptyDir: {}
   volumeMounts:
-  - name: jetscale-data
-    mountPath: /app/data
-  - name: jetscale-logs
-    mountPath: /app/logs
+    - name: jetscale-data
+      mountPath: /app/data
+    - name: jetscale-logs
+      mountPath: /app/logs
   initContainer:
     name: setup-db
     command: ["/bin/sh", "-c"]
     args:
-    - |
-      echo "🔧 Running database setup..."
-      python3 setup_db.py
-      echo "📦 Loading fixtures..."
-      python3 load_fixtures.py
-      echo "✅ Database initialization complete"
+      - |
+        echo "🔧 Running database setup..."
+        python3 setup_db.py
+        echo "📦 Loading fixtures..."
+        python3 load_fixtures.py
+        echo "✅ Database initialization complete"
     resources:
       requests:
         memory: "128Mi"
@@ -106,7 +106,7 @@ backend-api:
           memory: "1Gi"
           cpu: "500m"
     generate-from-coh:
-      suspend: true  # Suspended by default - enable per client as needed
+      suspend: true # Suspended by default - enable per client as needed
       schedule: "30 2 * * *"
       command: ["python3", "jobs/aws/generate_custom_reco_from_coh.py"]
       activeDeadlineSeconds: 1800
@@ -142,10 +142,10 @@ backend-api:
 backend-ws:
   enabled: true
   args:
-  - |
-    echo "🚀 Starting JetScale WebSocket with correct database configuration..."
-    echo "Using database: $JETSCALE_DB_NAME"
-    python3 -m uvicorn main:app --host 0.0.0.0 --port 8001 --proxy-headers --forwarded-allow-ips="*"
+    - |
+      echo "🚀 Starting JetScale WebSocket with correct database configuration..."
+      echo "Using database: $JETSCALE_DB_NAME"
+      python3 -m uvicorn main:app --host 0.0.0.0 --port 8001 --proxy-headers --forwarded-allow-ips="*"
   env:
     JETSCALE_COMPONENT: "websocket"
   service:
@@ -173,20 +173,20 @@ backend-ws:
     periodSeconds: 5
     timeoutSeconds: 3
   volumes:
-  - name: jetscale-logs
-    emptyDir: {}
-  - name: websocket-entrypoint #Temp - should be moved to the Dockerfile
-    configMap:
-      name: websocket-entrypoint
-      defaultMode: 0755
+    - name: jetscale-logs
+      emptyDir: {}
+    - name: websocket-entrypoint #Temp - should be moved to the Dockerfile
+      configMap:
+        name: websocket-entrypoint
+        defaultMode: 0755
   volumeMounts:
-  - name: jetscale-logs
-    mountPath: /app/logs
-  - name: websocket-entrypoint
-    mountPath: /app/entrypoint.sh
-    subPath: entrypoint.sh
+    - name: jetscale-logs
+      mountPath: /app/logs
+    - name: websocket-entrypoint
+      mountPath: /app/entrypoint.sh
+      subPath: entrypoint.sh
   file_configmaps: #Temp - should be moved to the Dockerfile
-  # ConfigMap exact name (for other mount ref.) => file path to the base of the chart
+    # ConfigMap exact name (for other mount ref.) => file path to the base of the chart
     websocket-entrypoint: "files/entrypoint.sh"
 
 frontend:
@@ -228,18 +228,18 @@ ingress:
   enabled: true
   className: ""
   annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
+  # kubernetes.io/ingress.class: nginx
+  # kubernetes.io/tls-acme: "true"
   hosts: {}
-    # chart-example.local:
-    #   - path: /
-    #     pathType: ImplementationSpecific
-    #     serviceNameSuffix: frontend
-    #     servicePortNumber: 80
-    #   - path: /api
-    #     pathType: ImplementationSpecific
-    #     serviceNameSuffix: backend-api
-    #     servicePortNumber: 8000
+  # chart-example.local:
+  #   - path: /
+  #     pathType: ImplementationSpecific
+  #     serviceNameSuffix: frontend
+  #     servicePortNumber: 80
+  #   - path: /api
+  #     pathType: ImplementationSpecific
+  #     serviceNameSuffix: backend-api
+  #     servicePortNumber: 8000
   tls: []
   #  - secretName: chart-example-tls
   #    hosts:
@@ -255,20 +255,20 @@ httpRoute:
   annotations: {}
   # Which Gateways this Route is attached to.
   parentRefs:
-  - name: gateway
-    sectionName: http
-    # namespace: default
+    - name: gateway
+      sectionName: http
+      # namespace: default
   # Hostnames matching HTTP header.
   hostnames:
-  - chart-example.local
+    - chart-example.local
   # List of rules and filters applied.
   rules:
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /headers
-    serviceNameSuffix: backend-api
-    servicePortNumber: 8000
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /headers
+      serviceNameSuffix: backend-api
+      servicePortNumber: 8000
   #   filters:
   #   - type: RequestHeaderModifier
   #     requestHeaderModifier:

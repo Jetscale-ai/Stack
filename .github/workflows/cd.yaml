@@ -4,7 +4,7 @@ on:
   workflow_run:
     workflows: ["CI: Validate & E2E"]
     types: [completed]
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
     inputs:
       tenant:
@@ -23,7 +23,8 @@ on:
         default: ""
         type: string
       values_file:
-        description: "Optional override for Helm values. If comma-separated, treated as a full ordered list. If a single path, treated as the env-specific values file (cloud + env defaults still apply)."
+        description: "Optional override for Helm values. If comma-separated, treated as a full ordered list. If a single path,
+          treated as the env-specific values file (cloud + env defaults still apply)."
         required: false
         default: ""
         type: string
@@ -54,20 +55,20 @@ jobs:
         run: |
           echo "::error::CI workflow did not succeed (conclusion: ${{ github.event.workflow_run.conclusion }})"
           exit 1
-      
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: Check if CD-relevant files changed
         id: check-paths
         run: |
           # Get the commit SHA that triggered the CI workflow
           HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
-          
+
           # Check if any CD-relevant files changed in this commit
           CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r "$HEAD_SHA" || echo "")
-          
+
           SHOULD_DEPLOY="false"
           if echo "$CHANGED_FILES" | grep -qE '^(charts/|\.release\.yml|envs/aws\.yaml|envs/live/|\.github/workflows/cd\.yaml|\.github/workflows/reusable-release\.yaml)'; then
             SHOULD_DEPLOY="true"
@@ -75,9 +76,9 @@ jobs:
           else
             echo "ℹ️  No CD-relevant files changed, skipping deployment"
           fi
-          
+
           echo "should_deploy=$SHOULD_DEPLOY" >> "$GITHUB_OUTPUT"
-      
+
       - name: CI passed
         run: echo "✅ CI workflow succeeded"
 
@@ -87,7 +88,7 @@ jobs:
   publish:
     needs: [check-ci]
     if: |
-      always() && 
+      always() &&
       (needs.check-ci.result == 'success' || needs.check-ci.result == 'skipped') &&
       (github.event_name == 'workflow_dispatch' || needs.check-ci.outputs.should_deploy == 'true')
     uses: ./.github/workflows/reusable-release.yaml
@@ -105,9 +106,11 @@ jobs:
     runs-on: ubuntu-latest
 
     # 🛑 THE PRODUCTION GATE
-    environment: 
+    environment:
       name: ${{ github.event_name == 'workflow_dispatch' && format('live-{0}', inputs.tenant) || 'live-jetscale' }}
-      url: ${{ github.event_name == 'workflow_dispatch' && format('https://{0}', (inputs.public_host != '' && inputs.public_host) || (inputs.tenant == 'jetscale' && 'console.jetscale.ai') || format('{0}.jetscale.ai', inputs.tenant)) || 'https://console.jetscale.ai' }}
+      url: ${{ github.event_name == 'workflow_dispatch' && format('https://{0}', (inputs.public_host != '' && inputs.public_host)
+        || (inputs.tenant == 'jetscale' && 'console.jetscale.ai') || format('{0}.jetscale.ai', inputs.tenant)) || 'https://console.jetscale.ai'
+        }}
 
     steps:
       - uses: actions/checkout@v4

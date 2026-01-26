@@ -1,0 +1,36 @@
+# ==========================================================
+# TEST: CI REMOTE (GitHub Actions)
+# Base: values.test.yaml
+# ==========================================================
+global:
+  env: "ci-kind"
+
+backend-api:
+  imagePullSecrets:
+    - name: regcred
+  image:
+    repository: ghcr.io/jetscale-ai/backend
+    tag: "4.1.2"
+    pullPolicy: Always
+  env:
+    JETSCALE_APP_NAME: "JetScale Backend (CI)"
+    JETSCALE_JWT_SECRET_KEY: "ci-kind-jwt-secret"
+
+backend-ws:
+  imagePullSecrets:
+    - name: regcred
+  image:
+    repository: ghcr.io/jetscale-ai/backend
+    tag: "4.1.2"
+    pullPolicy: Always
+  env:
+    JETSCALE_APP_NAME: "JetScale Backend (CI)"
+    JETSCALE_JWT_SECRET_KEY: "ci-kind-jwt-secret"
+
+frontend:
+  imagePullSecrets:
+    - name: regcred
+  image:
+    repository: ghcr.io/jetscale-ai/frontend
+    tag: "2.4.0"
+    pullPolicy: Always

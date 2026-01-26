@@ -25,12 +25,12 @@ spec:
   selector:
     matchLabels:
       {{- include "jetscale.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: postgres    
+      app.kubernetes.io/component: postgres
   template:
     metadata:
       labels:
         {{- include "jetscale.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: postgres    
+        app.kubernetes.io/component: postgres
     spec:
       containers:
         - name: postgres

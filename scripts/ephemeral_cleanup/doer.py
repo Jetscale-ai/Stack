@@ -38,6 +38,7 @@ class Doer:
                     ok = True
                     break
 
-        self.summary.add_action(ActionRecord(desc=desc, mode="apply", ok=ok, rc=res.rc, stderr=res.stderr))
+        self.summary.add_action(
+            ActionRecord(desc=desc, mode="apply", ok=ok, rc=res.rc, stderr=res.stderr)
+        )
         return res
-

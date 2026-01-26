@@ -1,0 +1,52 @@
+# ==========================================================
+# TEST: LOCAL DEFAULT (Mage test:localE2E)
+# Base: values.test.yaml
+# ==========================================================
+global:
+  env: "local-e2e"
+
+backend-api:
+  imagePullSecrets: []
+  image:
+    repository: jetscale-backend-local
+    pullPolicy: IfNotPresent
+  env:
+    JETSCALE_APP_NAME: "JetScale Backend (E2E)"
+    JETSCALE_DEBUG: "true"
+    JETSCALE_JWT_SECRET_KEY: "local-e2e-jwt-secret"
+    # Test-only admin credentials (NOT for production use)
+    JETSCALE_DEFAULT_ADMIN_EMAIL: "devops@jetscale.ai"
+    JETSCALE_DEFAULT_ADMIN_USERNAME: "admin"
+    JETSCALE_DEFAULT_ADMIN_PASSWORD: "njPhTFWWrwoTG7gKHBiY"
+    JETSCALE_DB_HOST: "jetscale-test-postgres"
+    JETSCALE_DB_PORT: "5432"
+    JETSCALE_DB_NAME: "jetscale"
+    JETSCALE_DB_USER: "jetscale-user"
+    JETSCALE_DB_PASSWORD: "jetscale-password"
+    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-test-postgres:5432/jetscale"
+    JETSCALE_REDIS_HOST: jetscale-test-redis-master
+
+backend-ws:
+  imagePullSecrets: []
+  image:
+    repository: jetscale-backend-local
+    pullPolicy: IfNotPresent
+  env:
+    JETSCALE_APP_NAME: "JetScale Backend (E2E)"
+    JETSCALE_DEBUG: "true"
+    JETSCALE_JWT_SECRET_KEY: "local-e2e-jwt-secret"
+    JETSCALE_DB_HOST: "jetscale-test-postgres"
+    JETSCALE_DB_PORT: "5432"
+    JETSCALE_DB_NAME: "jetscale"
+    JETSCALE_DB_USER: "jetscale-user"
+    JETSCALE_DB_PASSWORD: "jetscale-password"
+    JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-test-postgres:5432/jetscale"
+    JETSCALE_REDIS_HOST: jetscale-test-redis-master
+
+frontend:
+  imagePullSecrets: []
+  image:
+    repository: jetscale-frontend-local
+    pullPolicy: IfNotPresent
+  env:
+    VITE_API_BASE_URL: "http://jetscale-test-backend:8000"

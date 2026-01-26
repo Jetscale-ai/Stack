@@ -69,7 +69,8 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-actions-role
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type
+            }}-github-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-build-images
 
@@ -159,9 +160,9 @@ jobs:
         run: |
           # Build the list of values files based on the tiered structure
           # Order: base -> cloud provider -> environment defaults -> client-specific
-          
+
           VALUES_FILES=""
-          
+
           # 1. Cloud provider values (required)
           CLOUD_VALUES="envs/${{ inputs.cloud_provider }}.yaml"
           if [ ! -f "$CLOUD_VALUES" ]; then
@@ -169,13 +170,13 @@ jobs:
             exit 1
           fi
           VALUES_FILES="$CLOUD_VALUES"
-          
+
           # 2. Environment defaults (optional)
           ENV_DEFAULTS="envs/${{ inputs.environment_type }}/default.yaml"
           if [ -f "$ENV_DEFAULTS" ]; then
             VALUES_FILES="$VALUES_FILES,$ENV_DEFAULTS"
           fi
-          
+
           # 3. Client-specific values (required)
           CLIENT_VALUES="envs/${{ inputs.environment_type }}/${{ inputs.client_name }}.yaml"
           if [ ! -f "$CLIENT_VALUES" ]; then
@@ -183,9 +184,9 @@ jobs:
             exit 1
           fi
           VALUES_FILES="$VALUES_FILES,$CLIENT_VALUES"
-          
+
           echo "files=$VALUES_FILES" >> $GITHUB_OUTPUT
-          
+
           echo "✅ Values files to be applied (in order):"
           echo "$VALUES_FILES" | tr ',' '\n' | sed 's/^/  - /'
 
@@ -206,7 +207,8 @@ jobs:
         with:
           # NOTE: This currently uses the deploy role. If we later add a read-only IAM role for diff,
           # switch this to that role (least-privilege).
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-diff-actions-role
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type
+            }}-github-diff-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-helm-diff
 
@@ -225,7 +227,7 @@ jobs:
           aws eks update-kubeconfig \
             --region ${{ inputs.aws_region }} \
             --name ${{ inputs.client_name }}-${{ inputs.environment_type }}
-          
+
           # Verify connection
           kubectl cluster-info
           kubectl get nodes
@@ -309,7 +311,8 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-actions-role
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type
+            }}-github-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-helm-deploy
 

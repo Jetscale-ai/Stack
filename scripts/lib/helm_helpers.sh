@@ -62,6 +62,6 @@ helm_build_values_args() {
   # Bash nameref: assign by output variable name.
   # shellcheck disable=SC2178
   local -n out="${out_array_name}"
+  # shellcheck disable=SC2034  # Used via nameref
   out=("${args[@]}")
 }
-

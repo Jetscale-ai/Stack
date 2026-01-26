@@ -15,11 +15,11 @@ ingress:
     alb.ingress.kubernetes.io/ssl-redirect: '443'
     alb.ingress.kubernetes.io/ssl-policy: "ELBSecurityPolicy-TLS13-1-2-2021-06"
   albEncryptionRootAnnotations: true #Inject extra annotations for checking http header
-    # Where targetGroups serviceName is based on Release Name
-    # alb.ingress.kubernetes.io/conditions.encrypted-root: >
-    #   [{"field":"http-header","httpHeaderConfig":{"httpHeaderName": "JetScale-Request-Encryption-Enabled", "values":["true", "True", "TRUE"]}}]
-    # alb.ingress.kubernetes.io/actions.encrypted-root: >
-    #   {"type":"forward","forwardConfig":{"targetGroups":[{"serviceName":"{{ .Release.Name}}-backend-api","servicePort":"8000"}]}}
+  # Where targetGroups serviceName is based on Release Name
+  # alb.ingress.kubernetes.io/conditions.encrypted-root: >
+  #   [{"field":"http-header","httpHeaderConfig":{"httpHeaderName": "JetScale-Request-Encryption-Enabled", "values":["true", "True", "TRUE"]}}]
+  # alb.ingress.kubernetes.io/actions.encrypted-root: >
+  #   {"type":"forward","forwardConfig":{"targetGroups":[{"serviceName":"{{ .Release.Name}}-backend-api","servicePort":"8000"}]}}
   ingressHostDefaultPaths:
     # Encrypted requests (highest priority - evaluated first)
     - path: /

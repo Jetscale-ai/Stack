@@ -30,24 +30,53 @@ def rds_delete(doer: Doer) -> None:
 
     if ctx.mode == "apply":
         for db in dbs:
-            doer.aws.run(["rds", "wait", "db-instance-deleted", "--db-instance-identifier", db, "--region", ctx.region])
+            doer.aws.run(
+                [
+                    "rds",
+                    "wait",
+                    "db-instance-deleted",
+                    "--db-instance-identifier",
+                    db,
+                    "--region",
+                    ctx.region,
+                ]
+            )
 
     # Best-effort: delete subnet/parameter groups after DBs are gone
-    subgrps = doer.aws.json(["rds", "describe-db-subnet-groups", "--region", ctx.region]) or {}
+    subgrps = (
+        doer.aws.json(["rds", "describe-db-subnet-groups", "--region", ctx.region])
+        or {}
+    )
     for g in subgrps.get("DBSubnetGroups", []) or []:
         name = g.get("DBSubnetGroupName", "")
         if name.startswith(f"{ctx.env_id}-ephemeral"):
             doer.run_allow_fail(
                 f"rds delete db-subnet-group {name}",
-                ["rds", "delete-db-subnet-group", "--db-subnet-group-name", name, "--region", ctx.region],
+                [
+                    "rds",
+                    "delete-db-subnet-group",
+                    "--db-subnet-group-name",
+                    name,
+                    "--region",
+                    ctx.region,
+                ],
             )
 
-    pgs = doer.aws.json(["rds", "describe-db-parameter-groups", "--region", ctx.region]) or {}
+    pgs = (
+        doer.aws.json(["rds", "describe-db-parameter-groups", "--region", ctx.region])
+        or {}
+    )
     for pg in pgs.get("DBParameterGroups", []) or []:
         name = pg.get("DBParameterGroupName", "")
         if name.startswith(f"{ctx.env_id}-ephemeral"):
             doer.run_allow_fail(
                 f"rds delete db-parameter-group {name}",
-                ["rds", "delete-db-parameter-group", "--db-parameter-group-name", name, "--region", ctx.region],
+                [
+                    "rds",
+                    "delete-db-parameter-group",
+                    "--db-parameter-group-name",
+                    name,
+                    "--region",
+                    ctx.region,
+                ],
             )
-

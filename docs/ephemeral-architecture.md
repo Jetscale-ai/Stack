@@ -1,14 +1,14 @@
-## Ephemeral environments architecture (Cluster-per-PR)
+# Ephemeral environments architecture (Cluster-per-PR)
 
 This document explains how the **Ephemeral Cluster per PR** workflow converges on a working environment, why it’s structured as a multi-stage loop, and what the **secret contract** is between Terraform (infra) and Helm (app).
 
-### Goals
+## Goals
 
 - **Green must mean reachable**: a “successful” run must result in a reachable `https://<public_host>/`.
 - **Convergence over perfection**: reruns should adopt/repair existing resources instead of failing or forcing manual cleanup.
 - **Single source of truth for deployment**: application install/upgrade is centralized in `scripts/gha/ephemeral/deploy_stack.sh`.
 
-### Key identities (naming)
+## Key identities (naming)
 
 - **ENV_ID**: `pr-<number>` (e.g., `pr-123`)
 - **Cluster name**: `${ENV_ID}`
@@ -16,7 +16,7 @@ This document explains how the **Ephemeral Cluster per PR** workflow converges o
 - **Helm release**: `${ENV_ID}`
 - **Public host**: `${ENV_ID}-<branch-slug>-unstable.jetscale.ai`
 
-### Values contract (how Helm values are composed)
+## Values contract (how Helm values are composed)
 
 The ephemeral deploy composes values in strict precedence order:
 
@@ -26,7 +26,7 @@ The ephemeral deploy composes values in strict precedence order:
 
 The runtime overrides exist because some chart values (like `ingress.hosts`) are keyed maps that cannot be safely “rewired” via `--set`.
 
-### The convergence loop (Day 0 vs Day 2)
+## The convergence loop (Day 0 vs Day 2)
 
 Ephemeral environments are not a single “create and forget” action. They converge via repeated runs.
 
@@ -55,14 +55,14 @@ Helm Deploy (deploy_stack.sh)
 Verify Health (hard gate)
 ```
 
-#### Day 0 (bootstrap)
+## Day 0 (bootstrap)
 
 Common scenario: the **Terraform state is missing** or the **cluster doesn’t exist yet**.
 
 - Terraform applies are staged so AWS-only resources can come up first (e.g., VPC/NAT, EKS control plane).
 - Kubeconfig-dependent providers are only exercised after the cluster exists.
 
-#### Day 2 (rerun / repair)
+## Day 2 (rerun / repair)
 
 Common scenario: resources exist in AWS, but Terraform state is partially missing or the previous run ended mid-flight.
 
@@ -71,7 +71,7 @@ Common scenario: resources exist in AWS, but Terraform state is partially missin
   - **State lock contention** (force-unlock once, then retry)
   - **AWS Load Balancer Controller webhook delays** (wait for controller, then retry)
 
-### The secret contract (Container vs Value)
+## The secret contract (Container vs Value)
 
 Ephemeral environments follow the **Container/Value split**:
 
@@ -82,7 +82,7 @@ Ephemeral environments follow the **Container/Value split**:
   - inject the actual secret JSON into AWS Secrets Manager
   - ESO materializes Kubernetes secrets from those values
 
-#### Ephemeral AWS client secret (Secrets Manager)
+## Ephemeral AWS client secret (Secrets Manager)
 
 - **Secret ID**: `${ENV_ID}-ephemeral/application/aws/client`
 - **Required keys**:
@@ -92,7 +92,7 @@ Ephemeral environments follow the **Container/Value split**:
 
 `scripts/gha/ephemeral/preflight.sh` invokes `scripts/gha/ephemeral/ensure_secrets.sh` to ensure the secret exists and ESO has created the corresponding Kubernetes Secret.
 
-#### Kubernetes secrets expected by the Helm chart
+## Kubernetes secrets expected by the Helm chart
 
 The backend charts expect secret/configmap refs that are **release-prefixed**:
 
@@ -105,7 +105,7 @@ There is also a required (sometimes placeholder) secret:
 
 - `<release>-app-secrets` (created/ensured by `deploy_stack.sh`)
 
-### Operational scripts (where the logic lives)
+## Operational scripts (where the logic lives)
 
 - Workflow: `.github/workflows/env-ephemeral.yaml`
 - Terraform + adoption:
@@ -118,4 +118,3 @@ There is also a required (sometimes placeholder) secret:
 - App deploy:
   - `scripts/gha/ephemeral/deploy_stack.sh`
   - Shared values ordering: `scripts/lib/helm_helpers.sh`
-

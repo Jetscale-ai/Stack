@@ -4,7 +4,7 @@ This directory contains Helm values files for different environments and cloud p
 
 ## Directory Structure
 
-```
+```text
 envs/
 ├── aws.yaml                    # AWS-specific configuration (cloud provider)
 ├── staging/
@@ -53,6 +53,7 @@ mage validate:envs aws
 ```
 
 The validation command:
+
 - Runs `helm template` against all discovered environment configurations
 - Ensures all values files produce valid Kubernetes YAML
 - Does **not** require a running cluster
@@ -69,15 +70,18 @@ The validation command:
 
 ## Troubleshooting
 
-**Error: "cloud values file not found"**
+### Error: "cloud values file not found"
+
 - Ensure you've created the required cloud provider file (e.g., `envs/aws.yaml`)
 - The cloudName argument must match an existing file in the envs directory
 
-**Error: "no YAML files found in envs directory"**
+### Error: "no YAML files found in envs directory"
+
 - Create at least one environment subdirectory with a `values.yaml` file
 - Ensure files have `.yaml` or `.yml` extensions
 
-**Validation fails with template errors**
+### Validation fails with template errors
+
 - Check the "Values files (in order)" output to see which files are being applied
 - Verify that later files properly override earlier values
 - Use `helm template` directly with `--debug` for detailed error information

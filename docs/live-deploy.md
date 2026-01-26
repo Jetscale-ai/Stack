@@ -1,15 +1,15 @@
-## ✅ Justified Action: Helm-first Live Deployment Contract
-#
-# Goal: Establish a single, deterministic “Helm-only” deployment path for Live (console.jetscale.ai),
-#       aligned with the future ArgoCD GitOps flow, and preserving parity with preview envs.
-#
-# Justification (Eudaimonia Invariants):
-# - Prudence: reduce accidental prod deploy paths and namespace drift.
-# - Clarity: one blessed command + explicit prerequisites.
-# - Concord: Terraform owns cluster “pipes”; Helm owns app “intent”.
-# - Identity: live deploys must target the correct namespace and secret contract.
-#
-# Audit: This document does not introduce credentials; it only documents required secret shapes.
+# ✅ Justified Action: Helm-first Live Deployment Contract
+
+**Goal:** Establish a single, deterministic "Helm-only" deployment path for Live (console.jetscale.ai) aligned with the future ArgoCD GitOps flow, and preserving parity wth preview envs
+
+**Justification (Eudaimonia Invariants):**
+
+- Prudence: reduce accidental prod deploy paths and namespace drift
+- Clarity: one blessed command + explicit prerequisites
+- Concord: Terraform owns cluster "pipes"; Helm owns app "intent"
+- Identity: live deploys must target the correct namespace and secret contract
+
+**Audit:** This document does not introduce credentials; it only documents required secret shapes
 
 ## Live deploy (console.jetscale.ai) — Helm-only
 
@@ -22,7 +22,7 @@ This repo separates the **Artifact Lifecycle** (published chart versions) from t
 - **Live config changes (`envs/live/**`)**: Stage 6 will **skip version inflation** and redeploy the **latest tagged version**
   with the updated live values (see `envs/aws.yaml`, `envs/live/default.yaml`, `envs/live/console.yaml`).
 
-### Preconditions (Terraform-owned “pipes”)
+### Preconditions (Terraform-owned "pipes")
 
 - **Namespace**: `jetscale-prod` (convention: `{client_name}-{env}`)
 - **External Secrets Operator** installed in the cluster (Terraform `clients/` stack).
@@ -33,7 +33,7 @@ This repo separates the **Artifact Lifecycle** (published chart versions) from t
   - `jetscale-common-secrets`
   - `jetscale-aws-client-secret`
 
-### Preconditions (out-of-band “vault values”)
+### Preconditions (out-of-band "vault values")
 
 This repo uses **Option B (Container/Value Split)** for sensitive credentials:
 
@@ -77,5 +77,3 @@ kubectl -n jetscale-prod get secret jetscale-aws-client-secret
 kubectl -n jetscale-prod get pods
 kubectl -n jetscale-prod describe pod -l app.kubernetes.io/name=backend | sed -n '1,160p'
 ```
-
-

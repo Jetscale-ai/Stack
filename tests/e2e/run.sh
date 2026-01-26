@@ -21,4 +21,3 @@ echo "   - Running Synthetic User Login Flow..."
 # e.g. npx playwright test --base-url $TARGET
 
 echo "✅ [E2E] Skeleton tests passed."
-

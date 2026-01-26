@@ -3,9 +3,11 @@
 Ephemeral Cleanup (Stack)
 
 Justified Action
-Goal: Provide a single, reusable cleanup entrypoint for GitHub Actions and humans to purge orphaned
-      ephemeral PR environments based on `jetscale.env_id` tags, with dependency-aware ordering.
-Justification: Prudence (assume failures), Clarity (single tool), Vigor (delete root causes), Justice (clear blockers).
+Goal: Provide a single, reusable cleanup entrypoint for GitHub Actions
+      and humans to purge orphaned ephemeral PR environments based on
+      `jetscale.env_id` tags, with dependency-aware ordering.
+Justification: Prudence (assume failures), Clarity (single tool),
+               Vigor (delete root causes), Justice (clear blockers).
 
 Usage:
   ./scripts/ephemeral_cleanup.py plan   pr-123 us-east-1 134051052096
@@ -34,4 +36,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

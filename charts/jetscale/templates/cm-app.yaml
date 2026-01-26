@@ -36,7 +36,7 @@ data:
   # Python Configuration
   PYTHONDONTWRITEBYTECODE: "1"
   PYTHONUNBUFFERED: "1"
-  
+
   # Proxy Configuration - Trust forwarded headers from nginx/ALB
   FORWARDED_ALLOW_IPS: "*"
   FORWARDED_ALLOW_HOSTS: "*"
@@ -56,9 +56,6 @@ data:
 
   # Cron Job Configuration
   JETSCALE_CRON_BATCH_SIZE: "10"
-
-  # Admin Configuration
-  JETSCALE_DEFAULT_ADMIN_USERNAME: "admin-staging"
 
   # AWS Configuration
   AWS_DEFAULT_REGION: "us-east-1"

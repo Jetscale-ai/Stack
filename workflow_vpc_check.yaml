@@ -3,24 +3,24 @@
 - name: Determine VPC Reuse Strategy
   run: |
     set -euo pipefail
-    
+
     ENV_ID="${{ env.ENV_ID }}"
-    
+
     echo "🔍 Checking for existing VPC for PR environment: $ENV_ID"
-    
+
     # Check if VPC already exists in AWS
     VPC_EXISTS=$(aws ec2 describe-vpcs \
       --filters "Name=tag:jetscale.env_id,Values=$ENV_ID" \
       --query 'Vpcs[0].VpcId' \
       --output text 2>/dev/null || echo "None")
-    
+
     if [ "$VPC_EXISTS" != "None" ]; then
       echo "✅ Found existing VPC: $VPC_EXISTS"
       echo "REUSE_VPC=true" >> $GITHUB_ENV
       echo "vpc_reuse_strategy=reuse_existing" >> $GITHUB_OUTPUT
     else
       echo "🆕 No existing VPC found, will create new one"
-      echo "REUSE_VPC=false" >> $GITHUB_ENV  
+      echo "REUSE_VPC=false" >> $GITHUB_ENV
       echo "vpc_reuse_strategy=create_new" >> $GITHUB_OUTPUT
     fi
 
@@ -31,7 +31,7 @@
     cat > ephemeral.auto.tfvars.json <<EOF
     {
       "client_name": "${{ env.ENV_ID }}",
-      "environment": "ephemeral", 
+      "environment": "ephemeral",
       "tenant_id": "${{ env.ENV_ID }}",
       "aws_region": "us-east-1",
       "expected_account_id": "134051052096",

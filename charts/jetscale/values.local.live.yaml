@@ -50,6 +50,10 @@ backend:
     JETSCALE_DATABASE_URL: "postgresql+asyncpg://jetscale-user:jetscale-password@jetscale-local-postgres:5432/jetscale"
     JETSCALE_REDIS_URL: "redis://jetscale-local-redis-master:6379/0"
     JETSCALE_AWS_REGION: "us-east-1"
+    # Dev-only admin credentials (NOT for production use)
+    JETSCALE_DEFAULT_ADMIN_EMAIL: "devops@jetscale.ai"
+    JETSCALE_DEFAULT_ADMIN_USERNAME: "admin"
+    JETSCALE_DEFAULT_ADMIN_PASSWORD: "njPhTFWWrwoTG7gKHBiY"
 
 # 4. FRONTEND WEB (Published Prod Image)
 frontend:
@@ -81,4 +85,3 @@ ingress:
 
 apiExternal:
   enabled: false
-
