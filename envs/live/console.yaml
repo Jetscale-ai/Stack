@@ -20,7 +20,8 @@ backend-api:
   image:
     repository: ghcr.io/jetscale-ai/backend
     tag: "4.1.2"
-
+  imagePullSecrets:
+    - name: ghcr-registry-secret #Created from GH pipeline
   # Production schedule
   cronJobs:
     # NOTE: keys must match `charts/jetscale/values.yaml` to override schedules
@@ -47,7 +48,8 @@ backend-ws:
   image:
     repository: ghcr.io/jetscale-ai/backend
     tag: "4.1.2"
-
+  imagePullSecrets:
+    - name: ghcr-registry-secret #Created from GH pipeline
 # 3. FRONTEND
 frontend:
   enabled: true
@@ -55,6 +57,8 @@ frontend:
   image:
     repository: ghcr.io/jetscale-ai/frontend
     tag: "2.4.0"
+  imagePullSecrets:
+    - name: ghcr-registry-secret #Created from GH pipeline
   env:
     # This should point at the same host the Ingress serves for /api
     VITE_API_BASE_URL: "https://console.jetscale.ai"

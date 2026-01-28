@@ -412,44 +412,6 @@ if aws eks describe-cluster --name "${ENV_ID}" --region "${REGION}" >/dev/null 2
   ENTRY_ID="${ENV_ID}:${PRINCIPAL_ARN}"
   ASSOC_ID="${ENV_ID}#${PRINCIPAL_ARN}#arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
-  if terraform state list 'aws_eks_access_entry.current_caller[0]' >/dev/null 2>&1; then
-    echo "✅ Access entry already in Terraform state: aws_eks_access_entry.current_caller[0]"
-  else
-    set +e
-    OUT="$(terraform import -input=false -no-color "${TF_VAR_ARGS[@]}" 'aws_eks_access_entry.current_caller[0]' "${ENTRY_ID}" 2>&1)"
-    RC=$?
-    set -e
-    if [[ "${RC}" -eq 0 ]]; then
-      echo "${OUT}"
-    elif echo "${OUT}" | grep -qi "Cannot import non-existent remote object"; then
-      echo "EKS access entry not found; skipping import: ${ENTRY_ID}"
-    elif echo "${OUT}" | grep -qi "Resource already managed by Terraform"; then
-      echo "✅ Access entry already managed by Terraform; skipping import"
-    else
-      echo "${OUT}" >&2
-      exit "${RC}"
-    fi
-  fi
-
-  if terraform state list 'aws_eks_access_policy_association.current_caller_admin[0]' >/dev/null 2>&1; then
-    echo "✅ Access policy association already in Terraform state: aws_eks_access_policy_association.current_caller_admin[0]"
-  else
-    set +e
-    OUT="$(terraform import -input=false -no-color "${TF_VAR_ARGS[@]}" 'aws_eks_access_policy_association.current_caller_admin[0]' "${ASSOC_ID}" 2>&1)"
-    RC=$?
-    set -e
-    if [[ "${RC}" -eq 0 ]]; then
-      echo "${OUT}"
-    elif echo "${OUT}" | grep -qi "Cannot import non-existent remote object"; then
-      echo "EKS access policy association not found; skipping import: ${ASSOC_ID}"
-    elif echo "${OUT}" | grep -qi "Resource already managed by Terraform"; then
-      echo "✅ Access policy association already managed by Terraform; skipping import"
-    else
-      echo "${OUT}" >&2
-      exit "${RC}"
-    fi
-  fi
-
   echo "🔗 Updating kubeconfig..."
   aws eks update-kubeconfig --name "${ENV_ID}" --region "${REGION}" || true
 

@@ -72,20 +72,16 @@ jobs:
           # 1. Namespace
           kubectl create ns jetscale-ci --dry-run=client -o yaml | kubectl apply -f -
           # 2. Secret
-          kubectl create secret docker-registry regcred \
+          kubectl create secret docker-registry ghcr-registry-secret \
             --docker-server=ghcr.io \
             --docker-username=jetscalebot \
             --docker-password=$BOT_TOKEN \
             --namespace=jetscale-ci \
             --dry-run=client -o yaml | kubectl apply -f -
-          # 3. ServiceAccount Bind
-          kubectl patch serviceaccount default \
-            -n jetscale-ci \
-            -p '{"imagePullSecrets":[{"name":"regcred"}]}'
 
       - name: Run E2E
         env:
-          # Needed so `mage test:ci` can (idempotently) provision `regcred` for GHCR pulls.
+          # Needed so `mage test:ci` can (idempotently) provision `ghcr-registry-secret` for GHCR pulls.
           # Use the same bot token we already used for Helm registry login + pre-provisioning.
           GITHUB_TOKEN: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
           GITHUB_USER: jetscalebot

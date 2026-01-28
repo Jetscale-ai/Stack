@@ -7,7 +7,7 @@ global:
 
 backend-api:
   imagePullSecrets:
-    - name: regcred
+    - name: ghcr-registry-secret 
   image:
     repository: ghcr.io/jetscale-ai/backend
     tag: "4.1.2"
@@ -18,7 +18,7 @@ backend-api:
 
 backend-ws:
   imagePullSecrets:
-    - name: regcred
+    - name: ghcr-registry-secret 
   image:
     repository: ghcr.io/jetscale-ai/backend
     tag: "4.1.2"
@@ -29,7 +29,7 @@ backend-ws:
 
 frontend:
   imagePullSecrets:
-    - name: regcred
+    - name: ghcr-registry-secret 
   image:
     repository: ghcr.io/jetscale-ai/frontend
     tag: "2.4.0"
