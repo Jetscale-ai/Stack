@@ -554,7 +554,7 @@ func (Test) CI() error {
 		)
 	}
 
-	if err := ensureK8sGhcrPullSecret(ctxName, "jetscale-ci", "regcred"); err != nil {
+	if err := ensureK8sGhcrPullSecret(ctxName, "jetscale-ci", "ghcr-registry-secret"); err != nil {
 		return fmt.Errorf("failed to ensure GHCR pull secret: %w", err)
 	}
 

@@ -211,30 +211,14 @@ jobs:
         run: |
           set -euo pipefail
           # EKS nodes pull app images from GHCR (ghcr.io/jetscale-ai/*). Those packages may be private,
-          # so we provision a docker-registry secret and attach it to the default ServiceAccount.
+          # so we provision a docker-registry secret.
           #
-          # IMPORTANT:
-          # The backend/frontend subcharts currently expect the secret name `jetscale-registry-secret`.
-          # Creating a different secret name causes ImagePullBackOff due to FailedToRetrieveImagePullSecret.
-          kubectl create secret docker-registry jetscale-registry-secret \
+          kubectl create secret docker-registry ghcr-registry-secret \
             --namespace "${{ steps.target.outputs.namespace }}" \
             --docker-server=ghcr.io \
             --docker-username=jetscalebot \
             --docker-password="$GHCR_PULL_TOKEN" \
             --dry-run=client -o yaml | kubectl apply -f -
-
-          # Ensure pods that don't specify a ServiceAccount explicitly (our current subcharts) can pull images.
-          kubectl patch serviceaccount default \
-            --namespace "${{ steps.target.outputs.namespace }}" \
-            --type merge \
-            -p '{"imagePullSecrets":[{"name":"jetscale-registry-secret"}]}'
-
-          # Backend/frontend charts commonly set an explicit ServiceAccount name (e.g. jetscale-service-account).
-          # Ensure it can pull from GHCR as well.
-          kubectl patch serviceaccount jetscale-service-account \
-            --namespace "${{ steps.target.outputs.namespace }}" \
-            --type merge \
-            -p '{"imagePullSecrets":[{"name":"jetscale-registry-secret"}]}' || true
 
       - name: Ensure AWS client secret exists (Secrets Manager -> ESO)
         env:
