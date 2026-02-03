@@ -121,33 +121,33 @@ jobs:
           BACKEND_REPO="${ECR_REGISTRY}/${CLIENT}-${ENV_TYPE}-backend"
           FRONTEND_REPO="${ECR_REGISTRY}/${CLIENT}-${ENV_TYPE}-frontend"
 
+          # Build backend with appropriate tags
+          BACKEND_TAGS="-t ${BACKEND_REPO}:${BACKEND_TAG}"
+          if [ "${{ inputs.backend_ref }}" == "main" ]; then
+            BACKEND_TAGS="${BACKEND_TAGS} -t ${BACKEND_REPO}:latest"
+            echo "🏷️  Backend will be tagged as :latest (main branch)"
+          fi
+
           echo "🔨 Building backend image: ${BACKEND_REPO}:${BACKEND_TAG}"
           docker buildx build \
             --platform linux/amd64 \
             --push \
-            -t "${BACKEND_REPO}:${BACKEND_TAG}" \
+            ${BACKEND_TAGS} \
             ./backend
-          
-          # Tag and push :latest only if building from main branch
-          if [ "${{ inputs.backend_ref }}" == "main" ]; then
-            echo "🏷️  Tagging backend as :latest (main branch)"
-            docker image tag "${BACKEND_REPO}:${BACKEND_TAG}" "${BACKEND_REPO}:latest"
-            docker image push "${BACKEND_REPO}:latest"
+
+          # Build frontend with appropriate tags
+          FRONTEND_TAGS="-t ${FRONTEND_REPO}:${FRONTEND_TAG}"
+          if [ "${{ inputs.frontend_ref }}" == "main" ]; then
+            FRONTEND_TAGS="${FRONTEND_TAGS} -t ${FRONTEND_REPO}:latest"
+            echo "🏷️  Frontend will be tagged as :latest (main branch)"
           fi
 
           echo "🔨 Building frontend image: ${FRONTEND_REPO}:${FRONTEND_TAG}"
           docker buildx build \
             --platform linux/amd64 \
             --push \
-            -t "${FRONTEND_REPO}:${FRONTEND_TAG}" \
+            ${FRONTEND_TAGS} \
             ./frontend
-
-          # Tag and push :latest only if building from main branch
-          if [ "${{ inputs.frontend_ref }}" == "main" ]; then
-            echo "🏷️  Tagging frontend as :latest (main branch)"
-            docker image tag "${FRONTEND_REPO}:${FRONTEND_TAG}" "${FRONTEND_REPO}:latest"
-            docker image push "${FRONTEND_REPO}:latest"
-          fi
 
           echo "backend_tag=${BACKEND_TAG}" >> $GITHUB_OUTPUT
           echo "frontend_tag=${FRONTEND_TAG}" >> $GITHUB_OUTPUT
