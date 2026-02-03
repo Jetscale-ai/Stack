@@ -29,4 +29,5 @@ ingress:
   annotations:
     external-dns.alpha.kubernetes.io/hostname: "bridgit.staging.jetscale.ai"
   hosts:
-    bridgit.staging.jetscale.ai:
+    # Explicit empty list: use `envs/aws.yaml` `ingressHostDefaultPaths`
+    bridgit.staging.jetscale.ai: []

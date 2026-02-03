@@ -87,4 +87,6 @@ ingress:
     # Wildcard cert for *.jetscale.ai in the Live AWS account (us-east-1)
     alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:134051052096:certificate/6e3e7f72-af8e-457d-a397-8f13728dd06c"
   hosts:
-    preview.jetscale.ai:
+    # Explicit empty list: use `envs/aws.yaml` `ingressHostDefaultPaths`
+    # (avoids YAML null edge-cases across Helm/YAML versions).
+    preview.jetscale.ai: []
