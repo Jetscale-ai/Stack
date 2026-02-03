@@ -368,8 +368,6 @@ jobs:
             $VALUES_FLAGS \
             $IMAGE_OVERRIDES \
             --wait \
-            --timeout 10m \
-            --atomic \
-            --cleanup-on-fail
+            --timeout 10m
 
           echo "✅ Deployment completed successfully"
