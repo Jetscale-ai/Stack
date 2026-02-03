@@ -10,6 +10,8 @@ global:
 
 appConfigMap:
   enabled: true
+  environment: RELEASE #DEBUG, RELEASE or DEBUG_RELEASE
+
 externalSecret:
   app:
     enabled: true
