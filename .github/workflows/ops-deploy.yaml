@@ -131,8 +131,8 @@ jobs:
           # Tag and push :latest only if building from main branch
           if [ "${{ inputs.backend_ref }}" == "main" ]; then
             echo "🏷️  Tagging backend as :latest (main branch)"
-            docker buildx tag "${BACKEND_REPO}:${BACKEND_TAG}" "${BACKEND_REPO}:latest"
-            docker buildx push "${BACKEND_REPO}:latest"
+            docker image tag "${BACKEND_REPO}:${BACKEND_TAG}" "${BACKEND_REPO}:latest"
+            docker image push "${BACKEND_REPO}:latest"
           fi
 
           echo "🔨 Building frontend image: ${FRONTEND_REPO}:${FRONTEND_TAG}"
@@ -145,8 +145,8 @@ jobs:
           # Tag and push :latest only if building from main branch
           if [ "${{ inputs.frontend_ref }}" == "main" ]; then
             echo "🏷️  Tagging frontend as :latest (main branch)"
-            docker buildx tag "${FRONTEND_REPO}:${FRONTEND_TAG}" "${FRONTEND_REPO}:latest"
-            docker buildx push "${FRONTEND_REPO}:latest"
+            docker image tag "${FRONTEND_REPO}:${FRONTEND_TAG}" "${FRONTEND_REPO}:latest"
+            docker image push "${FRONTEND_REPO}:latest"
           fi
 
           echo "backend_tag=${BACKEND_TAG}" >> $GITHUB_OUTPUT
