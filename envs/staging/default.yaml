@@ -3,6 +3,18 @@
 global:
   env: "staging"
 
+backend-api:
+  image:
+    tag: null #Null so the tag isn't changed
+
+backend-ws:
+  image:
+    tag: null #Null so the tag isn't changed
+
+frontend:
+  image:
+    tag: null #Null so the tag isn't changed
+
 ingress:
   annotations:
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:081373342681:certificate/ac554daa-f015-41c0-88f6-c41b147d53c6

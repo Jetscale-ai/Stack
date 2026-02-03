@@ -5,17 +5,17 @@ global:
 backend-api:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend
-    tag: staging-jetscale-20260106-233532-d3d4f78
+    # tag: set by workflow via --set when build_images=true or unchanged (null) by default
 
 backend-ws:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-backend
-    tag: staging-jetscale-20260106-233532-d3d4f78
+    # tag: set by workflow via --set when build_images=true or unchanged (null) by default
 
 frontend:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-staging-frontend
-    tag: staging-jetscale-20260106-233814-797dbe3
+    # tag: set by workflow via --set when build_images=true or unchanged (null) by default
 
 ingress:
   annotations:

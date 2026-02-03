@@ -127,6 +127,13 @@ jobs:
             --push \
             -t "${BACKEND_REPO}:${BACKEND_TAG}" \
             ./backend
+          
+          # Tag and push :latest only if building from main branch
+          if [ "${{ inputs.backend_ref }}" == "main" ]; then
+            echo "🏷️  Tagging backend as :latest (main branch)"
+            docker tag "${BACKEND_REPO}:${BACKEND_TAG}" "${BACKEND_REPO}:latest"
+            docker push "${BACKEND_REPO}:latest"
+          fi
 
           echo "🔨 Building frontend image: ${FRONTEND_REPO}:${FRONTEND_TAG}"
           docker buildx build \
@@ -135,13 +142,20 @@ jobs:
             -t "${FRONTEND_REPO}:${FRONTEND_TAG}" \
             ./frontend
 
+          # Tag and push :latest only if building from main branch
+          if [ "${{ inputs.frontend_ref }}" == "main" ]; then
+            echo "🏷️  Tagging frontend as :latest (main branch)"
+            docker tag "${FRONTEND_REPO}:${FRONTEND_TAG}" "${FRONTEND_REPO}:latest"
+            docker push "${FRONTEND_REPO}:latest"
+          fi
+
           echo "backend_tag=${BACKEND_TAG}" >> $GITHUB_OUTPUT
           echo "frontend_tag=${FRONTEND_TAG}" >> $GITHUB_OUTPUT
 
           echo "✅ Images built and pushed:"
           echo "  Backend:  ${BACKEND_REPO}:${BACKEND_TAG}"
           echo "  Frontend: ${FRONTEND_REPO}:${FRONTEND_TAG}"
-
+      
   # ============================================================================
   # VALIDATE CONFIGURATION
   # ============================================================================
@@ -255,11 +269,25 @@ jobs:
             VALUES_FLAGS="$VALUES_FLAGS --values $file"
           done
 
-          # Add image tag overrides if we built new images
+          # Check if Helm release is installed
+          RELEASE_EXISTS=false
+          if helm list -n ${{ inputs.client_name }}-${{ inputs.environment_type }} | grep -q "^${{ inputs.client_name }}\s"; then
+            RELEASE_EXISTS=true
+            echo "📦 Helm release '${{ inputs.client_name }}' is already installed"
+          else
+            echo "📦 Helm release '${{ inputs.client_name }}' is NOT installed"
+          fi
+
+          # Add image tag overrides
           IMAGE_OVERRIDES=""
           if [ "${BUILD_IMAGES}" == "true" ] && [ -n "${BACKEND_TAG}" ] && [ -n "${FRONTEND_TAG}" ]; then
-            echo "📦 Image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
+            # Use newly built image tags
+            echo "📦 Using newly built image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
             IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG} --set backend-ws.image.tag=${BACKEND_TAG} --set frontend.image.tag=${FRONTEND_TAG}"
+          elif [ "${RELEASE_EXISTS}" == "false" ]; then
+            # Release not installed, use :latest tags
+            echo "📦 Using :latest tags for initial installation"
+            IMAGE_OVERRIDES="--set backend-api.image.tag=latest --set backend-ws.image.tag=latest --set frontend.image.tag=latest"
           fi
 
           echo "📊 Running Helm diff..."
@@ -351,11 +379,25 @@ jobs:
             VALUES_FLAGS="$VALUES_FLAGS --values $file"
           done
 
-          # Add image tag overrides if we built new images
+          # Check if Helm release is installed
+          RELEASE_EXISTS=false
+          if helm list -n ${{ inputs.client_name }}-${{ inputs.environment_type }} | grep -q "^${{ inputs.client_name }}\s"; then
+            RELEASE_EXISTS=true
+            echo "📦 Helm release '${{ inputs.client_name }}' is already installed"
+          else
+            echo "📦 Helm release '${{ inputs.client_name }}' is NOT installed"
+          fi
+
+          # Add image tag overrides
           IMAGE_OVERRIDES=""
           if [ "${BUILD_IMAGES}" == "true" ] && [ -n "${BACKEND_TAG}" ] && [ -n "${FRONTEND_TAG}" ]; then
-            echo "📦 Image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
+            # Use newly built image tags
+            echo "📦 Using newly built image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
             IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG} --set backend-ws.image.tag=${BACKEND_TAG} --set frontend.image.tag=${FRONTEND_TAG}"
+          elif [ "${RELEASE_EXISTS}" == "false" ]; then
+            # Release not installed, use :latest tags
+            echo "📦 Using :latest tags for initial installation"
+            IMAGE_OVERRIDES="--set backend-api.image.tag=latest --set backend-ws.image.tag=latest --set frontend.image.tag=latest"
           fi
 
           echo "🚀 Deploying Helm release..."
