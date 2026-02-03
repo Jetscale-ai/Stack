@@ -10,7 +10,7 @@ data:
   JETSCALE_HOST: "0.0.0.0"
   JETSCALE_PORT: "8000"
   JETSCALE_DEBUG: "false"
-  JETSCALE_ENVIRONMENT: "{{ .Values.appConfigMap.environment | default \"RELEASE\" }}"
+  JETSCALE_ENVIRONMENT: {{ .Values.appConfigMap.environment | default "RELEASE" }}
 
   # Database Configuration (External Secrets will provide missing values)
   JETSCALE_DB_PORT: "5432"
