@@ -2,7 +2,6 @@
 # LIVE ENVIRONMENT (EKS) — demo.jetscale.ai
 # ==========================================================
 global:
-  # Align with Jetscale-IaC `clients/variables/jetscale.tfvars`
   env: "demo"
   client_name: "jetscale"
 

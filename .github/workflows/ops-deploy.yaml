@@ -12,7 +12,7 @@ on:
           - staging
           - live
       client_name:
-        description: 'Client name (e.g., jetscale, console)'
+        description: 'Client name (e.g., jetscale)'
         required: true
         default: jetscale
         type: string
@@ -284,7 +284,20 @@ jobs:
             # Use newly built image tags
             echo "📦 Using newly built image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
             IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG} --set backend-ws.image.tag=${BACKEND_TAG} --set frontend.image.tag=${FRONTEND_TAG}"
-          elif [ "${RELEASE_EXISTS}" == "false" ]; then
+          elif [ "${RELEASE_EXISTS}" == "true" ]; then
+            # Release exists, get current deployed image tags
+            echo "📦 Getting current deployed image tags from existing release..."
+            CURRENT_BACKEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '."backend-api".image.tag // empty')
+            CURRENT_FRONTEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '.frontend.image.tag // empty')
+            
+            if [ -n "${CURRENT_BACKEND_TAG}" ] && [ -n "${CURRENT_FRONTEND_TAG}" ]; then
+              echo "📦 Using current deployed tags: backend=${CURRENT_BACKEND_TAG} frontend=${CURRENT_FRONTEND_TAG}"
+              IMAGE_OVERRIDES="--set backend-api.image.tag=${CURRENT_BACKEND_TAG} --set backend-ws.image.tag=${CURRENT_BACKEND_TAG} --set frontend.image.tag=${CURRENT_FRONTEND_TAG}"
+            else
+              echo "⚠️ Could not retrieve current image tags, using :latest as fallback"
+              IMAGE_OVERRIDES="--set backend-api.image.tag=latest --set backend-ws.image.tag=latest --set frontend.image.tag=latest"
+            fi
+          else
             # Release not installed, use :latest tags
             echo "📦 Using :latest tags for initial installation"
             IMAGE_OVERRIDES="--set backend-api.image.tag=latest --set backend-ws.image.tag=latest --set frontend.image.tag=latest"
@@ -394,7 +407,20 @@ jobs:
             # Use newly built image tags
             echo "📦 Using newly built image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
             IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG} --set backend-ws.image.tag=${BACKEND_TAG} --set frontend.image.tag=${FRONTEND_TAG}"
-          elif [ "${RELEASE_EXISTS}" == "false" ]; then
+          elif [ "${RELEASE_EXISTS}" == "true" ]; then
+            # Release exists, get current deployed image tags
+            echo "📦 Getting current deployed image tags from existing release..."
+            CURRENT_BACKEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '."backend-api".image.tag // empty')
+            CURRENT_FRONTEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '.frontend.image.tag // empty')
+            
+            if [ -n "${CURRENT_BACKEND_TAG}" ] && [ -n "${CURRENT_FRONTEND_TAG}" ]; then
+              echo "📦 Using current deployed tags: backend=${CURRENT_BACKEND_TAG} frontend=${CURRENT_FRONTEND_TAG}"
+              IMAGE_OVERRIDES="--set backend-api.image.tag=${CURRENT_BACKEND_TAG} --set backend-ws.image.tag=${CURRENT_BACKEND_TAG} --set frontend.image.tag=${CURRENT_FRONTEND_TAG}"
+            else
+              echo "⚠️ Could not retrieve current image tags, using :latest as fallback"
+              IMAGE_OVERRIDES="--set backend-api.image.tag=latest --set backend-ws.image.tag=latest --set frontend.image.tag=latest"
+            fi
+          else
             # Release not installed, use :latest tags
             echo "📦 Using :latest tags for initial installation"
             IMAGE_OVERRIDES="--set backend-api.image.tag=latest --set backend-ws.image.tag=latest --set frontend.image.tag=latest"
