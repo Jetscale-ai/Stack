@@ -7,7 +7,7 @@ global:
 backend-api:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/link4-staging-backend
-    # tag: set by workflow via --set when build_images=true or unchanged (null) by default
+    tag: staging-link4-20260203-200617-d87bd06
   serviceAccount:
     create: false
     name: "link4-service-account"
@@ -15,7 +15,7 @@ backend-api:
 backend-ws:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/link4-staging-backend
-    # tag: set by workflow via --set when build_images=true or unchanged (null) by default
+    tag: staging-link4-20260203-200617-d87bd06
   serviceAccount:
     create: false
     name: "link4-service-account"
@@ -23,7 +23,7 @@ backend-ws:
 frontend:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/link4-staging-frontend
-    # tag: set by workflow via --set when build_images=true or unchanged (null) by default
+    tag: staging-link4-20260203-200617-65f9e7b
 
 ingress:
   annotations:
