@@ -121,14 +121,14 @@ backend-api:
           cpu: "500m"
     generate-from-discovery:
       schedule: "30 3 * * *"
-      activeDeadlineSeconds: 1800
+      activeDeadlineSeconds: 3600
       command: ["python3", "jobs/aws/generate_custom_reco_from_discovery.py"]
       resources:
         requests:
-          memory: "512Mi"
+          memory: "1Gi"
           cpu: "200m"
         limits:
-          memory: "1Gi"
+          memory: "2Gi"
           cpu: "500m"
     pull-ce:
       schedule: "45 3 * * *"
