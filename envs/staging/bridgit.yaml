@@ -7,7 +7,7 @@ global:
 backend-api:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-backend
-    # tag: set by workflow via --set when build_images=true or unchanged (null) by default
+    # tag: set by workflow via --set when build_images=true or unchanged if not
   serviceAccount:
     create: false
     name: "bridgit-service-account"
@@ -15,7 +15,7 @@ backend-api:
 backend-ws:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-backend
-    # tag: set by workflow via --set when build_images=true or unchanged (null) by default
+    # tag: set by workflow via --set when build_images=true or unchanged if not
   serviceAccount:
     create: false
     name: "bridgit-service-account"
@@ -23,7 +23,7 @@ backend-ws:
 frontend:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-frontend
-    # tag: set by workflow via --set when build_images=true or unchanged (null) by default
+    # tag: set by workflow via --set when build_images=true or unchanged if not
 
 ingress:
   annotations:
