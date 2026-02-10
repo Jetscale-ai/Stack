@@ -29,4 +29,4 @@ ingress:
   annotations:
     external-dns.alpha.kubernetes.io/hostname: "link4.staging.jetscale.ai"
   hosts:
-    link4.staging.jetscale.ai:
+    link4.staging.jetscale.ai: []
