@@ -2,6 +2,10 @@ global:
   client_name: "jetscale-demo"
   env: "staging"
 
+externalSecret:
+  app:
+    secretStoreName: jetscale-secrets-store-staging
+
 backend-api:
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-demo-staging-backend
