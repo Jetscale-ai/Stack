@@ -22,4 +22,5 @@ ingress:
     # ExternalDNS (explicit intent)
     external-dns.alpha.kubernetes.io/hostname: "jetscale.staging.jetscale.ai"
   hosts:
-    jetscale.staging.jetscale.ai:
+    # Explicit empty list: use `envs/aws.yaml` `ingressHostDefaultPaths`
+    jetscale.staging.jetscale.ai: []

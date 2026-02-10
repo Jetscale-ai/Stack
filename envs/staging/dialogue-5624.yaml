@@ -29,4 +29,5 @@ ingress:
   annotations:
     external-dns.alpha.kubernetes.io/hostname: "dialogue-5624.staging.jetscale.ai"
   hosts:
-    dialogue-5624.staging.jetscale.ai:
+    # Explicit empty list: use `envs/aws.yaml` `ingressHostDefaultPaths`
+    dialogue-5624.staging.jetscale.ai: []
