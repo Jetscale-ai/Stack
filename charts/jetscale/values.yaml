@@ -13,6 +13,8 @@ appConfigMap:
   environment: RELEASE #DEBUG, RELEASE or DEBUG_RELEASE
 
 externalSecret:
+  # Override constructed AWS Secret prefix
+  # awsSecretPrefix: 
   app:
     enabled: true
     # Override constructed secret store name

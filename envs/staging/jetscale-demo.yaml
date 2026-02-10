@@ -5,6 +5,7 @@ global:
 externalSecret:
   app:
     secretStoreName: jetscale-secrets-store-staging
+  awsSecretPrefix: jetscale-demo-staging
 
 backend-api:
   image:
