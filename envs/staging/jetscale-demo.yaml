@@ -1,5 +1,5 @@
 global:
-  client_name: "jetscale"
+  client_name: "jetscale-demo"
   env: "staging"
 
 backend-api:
