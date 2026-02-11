@@ -1,7 +1,6 @@
 global:
   client_name: "jetscale"
   tenant: "demo"
-  env: staging
 
 # externalSecret:
 #   app:

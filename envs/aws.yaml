@@ -1,6 +1,7 @@
 ## AWS Specific override
 
 ingress:
+  enabled: true
   className: alb
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
