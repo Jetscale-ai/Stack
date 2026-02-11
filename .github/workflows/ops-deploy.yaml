@@ -271,7 +271,7 @@ jobs:
 
           # Check if Helm release is installed
           RELEASE_EXISTS=false
-          if helm list -n ${{ inputs.client_name }}-${{ inputs.environment_type }} | grep -q "^${{ inputs.client_name }}\s"; then
+          if helm list -n ${{ inputs.client_name }} | grep -q "^${{ inputs.client_name }}\s"; then
             RELEASE_EXISTS=true
             echo "📦 Helm release '${{ inputs.client_name }}' is already installed"
           else
@@ -287,8 +287,8 @@ jobs:
           elif [ "${RELEASE_EXISTS}" == "true" ]; then
             # Release exists, get current deployed image tags
             echo "📦 Getting current deployed image tags from existing release..."
-            CURRENT_BACKEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '."backend-api".image.tag // empty')
-            CURRENT_FRONTEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '.frontend.image.tag // empty')
+            CURRENT_BACKEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }} -o json | jq -r '."backend-api".image.tag // empty')
+            CURRENT_FRONTEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }} -o json | jq -r '.frontend.image.tag // empty')
             
             if [ -n "${CURRENT_BACKEND_TAG}" ] && [ -n "${CURRENT_FRONTEND_TAG}" ]; then
               echo "📦 Using current deployed tags: backend=${CURRENT_BACKEND_TAG} frontend=${CURRENT_FRONTEND_TAG}"
@@ -305,13 +305,13 @@ jobs:
 
           echo "📊 Running Helm diff..."
           echo "Release: ${{ inputs.client_name }}"
-          echo "Namespace: ${{ inputs.client_name }}-${{ inputs.environment_type }}"
+          echo "Namespace: ${{ inputs.client_name }}"
           echo "Values files: ${{ needs.validate.outputs.values_files }}"
 
           # Run diff and capture output
           set +e
           helm diff upgrade ${{ inputs.client_name }} ./charts/jetscale \
-            --namespace ${{ inputs.client_name }}-${{ inputs.environment_type }} \
+            --namespace ${{ inputs.client_name }} \
             --allow-unreleased \
             $VALUES_FLAGS \
             $IMAGE_OVERRIDES \
@@ -394,7 +394,7 @@ jobs:
 
           # Check if Helm release is installed
           RELEASE_EXISTS=false
-          if helm list -n ${{ inputs.client_name }}-${{ inputs.environment_type }} | grep -q "^${{ inputs.client_name }}\s"; then
+          if helm list -n ${{ inputs.client_name }} | grep -q "^${{ inputs.client_name }}\s"; then
             RELEASE_EXISTS=true
             echo "📦 Helm release '${{ inputs.client_name }}' is already installed"
           else
@@ -410,8 +410,8 @@ jobs:
           elif [ "${RELEASE_EXISTS}" == "true" ]; then
             # Release exists, get current deployed image tags
             echo "📦 Getting current deployed image tags from existing release..."
-            CURRENT_BACKEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '."backend-api".image.tag // empty')
-            CURRENT_FRONTEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '.frontend.image.tag // empty')
+            CURRENT_BACKEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }} -o json | jq -r '."backend-api".image.tag // empty')
+            CURRENT_FRONTEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }} -o json | jq -r '.frontend.image.tag // empty')
             
             if [ -n "${CURRENT_BACKEND_TAG}" ] && [ -n "${CURRENT_FRONTEND_TAG}" ]; then
               echo "📦 Using current deployed tags: backend=${CURRENT_BACKEND_TAG} frontend=${CURRENT_FRONTEND_TAG}"
@@ -428,11 +428,10 @@ jobs:
 
           echo "🚀 Deploying Helm release..."
           echo "Release: ${{ inputs.client_name }}"
-          echo "Namespace: ${{ inputs.client_name }}-${{ inputs.environment_type }}"
+          echo "Namespace: ${{ inputs.client_name }}"
 
           helm upgrade --install ${{ inputs.client_name }} ./charts/jetscale \
-            --namespace ${{ inputs.client_name }}-${{ inputs.environment_type }} \
-            --create-namespace \
+            --namespace ${{ inputs.client_name }} \
             $VALUES_FLAGS \
             $IMAGE_OVERRIDES \
             --wait \
