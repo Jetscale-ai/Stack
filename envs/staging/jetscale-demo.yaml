@@ -9,11 +9,15 @@ global:
 #   awsSecretPrefix: jetscale-demo-staging
 
 backend-api:
+  serviceAccount:
+    name: jetscale-demo-service-account #TODO
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-demo-staging-backend
     # tag: set by workflow via --set when build_images=true or unchanged if not
 
 backend-ws:
+  serviceAccount:
+    name: jetscale-demo-service-account #TODO
   image:
     repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/jetscale-demo-staging-backend
     # tag: set by workflow via --set when build_images=true or unchanged if not
