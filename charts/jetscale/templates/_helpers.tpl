@@ -31,6 +31,13 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{/*
+Create prefix for AWS resources reference
+*/}}
+{{- define "jetscale.aws-name-prefix" -}}
+{{- printf "%s-%s" $.Release.Name .Values.global.env }}
+{{- end }}
+
+{{/*
 Common labels
 */}}
 {{- define "jetscale.labels" -}}
