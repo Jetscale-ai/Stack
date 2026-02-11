@@ -10,10 +10,16 @@ global:
 
 appConfigMap:
   enabled: true
+  environment: RELEASE #DEBUG, RELEASE or DEBUG_RELEASE
+
 externalSecret:
+  # Override constructed AWS Secret prefix
+  # awsSecretPrefix: 
   app:
     enabled: true
-
+    # Override constructed secret store name
+    # secretStoreName:
+    
 # ----------------------------------------------------------
 # 1. CORE SERVICES
 # ----------------------------------------------------------
@@ -119,14 +125,14 @@ backend-api:
           cpu: "500m"
     generate-from-discovery:
       schedule: "30 3 * * *"
-      activeDeadlineSeconds: 1800
+      activeDeadlineSeconds: 3600
       command: ["python3", "jobs/aws/generate_custom_reco_from_discovery.py"]
       resources:
         requests:
-          memory: "512Mi"
+          memory: "1Gi"
           cpu: "200m"
         limits:
-          memory: "1Gi"
+          memory: "2Gi"
           cpu: "500m"
     pull-ce:
       schedule: "45 3 * * *"
@@ -225,7 +231,7 @@ redis:
 # ----------------------------------------------------------
 # This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
-  enabled: true
+  enabled: false
   className: ""
   annotations: {}
   # kubernetes.io/ingress.class: nginx

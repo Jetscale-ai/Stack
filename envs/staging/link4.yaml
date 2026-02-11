@@ -1,33 +1,32 @@
 global:
-  client_name: "bridgit"
+  client_name: "link4"
   env: "staging"
 
 # Images are built and set dynamically by the workflow when build_images=true
 # Repository paths follow the pattern: {client}-{env}-backend/frontend
 backend-api:
   image:
-    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-backend
+    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/link4-staging-backend
     # tag: set by workflow via --set when build_images=true or unchanged if not
   serviceAccount:
     create: false
-    name: "bridgit-service-account"
+    name: "link4-service-account"
 
 backend-ws:
   image:
-    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-backend
+    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/link4-staging-backend
     # tag: set by workflow via --set when build_images=true or unchanged if not
   serviceAccount:
     create: false
-    name: "bridgit-service-account"
+    name: "link4-service-account"
 
 frontend:
   image:
-    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/bridgit-staging-frontend
+    repository: 081373342681.dkr.ecr.us-east-1.amazonaws.com/link4-staging-frontend
     # tag: set by workflow via --set when build_images=true or unchanged if not
 
 ingress:
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: "bridgit.staging.jetscale.ai"
+    external-dns.alpha.kubernetes.io/hostname: "link4.staging.jetscale.ai"
   hosts:
-    # Explicit empty list: use `envs/aws.yaml` `ingressHostDefaultPaths`
-    bridgit.staging.jetscale.ai: []
+    link4.staging.jetscale.ai: []

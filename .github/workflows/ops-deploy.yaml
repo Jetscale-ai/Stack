@@ -12,7 +12,7 @@ on:
           - staging
           - live
       client_name:
-        description: 'Client name (e.g., jetscale, console)'
+        description: 'Client name (e.g., jetscale)'
         required: true
         default: jetscale
         type: string
@@ -61,7 +61,7 @@ jobs:
     name: Build Images
     if: inputs.build_images == true
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment_type }}-${{ inputs.client_name }}
+    environment: ${{ inputs.environment_type }}
     outputs:
       backend_tag: ${{ steps.build.outputs.backend_tag }}
       frontend_tag: ${{ steps.build.outputs.frontend_tag }}
@@ -69,8 +69,7 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type
-            }}-github-actions-role
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-diff-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-build-images
 
@@ -122,18 +121,32 @@ jobs:
           BACKEND_REPO="${ECR_REGISTRY}/${CLIENT}-${ENV_TYPE}-backend"
           FRONTEND_REPO="${ECR_REGISTRY}/${CLIENT}-${ENV_TYPE}-frontend"
 
+          # Build backend with appropriate tags
+          BACKEND_TAGS="-t ${BACKEND_REPO}:${BACKEND_TAG}"
+          if [ "${{ inputs.backend_ref }}" == "main" ]; then
+            BACKEND_TAGS="${BACKEND_TAGS} -t ${BACKEND_REPO}:latest"
+            echo "🏷️  Backend will be tagged as :latest (main branch)"
+          fi
+
           echo "🔨 Building backend image: ${BACKEND_REPO}:${BACKEND_TAG}"
           docker buildx build \
             --platform linux/amd64 \
             --push \
-            -t "${BACKEND_REPO}:${BACKEND_TAG}" \
+            ${BACKEND_TAGS} \
             ./backend
+
+          # Build frontend with appropriate tags
+          FRONTEND_TAGS="-t ${FRONTEND_REPO}:${FRONTEND_TAG}"
+          if [ "${{ inputs.frontend_ref }}" == "main" ]; then
+            FRONTEND_TAGS="${FRONTEND_TAGS} -t ${FRONTEND_REPO}:latest"
+            echo "🏷️  Frontend will be tagged as :latest (main branch)"
+          fi
 
           echo "🔨 Building frontend image: ${FRONTEND_REPO}:${FRONTEND_TAG}"
           docker buildx build \
             --platform linux/amd64 \
             --push \
-            -t "${FRONTEND_REPO}:${FRONTEND_TAG}" \
+            ${FRONTEND_TAGS} \
             ./frontend
 
           echo "backend_tag=${BACKEND_TAG}" >> $GITHUB_OUTPUT
@@ -142,7 +155,7 @@ jobs:
           echo "✅ Images built and pushed:"
           echo "  Backend:  ${BACKEND_REPO}:${BACKEND_TAG}"
           echo "  Frontend: ${FRONTEND_REPO}:${FRONTEND_TAG}"
-
+      
   # ============================================================================
   # VALIDATE CONFIGURATION
   # ============================================================================
@@ -207,8 +220,7 @@ jobs:
         with:
           # NOTE: This currently uses the deploy role. If we later add a read-only IAM role for diff,
           # switch this to that role (least-privilege).
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type
-            }}-github-diff-actions-role
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-diff-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-helm-diff
 
@@ -257,11 +269,38 @@ jobs:
             VALUES_FLAGS="$VALUES_FLAGS --values $file"
           done
 
-          # Add image tag overrides if we built new images
+          # Check if Helm release is installed
+          RELEASE_EXISTS=false
+          if helm list -n ${{ inputs.client_name }}-${{ inputs.environment_type }} | grep -q "^${{ inputs.client_name }}\s"; then
+            RELEASE_EXISTS=true
+            echo "📦 Helm release '${{ inputs.client_name }}' is already installed"
+          else
+            echo "📦 Helm release '${{ inputs.client_name }}' is NOT installed"
+          fi
+
+          # Add image tag overrides
           IMAGE_OVERRIDES=""
           if [ "${BUILD_IMAGES}" == "true" ] && [ -n "${BACKEND_TAG}" ] && [ -n "${FRONTEND_TAG}" ]; then
-            echo "📦 Image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
+            # Use newly built image tags
+            echo "📦 Using newly built image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
             IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG} --set backend-ws.image.tag=${BACKEND_TAG} --set frontend.image.tag=${FRONTEND_TAG}"
+          elif [ "${RELEASE_EXISTS}" == "true" ]; then
+            # Release exists, get current deployed image tags
+            echo "📦 Getting current deployed image tags from existing release..."
+            CURRENT_BACKEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '."backend-api".image.tag // empty')
+            CURRENT_FRONTEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '.frontend.image.tag // empty')
+            
+            if [ -n "${CURRENT_BACKEND_TAG}" ] && [ -n "${CURRENT_FRONTEND_TAG}" ]; then
+              echo "📦 Using current deployed tags: backend=${CURRENT_BACKEND_TAG} frontend=${CURRENT_FRONTEND_TAG}"
+              IMAGE_OVERRIDES="--set backend-api.image.tag=${CURRENT_BACKEND_TAG} --set backend-ws.image.tag=${CURRENT_BACKEND_TAG} --set frontend.image.tag=${CURRENT_FRONTEND_TAG}"
+            else
+              echo "⚠️ Could not retrieve current image tags, using :latest as fallback"
+              IMAGE_OVERRIDES="--set backend-api.image.tag=latest --set backend-ws.image.tag=latest --set frontend.image.tag=latest"
+            fi
+          else
+            # Release not installed, use :latest tags
+            echo "📦 Using :latest tags for initial installation"
+            IMAGE_OVERRIDES="--set backend-api.image.tag=latest --set backend-ws.image.tag=latest --set frontend.image.tag=latest"
           fi
 
           echo "📊 Running Helm diff..."
@@ -311,8 +350,7 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type
-            }}-github-actions-role
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-helm-deploy
 
@@ -354,11 +392,38 @@ jobs:
             VALUES_FLAGS="$VALUES_FLAGS --values $file"
           done
 
-          # Add image tag overrides if we built new images
+          # Check if Helm release is installed
+          RELEASE_EXISTS=false
+          if helm list -n ${{ inputs.client_name }}-${{ inputs.environment_type }} | grep -q "^${{ inputs.client_name }}\s"; then
+            RELEASE_EXISTS=true
+            echo "📦 Helm release '${{ inputs.client_name }}' is already installed"
+          else
+            echo "📦 Helm release '${{ inputs.client_name }}' is NOT installed"
+          fi
+
+          # Add image tag overrides
           IMAGE_OVERRIDES=""
           if [ "${BUILD_IMAGES}" == "true" ] && [ -n "${BACKEND_TAG}" ] && [ -n "${FRONTEND_TAG}" ]; then
-            echo "📦 Image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
+            # Use newly built image tags
+            echo "📦 Using newly built image tags: backend=${BACKEND_TAG} frontend=${FRONTEND_TAG}"
             IMAGE_OVERRIDES="--set backend-api.image.tag=${BACKEND_TAG} --set backend-ws.image.tag=${BACKEND_TAG} --set frontend.image.tag=${FRONTEND_TAG}"
+          elif [ "${RELEASE_EXISTS}" == "true" ]; then
+            # Release exists, get current deployed image tags
+            echo "📦 Getting current deployed image tags from existing release..."
+            CURRENT_BACKEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '."backend-api".image.tag // empty')
+            CURRENT_FRONTEND_TAG=$(helm get values ${{ inputs.client_name }} -n ${{ inputs.client_name }}-${{ inputs.environment_type }} -o json | jq -r '.frontend.image.tag // empty')
+            
+            if [ -n "${CURRENT_BACKEND_TAG}" ] && [ -n "${CURRENT_FRONTEND_TAG}" ]; then
+              echo "📦 Using current deployed tags: backend=${CURRENT_BACKEND_TAG} frontend=${CURRENT_FRONTEND_TAG}"
+              IMAGE_OVERRIDES="--set backend-api.image.tag=${CURRENT_BACKEND_TAG} --set backend-ws.image.tag=${CURRENT_BACKEND_TAG} --set frontend.image.tag=${CURRENT_FRONTEND_TAG}"
+            else
+              echo "⚠️ Could not retrieve current image tags, using :latest as fallback"
+              IMAGE_OVERRIDES="--set backend-api.image.tag=latest --set backend-ws.image.tag=latest --set frontend.image.tag=latest"
+            fi
+          else
+            # Release not installed, use :latest tags
+            echo "📦 Using :latest tags for initial installation"
+            IMAGE_OVERRIDES="--set backend-api.image.tag=latest --set backend-ws.image.tag=latest --set frontend.image.tag=latest"
           fi
 
           echo "🚀 Deploying Helm release..."
@@ -371,8 +436,6 @@ jobs:
             $VALUES_FLAGS \
             $IMAGE_OVERRIDES \
             --wait \
-            --timeout 10m \
-            --atomic \
-            --cleanup-on-fail
+            --timeout 10m
 
           echo "✅ Deployment completed successfully"
