@@ -216,10 +216,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
-          # NOTE: This currently uses the deploy role. If we later add a read-only IAM role for diff,
-          # switch this to that role (least-privilege).
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-diff-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-helm-diff
