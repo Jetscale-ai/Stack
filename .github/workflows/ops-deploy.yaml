@@ -21,6 +21,11 @@ on:
         required: true
         default: staging #Put empty string once all app renamed (dep. IaC k8s resources)
         type: string
+      #Temp. until app are renamed or deploy multiple app in same NS
+      release_name:
+        required: false
+        description: Override Helm release name  - older naming = client_name
+        type: string
       cloud_provider:
         description: 'Cloud provider'
         required: true
@@ -265,6 +270,13 @@ jobs:
           BACKEND_TAG: ${{ needs.build-images.outputs.backend_tag }}
           FRONTEND_TAG: ${{ needs.build-images.outputs.frontend_tag }}
         run: |
+          # Determine release name
+          RELEASE_NAME="${{ inputs.release_name }}"
+          if [ -z "$RELEASE_NAME" ]; then
+            RELEASE_NAME="${{ inputs.client_name }}-${{ inputs.project_name }}"
+          fi
+          echo "Using release name: $RELEASE_NAME"
+
           # Build values flags from comma-separated list
           VALUES_FLAGS=""
           IFS=',' read -ra FILES <<< "${{ needs.validate.outputs.values_files }}"
@@ -274,11 +286,11 @@ jobs:
 
           # Check if Helm release is installed
           RELEASE_EXISTS=false
-          if helm list -n ${{ inputs.client_name }}-${{ inputs.project_name }} | grep -q "^${{ inputs.client_name }}-${{ inputs.project_name }}\s"; then
+          if helm list -n ${{ inputs.client_name }}-${{ inputs.project_name }} | grep -q "^${RELEASE_NAME}\s"; then
             RELEASE_EXISTS=true
-            echo "📦 Helm release '${{ inputs.client_name }}-${{ inputs.project_name }}' is already installed"
+            echo "📦 Helm release '${RELEASE_NAME}' is already installed"
           else
-            echo "📦 Helm release '${{ inputs.client_name }}-${{ inputs.project_name }}' is NOT installed"
+            echo "📦 Helm release '${RELEASE_NAME}' is NOT installed"
           fi
 
           # Add image tag overrides
@@ -290,8 +302,8 @@ jobs:
           elif [ "${RELEASE_EXISTS}" == "true" ]; then
             # Release exists, get current deployed image tags
             echo "📦 Getting current deployed image tags from existing release..."
-            CURRENT_BACKEND_TAG=$(helm get values ${{ inputs.client_name }}-${{ inputs.project_name }} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '."backend-api".image.tag // empty')
-            CURRENT_FRONTEND_TAG=$(helm get values ${{ inputs.client_name }}-${{ inputs.project_name }} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '.frontend.image.tag // empty')
+            CURRENT_BACKEND_TAG=$(helm get values ${RELEASE_NAME} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '."backend-api".image.tag // empty')
+            CURRENT_FRONTEND_TAG=$(helm get values ${RELEASE_NAME} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '.frontend.image.tag // empty')
             
             if [ -n "${CURRENT_BACKEND_TAG}" ] && [ -n "${CURRENT_FRONTEND_TAG}" ]; then
               echo "📦 Using current deployed tags: backend=${CURRENT_BACKEND_TAG} frontend=${CURRENT_FRONTEND_TAG}"
@@ -307,13 +319,13 @@ jobs:
           fi
 
           echo "📊 Running Helm diff..."
-          echo "Release: ${{ inputs.client_name }}-${{ inputs.project_name }}"
+          echo "Release: ${RELEASE_NAME}"
           echo "Namespace: ${{ inputs.client_name }}-${{ inputs.project_name }}"
           echo "Values files: ${{ needs.validate.outputs.values_files }}"
 
           # Run diff and capture output
           set +e
-          helm diff upgrade ${{ inputs.client_name }}-${{ inputs.project_name }} ./charts/jetscale \
+          helm diff upgrade ${RELEASE_NAME} ./charts/jetscale \
             --namespace ${{ inputs.client_name }}-${{ inputs.project_name }} \
             --allow-unreleased \
             $VALUES_FLAGS \
@@ -388,6 +400,13 @@ jobs:
           BACKEND_TAG: ${{ needs.build-images.outputs.backend_tag }}
           FRONTEND_TAG: ${{ needs.build-images.outputs.frontend_tag }}
         run: |
+          # Determine release name
+          RELEASE_NAME="${{ inputs.release_name }}"
+          if [ -z "$RELEASE_NAME" ]; then
+            RELEASE_NAME="${{ inputs.client_name }}-${{ inputs.project_name }}"
+          fi
+          echo "Using release name: $RELEASE_NAME"
+
           # Build values flags from comma-separated list
           VALUES_FLAGS=""
           IFS=',' read -ra FILES <<< "${{ needs.validate.outputs.values_files }}"
@@ -397,11 +416,11 @@ jobs:
 
           # Check if Helm release is installed
           RELEASE_EXISTS=false
-          if helm list -n ${{ inputs.client_name }}-${{ inputs.project_name }} | grep -q "^${{ inputs.client_name }}-${{ inputs.project_name }}\s"; then
+          if helm list -n ${{ inputs.client_name }}-${{ inputs.project_name }} | grep -q "^${RELEASE_NAME}\s"; then
             RELEASE_EXISTS=true
-            echo "📦 Helm release '${{ inputs.client_name }}-${{ inputs.project_name }}' is already installed"
+            echo "📦 Helm release '${RELEASE_NAME}' is already installed"
           else
-            echo "📦 Helm release '${{ inputs.client_name }}-${{ inputs.project_name }}' is NOT installed"
+            echo "📦 Helm release '${RELEASE_NAME}' is NOT installed"
           fi
 
           # Add image tag overrides
@@ -413,8 +432,8 @@ jobs:
           elif [ "${RELEASE_EXISTS}" == "true" ]; then
             # Release exists, get current deployed image tags
             echo "📦 Getting current deployed image tags from existing release..."
-            CURRENT_BACKEND_TAG=$(helm get values ${{ inputs.client_name }}-${{ inputs.project_name }} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '."backend-api".image.tag // empty')
-            CURRENT_FRONTEND_TAG=$(helm get values ${{ inputs.client_name }}-${{ inputs.project_name }} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '.frontend.image.tag // empty')
+            CURRENT_BACKEND_TAG=$(helm get values ${RELEASE_NAME} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '."backend-api".image.tag // empty')
+            CURRENT_FRONTEND_TAG=$(helm get values ${RELEASE_NAME} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '.frontend.image.tag // empty')
             
             if [ -n "${CURRENT_BACKEND_TAG}" ] && [ -n "${CURRENT_FRONTEND_TAG}" ]; then
               echo "📦 Using current deployed tags: backend=${CURRENT_BACKEND_TAG} frontend=${CURRENT_FRONTEND_TAG}"
@@ -430,10 +449,10 @@ jobs:
           fi
 
           echo "🚀 Deploying Helm release..."
-          echo "Release: ${{ inputs.client_name }}-${{ inputs.project_name }}"
+          echo "Release: ${RELEASE_NAME}"
           echo "Namespace: ${{ inputs.client_name }}-${{ inputs.project_name }}"
 
-          helm upgrade --install ${{ inputs.client_name }}-${{ inputs.project_name }} ./charts/jetscale \
+          helm upgrade --install ${RELEASE_NAME} ./charts/jetscale \
             --namespace ${{ inputs.client_name }}-${{ inputs.project_name }} \
             $VALUES_FLAGS \
             $IMAGE_OVERRIDES \
