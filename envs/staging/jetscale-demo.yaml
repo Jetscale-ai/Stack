@@ -1,6 +1,6 @@
 global:
   client_name: "jetscale"
-  tenant: "demo"
+  project_name: "demo"
 
 # externalSecret:
 #   app:

@@ -2,11 +2,11 @@
 # JETSCALE STACK - DEFAULT INTERFACE
 # ==========================================================
 global:
-  env: "production"
+  env: "prod"
   # Used for parity with Jetscale-IaC naming conventions and external entrypoints.
   # Example: "jetscale" (live), "pr-123" (ephemeral)
   client_name: ""
-  # tenant_id: ""
+  project_name: ""
 
 appConfigMap:
   enabled: true

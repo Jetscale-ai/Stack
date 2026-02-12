@@ -1,6 +1,5 @@
 global:
   client_name: "bridgit"
-  env: "staging"
 
 # Images are built and set dynamically by the workflow when build_images=true
 # Repository paths follow the pattern: {client}-{env}-backend/frontend
