@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       environment_type:
-        description: 'Environment type (staging, prod)'
+        description: 'Environment type (ex. staging, prod) - Used for AWS/GH env.'
         required: true
         default: staging
         type: choice
@@ -19,6 +19,7 @@ on:
       project_name:
         description: 'Project name (e.g., demo1)'
         required: true
+        default: staging #Put empty string once all app renamed (dep. IaC k8s resources)
         type: string
       cloud_provider:
         description: 'Cloud provider'
