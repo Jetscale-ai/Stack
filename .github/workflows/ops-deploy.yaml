@@ -78,7 +78,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Checkout Backend
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           repository: Jetscale-ai/Backend
           ref: ${{ inputs.backend_ref }}
@@ -86,7 +86,7 @@ jobs:
           path: backend
 
       - name: Checkout Frontend
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           repository: Jetscale-ai/Frontend
           ref: ${{ inputs.frontend_ref }}
@@ -166,7 +166,7 @@ jobs:
       values_files: ${{ steps.build_values.outputs.files }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Build values file list
         id: build_values
@@ -213,7 +213,7 @@ jobs:
     environment: ${{ inputs.environment_type }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
@@ -223,7 +223,7 @@ jobs:
           role-session-name: github-actions-helm-diff
 
       - name: Setup Helm
-        uses: azure/setup-helm@v6
+        uses: azure/setup-helm@v4
         with:
           version: 'v3.18.3'
 
@@ -343,7 +343,7 @@ jobs:
     environment: ${{ inputs.environment_type }}-${{ inputs.client_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
@@ -353,7 +353,7 @@ jobs:
           role-session-name: github-actions-helm-deploy
 
       - name: Setup Helm
-        uses: azure/setup-helm@v6
+        uses: azure/setup-helm@v4
         with:
           version: 'v3.18.3'
 
