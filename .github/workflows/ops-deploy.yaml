@@ -4,17 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       environment_type:
-        description: 'Environment type (staging, live)'
+        description: 'Environment type (staging, prod)'
         required: true
         default: staging
         type: choice
         options:
           - staging
-          - live
+          - prod
       client_name:
         description: 'Client name (e.g., jetscale)'
         required: true
         default: jetscale
+        type: string
+      project_name:
+        description: 'Project name (e.g., demo1)'
+        required: true
         type: string
       cloud_provider:
         description: 'Cloud provider'
@@ -303,13 +307,13 @@ jobs:
 
           echo "📊 Running Helm diff..."
           echo "Release: ${{ inputs.client_name }}"
-          echo "Namespace: ${{ inputs.client_name }}"
+          echo "Namespace: ${{ inputs.client_name }}-${{ inputs.project_name }}"
           echo "Values files: ${{ needs.validate.outputs.values_files }}"
 
           # Run diff and capture output
           set +e
-          helm diff upgrade ${{ inputs.client_name }} ./charts/jetscale \
-            --namespace ${{ inputs.client_name }} \
+          helm diff upgrade ${{ inputs.client_name }}-${{ inputs.project_name }} ./charts/jetscale \
+            --namespace ${{ inputs.client_name }}-${{ inputs.project_name }} \
             --allow-unreleased \
             $VALUES_FLAGS \
             $IMAGE_OVERRIDES \
@@ -428,8 +432,8 @@ jobs:
           echo "Release: ${{ inputs.client_name }}"
           echo "Namespace: ${{ inputs.client_name }}"
 
-          helm upgrade --install ${{ inputs.client_name }} ./charts/jetscale \
-            --namespace ${{ inputs.client_name }} \
+          helm upgrade --install ${{ inputs.client_name }}-${{ inputs.project_name }} ./charts/jetscale \
+            --namespace ${{ inputs.client_name }}-${{ inputs.project_name }} \
             $VALUES_FLAGS \
             $IMAGE_OVERRIDES \
             --wait \
