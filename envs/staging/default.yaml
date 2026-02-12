@@ -3,6 +3,18 @@
 global:
   env: "staging"
 
+backend-api:
+  image:
+    pullPolicy: Always #Since rebuilt from main could reuse latest flag
+
+backend-ws:
+  image:
+    pullPolicy: Always #Since rebuilt from main could reuse latest flag
+
+frontend:
+  image:
+    pullPolicy: Always #Since rebuilt from main could reuse latest flag
+
 ingress:
   annotations:
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:081373342681:certificate/ac554daa-f015-41c0-88f6-c41b147d53c6
