@@ -84,8 +84,8 @@ Frontend URL used for email links, etc.
 {{- define "jetscale.frontendUrl" -}}
 {{- $hosts := keys (default dict .Values.ingress.hosts) | sortAlpha -}}
 {{- if gt (len $hosts) 0 -}}
-{{- printf "https://%s/" (index $hosts 0) -}}
+{{- printf "https://%s" (index $hosts 0) -}}
 {{- else -}}
-http://localhost:3000/
+http://localhost:3000
 {{- end -}}
 {{- end -}}
