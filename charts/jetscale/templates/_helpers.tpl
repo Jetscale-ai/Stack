@@ -32,9 +32,15 @@ Create chart name and version as used by the chart label.
 
 {{/*
 Create prefix for AWS resources reference
+Default: ${client_name}-${env} (e.g., jetscale-prod)
+Override with .Values.externalSecret.awsSecretPrefix
 */}}
 {{- define "jetscale.aws-name-prefix" -}}
-{{- printf "%s-%s" $.Release.Name .Values.global.env }}
+{{- if .Values.externalSecret.awsSecretPrefix }}
+{{- .Values.externalSecret.awsSecretPrefix }}
+{{- else }}
+{{- printf "%s-%s" .Values.global.client_name .Values.global.env }}
+{{- end }}
 {{- end }}
 
 {{/*

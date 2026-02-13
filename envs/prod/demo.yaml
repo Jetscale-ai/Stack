@@ -4,7 +4,29 @@
 global:
   client_name: "jetscale"
   project_name: "demo"
-  
+  env: "prod"
+
+# ----------------------------------------------------------
+# EXTERNAL SECRETS (Shared Cluster Architecture)
+# ----------------------------------------------------------
+# IaC creates cluster: jetscale-prod
+# Secrets path: jetscale-prod/...
+externalSecret:
+  enabled: true
+  awsRegion: "us-east-1"
+  # Cluster-level secrets path (matches IaC cluster name)
+  awsSecretPrefix: "jetscale-prod"
+  # IRSA role ARN from IaC output
+  irsaRoleArn: "arn:aws:iam::134051052096:role/jetscale-prod-external-secrets-role"
+  db:
+    enabled: true
+  redis:
+    enabled: false # ElastiCache not enabled for demo
+  common:
+    enabled: true
+  app:
+    enabled: false # No dynamic app config secret yet
+
 # 1. INFRA (Managed by Terraform in AWS)
 postgres:
   enabled: false

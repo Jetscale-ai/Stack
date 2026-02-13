@@ -79,7 +79,8 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-diff-actions-role
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type
+            }}-github-diff-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-build-images
 
@@ -165,7 +166,7 @@ jobs:
           echo "✅ Images built and pushed:"
           echo "  Backend:  ${BACKEND_REPO}:${BACKEND_TAG}"
           echo "  Frontend: ${FRONTEND_REPO}:${FRONTEND_TAG}"
-      
+
   # ============================================================================
   # VALIDATE CONFIGURATION
   # ============================================================================
@@ -228,7 +229,8 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-diff-actions-role
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type
+            }}-github-diff-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-helm-diff
 
@@ -304,7 +306,7 @@ jobs:
             echo "📦 Getting current deployed image tags from existing release..."
             CURRENT_BACKEND_TAG=$(helm get values ${RELEASE_NAME} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '."backend-api".image.tag // empty')
             CURRENT_FRONTEND_TAG=$(helm get values ${RELEASE_NAME} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '.frontend.image.tag // empty')
-            
+
             if [ -n "${CURRENT_BACKEND_TAG}" ] && [ -n "${CURRENT_FRONTEND_TAG}" ]; then
               echo "📦 Using current deployed tags: backend=${CURRENT_BACKEND_TAG} frontend=${CURRENT_FRONTEND_TAG}"
               IMAGE_OVERRIDES="--set backend-api.image.tag=${CURRENT_BACKEND_TAG} --set backend-ws.image.tag=${CURRENT_BACKEND_TAG} --set frontend.image.tag=${CURRENT_FRONTEND_TAG}"
@@ -365,7 +367,8 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type }}-github-actions-role
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ inputs.client_name }}-${{ inputs.environment_type
+            }}-github-actions-role
           aws-region: ${{ inputs.aws_region }}
           role-session-name: github-actions-helm-deploy
 
@@ -434,7 +437,7 @@ jobs:
             echo "📦 Getting current deployed image tags from existing release..."
             CURRENT_BACKEND_TAG=$(helm get values ${RELEASE_NAME} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '."backend-api".image.tag // empty')
             CURRENT_FRONTEND_TAG=$(helm get values ${RELEASE_NAME} -n ${{ inputs.client_name }}-${{ inputs.project_name }} -o json | jq -r '.frontend.image.tag // empty')
-            
+
             if [ -n "${CURRENT_BACKEND_TAG}" ] && [ -n "${CURRENT_FRONTEND_TAG}" ]; then
               echo "📦 Using current deployed tags: backend=${CURRENT_BACKEND_TAG} frontend=${CURRENT_FRONTEND_TAG}"
               IMAGE_OVERRIDES="--set backend-api.image.tag=${CURRENT_BACKEND_TAG} --set backend-ws.image.tag=${CURRENT_BACKEND_TAG} --set frontend.image.tag=${CURRENT_FRONTEND_TAG}"
@@ -454,6 +457,7 @@ jobs:
 
           helm upgrade --install ${RELEASE_NAME} ./charts/jetscale \
             --namespace ${{ inputs.client_name }}-${{ inputs.project_name }} \
+            --create-namespace \
             $VALUES_FLAGS \
             $IMAGE_OVERRIDES \
             --wait \

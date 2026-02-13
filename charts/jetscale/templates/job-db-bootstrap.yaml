@@ -1,0 +1,198 @@
+{{/*
+Database Bootstrap Job (Helm Pre-Install Hook)
+
+This Job runs BEFORE the main application deployment to:
+1. Connect to RDS with admin credentials
+2. Create a per-project database if it doesn't exist
+3. Create a per-project user with limited privileges
+4. Store the per-project credentials in AWS Secrets Manager
+
+Contract with IaC:
+- IaC creates RDS instance and admin secret at: ${cluster}/database/admin
+- IaC grants IRSA role permission to write to: ${cluster}/database/*
+- Stack creates per-project secret at: ${cluster}/database/${project}
+
+This enables Day 1/2 operations where new projects can be deployed
+without requiring IaC changes.
+*/}}
+{{- if and .Values.externalSecret.enabled .Values.externalSecret.db.enabled .Values.externalSecret.db.bootstrap.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-db-bootstrap
+  labels:
+    {{- include "jetscale.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db-bootstrap
+  annotations:
+    # Run before any other resources are created
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "jetscale.labels" . | nindent 8 }}
+        app.kubernetes.io/component: db-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ .Release.Name }}-external-secrets
+      containers:
+        - name: db-bootstrap
+          image: {{ .Values.externalSecret.db.bootstrap.image | default "amazon/aws-cli:2.15.0" }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+
+              echo "🔧 JetScale Database Bootstrap"
+              echo "================================"
+              echo "Project: {{ .Values.global.project_name }}"
+              echo "Cluster: {{ include "jetscale.aws-name-prefix" . }}"
+
+              # Configuration
+              AWS_REGION="{{ .Values.externalSecret.awsRegion }}"
+              CLUSTER_PREFIX="{{ include "jetscale.aws-name-prefix" . }}"
+              PROJECT_NAME="{{ .Values.global.project_name }}"
+              DB_NAME="{{ .Values.externalSecret.db.bootstrap.dbName | default .Values.global.project_name | replace "-" "_" }}"
+              DB_USER="{{ .Values.externalSecret.db.bootstrap.dbUser | default (printf "%s_user" (.Values.global.project_name | replace "-" "_")) }}"
+
+              ADMIN_SECRET_PATH="${CLUSTER_PREFIX}/database/admin"
+              PROJECT_SECRET_PATH="${CLUSTER_PREFIX}/database/${PROJECT_NAME}"
+
+              echo "📍 Admin secret: ${ADMIN_SECRET_PATH}"
+              echo "📍 Project secret: ${PROJECT_SECRET_PATH}"
+              echo "📍 Database name: ${DB_NAME}"
+              echo "📍 Database user: ${DB_USER}"
+
+              # Install PostgreSQL client (psql)
+              echo "📦 Installing PostgreSQL client..."
+              yum install -y postgresql15 > /dev/null 2>&1 || yum install -y postgresql > /dev/null 2>&1
+
+              # Fetch admin credentials from Secrets Manager
+              echo "🔑 Fetching admin credentials..."
+              ADMIN_SECRET=$(aws secretsmanager get-secret-value \
+                --region "${AWS_REGION}" \
+                --secret-id "${ADMIN_SECRET_PATH}" \
+                --query 'SecretString' \
+                --output text)
+
+              ADMIN_USER=$(echo "${ADMIN_SECRET}" | jq -r '.username')
+              ADMIN_PASS=$(echo "${ADMIN_SECRET}" | jq -r '.password')
+              DB_HOST=$(echo "${ADMIN_SECRET}" | jq -r '.host')
+              DB_PORT=$(echo "${ADMIN_SECRET}" | jq -r '.port // "5432"')
+
+              echo "📡 Connecting to RDS at ${DB_HOST}:${DB_PORT}"
+
+              # Generate secure password for project user
+              PROJECT_PASS=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9!$&*()-_.' | head -c 32)
+
+              # Check if project secret already exists
+              echo "🔍 Checking if project secret exists..."
+              if aws secretsmanager describe-secret \
+                --region "${AWS_REGION}" \
+                --secret-id "${PROJECT_SECRET_PATH}" > /dev/null 2>&1; then
+                echo "✅ Project secret already exists, checking database..."
+
+                # Fetch existing credentials
+                EXISTING_SECRET=$(aws secretsmanager get-secret-value \
+                  --region "${AWS_REGION}" \
+                  --secret-id "${PROJECT_SECRET_PATH}" \
+                  --query 'SecretString' \
+                  --output text)
+                PROJECT_PASS=$(echo "${EXISTING_SECRET}" | jq -r '.password')
+
+                # Verify database exists
+                export PGPASSWORD="${ADMIN_PASS}"
+                if psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d postgres \
+                  -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
+                  echo "✅ Database '${DB_NAME}' already exists"
+                else
+                  echo "⚠️ Secret exists but database missing, creating..."
+                  psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d postgres \
+                    -c "CREATE DATABASE \"${DB_NAME}\";"
+                fi
+              else
+                echo "📝 Creating new project database and user..."
+
+                # Create database and user
+                export PGPASSWORD="${ADMIN_PASS}"
+
+                # Create database if not exists
+                if ! psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d postgres \
+                  -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
+                  echo "📦 Creating database: ${DB_NAME}"
+                  psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d postgres \
+                    -c "CREATE DATABASE \"${DB_NAME}\";"
+                fi
+
+                # Create user if not exists
+                if ! psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d postgres \
+                  -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+                  echo "👤 Creating user: ${DB_USER}"
+                  psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d postgres \
+                    -c "CREATE USER \"${DB_USER}\" WITH PASSWORD '${PROJECT_PASS}';"
+                else
+                  echo "👤 User exists, updating password..."
+                  psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d postgres \
+                    -c "ALTER USER \"${DB_USER}\" WITH PASSWORD '${PROJECT_PASS}';"
+                fi
+
+                # Grant privileges
+                echo "🔐 Granting privileges..."
+                psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d postgres \
+                  -c "GRANT ALL PRIVILEGES ON DATABASE \"${DB_NAME}\" TO \"${DB_USER}\";"
+                psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d "${DB_NAME}" \
+                  -c "GRANT ALL ON SCHEMA public TO \"${DB_USER}\";"
+                psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d "${DB_NAME}" \
+                  -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO \"${DB_USER}\";"
+                psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${ADMIN_USER}" -d "${DB_NAME}" \
+                  -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO \"${DB_USER}\";"
+
+                # Store credentials in Secrets Manager
+                echo "💾 Storing project credentials in Secrets Manager..."
+                PROJECT_SECRET_JSON=$(jq -n \
+                  --arg username "${DB_USER}" \
+                  --arg password "${PROJECT_PASS}" \
+                  --arg host "${DB_HOST}" \
+                  --arg port "${DB_PORT}" \
+                  --arg dbname "${DB_NAME}" \
+                  --arg engine "postgres" \
+                  '{username: $username, password: $password, host: $host, port: $port, dbname: $dbname, engine: $engine}')
+
+                aws secretsmanager create-secret \
+                  --region "${AWS_REGION}" \
+                  --name "${PROJECT_SECRET_PATH}" \
+                  --description "JetScale ${PROJECT_NAME} database credentials (auto-created by Stack)" \
+                  --secret-string "${PROJECT_SECRET_JSON}" \
+                  --tags Key=Project,Value="{{ .Values.global.project_name }}" \
+                         Key=Cluster,Value="{{ include "jetscale.aws-name-prefix" . }}" \
+                         Key=ManagedBy,Value="helm-bootstrap"
+
+                echo "✅ Project secret created: ${PROJECT_SECRET_PATH}"
+              fi
+
+              # Verify connectivity with project credentials
+              echo "🔍 Verifying project database connectivity..."
+              export PGPASSWORD="${PROJECT_PASS}"
+              if psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" \
+                -c "SELECT 1;" > /dev/null 2>&1; then
+                echo "✅ Database bootstrap complete!"
+                echo "   Database: ${DB_NAME}"
+                echo "   User: ${DB_USER}"
+                echo "   Secret: ${PROJECT_SECRET_PATH}"
+              else
+                echo "❌ Failed to connect with project credentials"
+                exit 1
+              fi
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+{{- end }}
