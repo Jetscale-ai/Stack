@@ -60,7 +60,7 @@ We represent a shift from "Container Orchestration" (Docker Compose) to "Platfor
 - **The "Client Rule":** We never force a client to perform manual infrastructure work to install our App. The Chart is a self-contained deployable unit.
 - **Multi-Cloud Portability:**
   - **AWS (SaaS):** Infra installs **AWS LB Controller** + **ExternalDNS**. The Chart's `Ingress*bec*mes an ALB.
-  - **Azure (AKS):** Infra installs **AGIC** (App Gateway Ingress Controll*r) o* **Nginx**. The *same* Chart's `Ingress` becomes an Azure App Gateway.
+  - **Azure (AKS):** Infra installs **AGIC** (App Gateway Ingress Controller) **Nginx**. The *same* Chart's `Ingress` becomes an Azure App Gateway.
   - **OpenStack/On-Prem:** Infra installs **Octavia** or **MetalLB**. The *same* Chart's `Ingress` becomes a LoadBalancer IP.
 
 ### The Artifact Boundary
