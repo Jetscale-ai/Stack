@@ -74,6 +74,9 @@ jobs:
   deploy-live:
     name: "CD: Promote Live"
     needs: [publish]
+    # Must use always() because publish uses always() in its condition.
+    # Without this, deploy-live is skipped when check-ci is skipped (even if publish succeeds).
+    if: always() && needs.publish.result == 'success'
     runs-on: ubuntu-latest
 
     # 🛑 THE PRODUCTION GATE
@@ -476,4 +479,5 @@ jobs:
   verify-live:
     name: "CD: Verify Live"
     needs: [deploy-live]
+    if: always() && needs.deploy-live.result == 'success'
     uses: ./.github/workflows/ops-verify.yaml
