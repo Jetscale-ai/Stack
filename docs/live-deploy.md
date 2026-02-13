@@ -1,6 +1,6 @@
 # ✅ Justified Action: Helm-first Live Deployment Contract
 
-**Goal:** Establish a single, deterministic "Helm-only" deployment path for Live (console.jetscale.ai) aligned with the future ArgoCD GitOps flow, and preserving parity wth preview envs
+**Goal:** Establish a single, deterministic "Helm-only" deployment path for Live (console.jetscale.ai) aligned with the future ArgoCD GitOps flow, and preserving parity with preview envs
 
 **Justification (Eudaimonia Invariants):**
 
@@ -19,14 +19,14 @@ This repo separates the **Artifact Lifecycle** (published chart versions) from t
 (environment values):
 
 - **Chart changes (`charts/**`)**: Stage 6 will publish a new chart version (semantic-release) and deploy that new version.
-- **Live config changes (`envs/live/**`)**: Stage 6 will **skip version inflation** and redeploy the **latest tagged version**
-  with the updated live values (see `envs/aws.yaml`, `envs/live/default.yaml`, `envs/live/console.yaml`).
+- **Prod config changes (`envs/prod/**`)**: Stage 6 will **skip version inflation** and redeploy the **latest tagged version**
+  with the updated prod values (see `envs/aws.yaml`, `envs/prod/default.yaml`, `envs/prod/console.yaml`).
 
 ### Preconditions (Terraform-owned "pipes")
 
-- **Namespace**: `jetscale-prod` (convention: `{client_name}-{env}`)
+- **Namespace**: `jetscale-console` (convention: `{client_name}-{project}`)
 - **External Secrets Operator** installed in the cluster (Terraform `clients/` stack).
-- **SecretStore** in namespace `jetscale-prod` created by Terraform.
+- **SecretStore** in namespace `jetscale-console` created by Terraform.
 - **ExternalSecret manifests** created by Terraform that materialize:
   - `jetscale-db-secret`
   - `jetscale-redis-secret`
@@ -42,7 +42,7 @@ This repo uses **Option B (Container/Value Split)** for sensitive credentials:
 
 The AWS Secrets Manager secret backing the AWS client ExternalSecret must exist **and** have a value:
 
-- Name: `jetscale-prod/application/aws/client`
+- Name: `jetscale-console/application/aws/client`
 - Keys required:
   - `JETSCALE_CLIENT_AWS_REGION`
   - `JETSCALE_CLIENT_AWS_ROLE_ARN`
@@ -59,21 +59,21 @@ From the `stack/` directory:
 helm dependency build charts/jetscale
 
 # Deploy/upgrade Live into the Terraform-managed namespace
-helm upgrade --install jetscale charts/jetscale \
-  --namespace jetscale-prod \
+helm upgrade --install jetscale-console charts/jetscale \
+  --namespace jetscale-console \
   --create-namespace \
   --values envs/aws.yaml \
-  --values envs/live/default.yaml \
-  --values envs/live/console.yaml
+  --values envs/prod/default.yaml \
+  --values envs/prod/console.yaml
 ```
 
 ### Quick verification
 
 ```bash
 # Verify the secret exists (created by ESO)
-kubectl -n jetscale-prod get secret jetscale-aws-client-secret
+kubectl -n jetscale-console get secret jetscale-aws-client-secret
 
 # Verify backend pods are not blocked by missing secrets
-kubectl -n jetscale-prod get pods
-kubectl -n jetscale-prod describe pod -l app.kubernetes.io/name=backend | sed -n '1,160p'
+kubectl -n jetscale-console get pods
+kubectl -n jetscale-console describe pod -l app.kubernetes.io/name=backend | sed -n '1,160p'
 ```

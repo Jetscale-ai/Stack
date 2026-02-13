@@ -38,7 +38,7 @@ We define **6 distinct phases** to ensure code flows safely from laptop to produ
 | **3. CI Loop** | **Gating** | CI Runner | `mage test:ci` | `values.test.ci.yaml` |
 | **4. Debug** | **Reproduction** | Local | *(Manual Helm)* | `values.local.live.yaml` |
 | **5. Preview** | **Integration** | Ephemeral | `/preview` | `envs/preview/` |
-| **6. Live** | **Production** | Live | *(ArgoCD)* | `envs/live/` |
+| **6. Live** | **Production** | Live | *(ArgoCD)* | `envs/prod/` |
 
 <details>
 <summary>**1. The Dev Loop (Inner Loop)**</summary>

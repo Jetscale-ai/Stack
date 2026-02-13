@@ -10,9 +10,10 @@ envs/
 ├── staging/
 │   ├── default.yaml           # Staging environment defaults
 │   └── jetscale.yaml          # Jetscale environment values
-├── live/
-│   ├── default.yaml           # Live/Production environment defaults
-│   └── console.yaml           # Jetscale Console environment values
+├── prod/
+│   ├── default.yaml           # Production environment defaults
+│   ├── console.yaml           # Jetscale Console project values
+│   └── demo.yaml              # Jetscale Demo project values
 └── preview/
     └── preview.yaml           # Preview environment values
 ```
@@ -30,15 +31,15 @@ Helm merges multiple values files in order, with **later files taking precedence
      - AWS ALB Ingress annotations
 
 3. **Environment Type Defaults** (optional)
-   - `envs/<env-type>/default.yaml` (e.g., `envs/live/default.yaml`)
+   - `envs/<env-type>/default.yaml` (e.g., `envs/prod/default.yaml`)
    - Contains environment-wide settings:
      - Replica counts (production vs staging)
      - Resource limits and requests
      - Pod Disruption Budgets (PDB)
 
 4. **Environment/Client-Specific Values** (required)
-   - `envs/<env-type>/<client-name>.yaml` (e.g., `envs/live/console.yaml`)
-   - Contains client or deployment-specific values:
+   - `envs/<env-type>/<project-name>.yaml` (e.g., `envs/prod/console.yaml`)
+   - Contains project or deployment-specific values:
      - Domain names and hostnames
      - Feature flags
      - Environment-specific secrets references
@@ -63,7 +64,7 @@ The validation command:
 
 - **Cloud provider files** (`envs/aws.yaml`, etc.) should contain only cloud-specific infrastructure settings
 - **Environment defaults** (`default.yaml`) should contain settings shared across all deployments in that environment type
-- **Environment values** (`<client-name>.yaml`) should contain deployment-specific configuration
+- **Project values** (`<project-name>.yaml`) should contain deployment-specific configuration
 - Use **top-level envs files** (like `envs/default.yaml`) only for documentation or temporary values - they are excluded from validation
 - Keep secrets in external secret managers; reference them via environment variables or Kubernetes secrets
 - Test all changes with `mage validate:envs` before committing
