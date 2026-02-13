@@ -600,7 +600,7 @@ func (Test) CI() error {
 
 func (Test) Live() error {
 	fmt.Println("🔥 [TEST] Target: EKS Live (Verification)")
-	// Live console hostname (see envs/live/console.yaml)
+	// Live console hostname (see envs/prod/console.yaml)
 	host := "console.jetscale.ai"
 	return runTestRunner(fmt.Sprintf("https://%s", host))
 }

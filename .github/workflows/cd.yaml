@@ -8,17 +8,22 @@ on:
   workflow_dispatch:
     inputs:
       tenant:
-        description: "Tenant/client slug (e.g. jetscale, imaginaryclient). Used for namespace and default host."
+        description: "Tenant/client slug (e.g. jetscale, glaciergrid). Used for cluster targeting."
         required: true
         default: "jetscale"
         type: string
+      project:
+        description: "Project name within the tenant (e.g. console, demo). Used for namespace: <tenant>-<project>."
+        required: true
+        default: "console"
+        type: string
       public_host:
-        description: "Optional override for the public hostname (e.g. console.jetscale.ai, imaginaryclient.jetscale.ai)."
+        description: "Optional override for the public hostname (e.g. console.jetscale.ai, demo.jetscale.ai)."
         required: false
         default: ""
         type: string
       namespace:
-        description: "Optional override for Kubernetes namespace (default: <tenant>-prod)."
+        description: "Optional override for Kubernetes namespace (default: <tenant>-<project>)."
         required: false
         default: ""
         type: string
@@ -81,10 +86,10 @@ jobs:
 
     # 🛑 THE PRODUCTION GATE
     environment:
-      name: ${{ github.event_name == 'workflow_dispatch' && format('live-{0}', inputs.tenant) || 'live-jetscale' }}
-      url: ${{ github.event_name == 'workflow_dispatch' && format('https://{0}', (inputs.public_host != '' && inputs.public_host)
-        || (inputs.tenant == 'jetscale' && 'console.jetscale.ai') || format('{0}.jetscale.ai', inputs.tenant)) || 'https://console.jetscale.ai'
+      name: ${{ github.event_name == 'workflow_dispatch' && format('prod-{0}-{1}', inputs.tenant, inputs.project) || 'prod-jetscale-console'
         }}
+      url: ${{ github.event_name == 'workflow_dispatch' && format('https://{0}', (inputs.public_host != '' && inputs.public_host)
+        || format('{0}.jetscale.ai', inputs.project)) || 'https://console.jetscale.ai' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -115,36 +120,36 @@ jobs:
         id: target
         env:
           TENANT: ${{ github.event_name == 'workflow_dispatch' && inputs.tenant || 'jetscale' }}
+          PROJECT: ${{ github.event_name == 'workflow_dispatch' && inputs.project || 'console' }}
           INPUT_PUBLIC_HOST: ${{ github.event_name == 'workflow_dispatch' && inputs.public_host || '' }}
           INPUT_NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.namespace || '' }}
           INPUT_VALUES_FILE: ${{ github.event_name == 'workflow_dispatch' && inputs.values_file || '' }}
         run: |
           set -euo pipefail
 
-          # Default namespace convention: {client}-{environment}
+          # Namespace convention (Shared Cluster Architecture):
+          # - Pattern: ${client}-${project} (e.g., jetscale-console, jetscale-demo)
+          # - See: iac/Locus.md "2026-02-13 — Shared Cluster Architecture"
           if [ -n "${INPUT_NAMESPACE:-}" ]; then
             NS="${INPUT_NAMESPACE}"
           else
-            NS="${TENANT}-prod"
+            NS="${TENANT}-${PROJECT}"
           fi
 
           # Default host convention:
-          # - jetscale -> console.jetscale.ai (special-case)
-          # - others  -> <tenant>.jetscale.ai
+          # - console -> console.jetscale.ai
+          # - demo    -> demo.jetscale.ai
+          # - others  -> <project>.jetscale.ai
           if [ -n "${INPUT_PUBLIC_HOST:-}" ]; then
             HOST="${INPUT_PUBLIC_HOST}"
           else
-            if [ "${TENANT}" = "jetscale" ]; then
-              HOST="console.jetscale.ai"
-            else
-              HOST="${TENANT}.jetscale.ai"
-            fi
+            HOST="${PROJECT}.jetscale.ai"
           fi
 
           # Values inheritance (recommended):
           # - envs/aws.yaml (cloud)
-          # - envs/live/default.yaml (env defaults)
-          # - envs/live/<tenant>.yaml (deployment-specific; jetscale uses console.yaml)
+          # - envs/prod/default.yaml (env defaults)
+          # - envs/prod/<project>.yaml (deployment-specific; e.g., console.yaml, demo.yaml)
           #
           # INPUT_VALUES_FILE behavior:
           # - If comma-separated, treat as a full ordered list of values files.
@@ -153,14 +158,10 @@ jobs:
             if echo "${INPUT_VALUES_FILE}" | grep -q ','; then
               VALUES_FILES="${INPUT_VALUES_FILE}"
             else
-              VALUES_FILES="envs/aws.yaml,envs/live/default.yaml,${INPUT_VALUES_FILE}"
+              VALUES_FILES="envs/aws.yaml,envs/prod/default.yaml,${INPUT_VALUES_FILE}"
             fi
           else
-            if [ "${TENANT}" = "jetscale" ]; then
-              VALUES_FILES="envs/aws.yaml,envs/live/default.yaml,envs/live/console.yaml"
-            else
-              VALUES_FILES="envs/aws.yaml,envs/live/default.yaml,envs/live/${TENANT}.yaml"
-            fi
+            VALUES_FILES="envs/aws.yaml,envs/prod/default.yaml,envs/prod/${PROJECT}.yaml"
           fi
 
           # ESO contract:
@@ -170,6 +171,7 @@ jobs:
           AWS_CLIENT_SM_KEY="${NS}/application/aws/client"
 
           echo "tenant=${TENANT}" >> "$GITHUB_OUTPUT"
+          echo "project=${PROJECT}" >> "$GITHUB_OUTPUT"
           echo "namespace=${NS}" >> "$GITHUB_OUTPUT"
           echo "public_host=${HOST}" >> "$GITHUB_OUTPUT"
           echo "values_files=${VALUES_FILES}" >> "$GITHUB_OUTPUT"
@@ -178,6 +180,13 @@ jobs:
 
       - name: Update Kubeconfig
         run: aws eks update-kubeconfig --name jetscale-prod --region us-east-1
+
+      - name: Ensure namespace exists
+        run: |
+          # Namespace must exist before we can create secrets in it.
+          # Helm's --create-namespace only runs during install, but we need the namespace
+          # earlier for GHCR pull secrets and ESO prerequisites.
+          kubectl create namespace "${{ steps.target.outputs.namespace }}" --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Configure GHCR image pull credentials (namespace)
         env:
@@ -346,18 +355,21 @@ jobs:
           done
 
       - name: Reset failed Helm release (if needed)
+        env:
+          NAMESPACE: ${{ steps.target.outputs.namespace }}
+          RELEASE_NAME: ${{ steps.target.outputs.tenant }}-${{ steps.target.outputs.project }}
         run: |
           # If the release is already in a bad/pending state, reset to a clean install.
           # Helm can also get "another operation is in progress" if a previous run was interrupted.
           set +e
-          STATUS="$(helm status jetscale --namespace jetscale-prod 2>/dev/null | awk '/^STATUS:/ {print $2}')"
+          STATUS="$(helm status "${RELEASE_NAME}" --namespace "${NAMESPACE}" 2>/dev/null | awk '/^STATUS:/ {print $2}')"
           set -e
           if [ "$STATUS" = "failed" ] || [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ] || [ "$STATUS" = "pending-rollback" ]; then
             echo "Helm release status is ${STATUS}; uninstalling to reset before install/upgrade..."
 
             # Retry uninstall in case Helm still holds an operation lock.
             for i in $(seq 1 10); do
-              helm uninstall jetscale --namespace jetscale-prod && break
+              helm uninstall "${RELEASE_NAME}" --namespace "${NAMESPACE}" && break
               echo "uninstall attempt ${i}/10 failed; retrying in 15s..."
               sleep 15
             done
@@ -365,27 +377,29 @@ jobs:
             # Ensure all key resources are fully gone before reinstalling.
             # Otherwise the next install can race with termination and fail during `--wait`
             # with confusing "services <name> not found" / backend-not-found errors.
-            kubectl delete ingress/jetscale -n jetscale-prod --ignore-not-found
-            kubectl delete svc/jetscale-backend-api svc/jetscale-backend-ws svc/jetscale-frontend -n jetscale-prod --ignore-not-found
-            kubectl delete deploy/jetscale-backend-api deploy/jetscale-backend-ws deploy/jetscale-frontend -n jetscale-prod --ignore-not-found
-            kubectl delete externalsecret/jetscale-app-secrets -n jetscale-prod --ignore-not-found
-            kubectl delete targetgroupbinding -n jetscale-prod -l "app.kubernetes.io/instance=jetscale" --ignore-not-found || true
+            kubectl delete ingress -l "app.kubernetes.io/instance=${RELEASE_NAME}" -n "${NAMESPACE}" --ignore-not-found
+            kubectl delete svc -l "app.kubernetes.io/instance=${RELEASE_NAME}" -n "${NAMESPACE}" --ignore-not-found
+            kubectl delete deploy -l "app.kubernetes.io/instance=${RELEASE_NAME}" -n "${NAMESPACE}" --ignore-not-found
+            kubectl delete externalsecret -l "app.kubernetes.io/instance=${RELEASE_NAME}" -n "${NAMESPACE}" --ignore-not-found
+            kubectl delete targetgroupbinding -l "app.kubernetes.io/instance=${RELEASE_NAME}" -n "${NAMESPACE}" --ignore-not-found || true
 
-            kubectl wait --for=delete ingress/jetscale -n jetscale-prod --timeout=10m || true
-            kubectl wait --for=delete svc/jetscale-backend-api -n jetscale-prod --timeout=10m || true
-            kubectl wait --for=delete svc/jetscale-backend-ws -n jetscale-prod --timeout=10m || true
-            kubectl wait --for=delete svc/jetscale-frontend -n jetscale-prod --timeout=10m || true
+            # Wait for key resources to be fully deleted
+            kubectl wait --for=delete ingress -l "app.kubernetes.io/instance=${RELEASE_NAME}" -n "${NAMESPACE}" --timeout=10m || true
+            kubectl wait --for=delete svc -l "app.kubernetes.io/instance=${RELEASE_NAME}" -n "${NAMESPACE}" --timeout=10m || true
           else
             echo "Helm release status: ${STATUS:-not-installed}"
           fi
 
       - name: Ensure api-external Service is fully deleted (avoid terminating-race)
+        env:
+          NAMESPACE: ${{ steps.target.outputs.namespace }}
+          RELEASE_NAME: ${{ steps.target.outputs.tenant }}-${{ steps.target.outputs.project }}
         run: |
           # The LoadBalancer Service can sit in Terminating while AWS cleans up.
           # If Helm applies while the Service is terminating, it can disappear during `--wait`
           # and cause: `services "<name>" not found`.
-          kubectl delete service jetscale-api-external --namespace "${{ steps.target.outputs.namespace }}" --ignore-not-found
-          kubectl wait --for=delete service/jetscale-api-external --namespace "${{ steps.target.outputs.namespace }}" --timeout=10m || true
+          kubectl delete service "${RELEASE_NAME}-api-external" --namespace "${NAMESPACE}" --ignore-not-found
+          kubectl wait --for=delete "service/${RELEASE_NAME}-api-external" --namespace "${NAMESPACE}" --timeout=10m || true
 
       - name: Resolve deploy version
         id: version
@@ -412,9 +426,11 @@ jobs:
       - name: Deploy Live
         env:
           VERSION: ${{ steps.version.outputs.target }}
+          NAMESPACE: ${{ steps.target.outputs.namespace }}
+          RELEASE_NAME: ${{ steps.target.outputs.tenant }}-${{ steps.target.outputs.project }}
         run: |
           echo "🔥 Promoting Version $VERSION to Live..."
-          # Match Jetscale-IaC namespace convention: {client}-{environment}
+          # Match Jetscale-IaC namespace convention: {client}-{project}
           VALUES_ARGS=()
           IFS=',' read -ra FILES <<< "${{ steps.target.outputs.values_files }}"
           for file in "${FILES[@]}"; do
@@ -426,13 +442,14 @@ jobs:
           done
 
           echo "Values files (in order): ${FILES[*]}"
+          echo "Release: ${RELEASE_NAME} -> Namespace: ${NAMESPACE}"
           # Helm can return "another operation is in progress" if a previous run was interrupted.
           # Retry a few times before failing the job.
           for i in $(seq 1 6); do
             set +e
-            OUT="$(helm upgrade --install jetscale oci://ghcr.io/jetscale-ai/charts/jetscale \
+            OUT="$(helm upgrade --install "${RELEASE_NAME}" oci://ghcr.io/jetscale-ai/charts/jetscale \
               --version "$VERSION" \
-              --namespace "${{ steps.target.outputs.namespace }}" \
+              --namespace "${NAMESPACE}" \
               --create-namespace \
               "${VALUES_ARGS[@]}" \
               --wait \
@@ -460,18 +477,21 @@ jobs:
 
       - name: Debug cluster on failure
         if: failure()
+        env:
+          NAMESPACE: ${{ steps.target.outputs.namespace }}
+          RELEASE_NAME: ${{ steps.target.outputs.tenant }}-${{ steps.target.outputs.project }}
         run: |
           set +e
           echo "=== Helm status ==="
-          helm status jetscale --namespace jetscale-prod
+          helm status "${RELEASE_NAME}" --namespace "${NAMESPACE}"
           echo "=== Helm history ==="
-          helm history jetscale --namespace jetscale-prod || true
-          echo "=== K8s resources (jetscale-prod) ==="
-          kubectl get all -n jetscale-prod || true
+          helm history "${RELEASE_NAME}" --namespace "${NAMESPACE}" || true
+          echo "=== K8s resources (${NAMESPACE}) ==="
+          kubectl get all -n "${NAMESPACE}" || true
           echo "=== K8s pods (wide) ==="
-          kubectl get pods -n jetscale-prod -o wide || true
+          kubectl get pods -n "${NAMESPACE}" -o wide || true
           echo "=== K8s events (last 200) ==="
-          kubectl get events -n jetscale-prod --sort-by=.metadata.creationTimestamp | tail -n 200 || true
+          kubectl get events -n "${NAMESPACE}" --sort-by=.metadata.creationTimestamp | tail -n 200 || true
 
   # ============================================================================
   # STEP 3: VERIFY LIVE (POST-DEPLOY)
