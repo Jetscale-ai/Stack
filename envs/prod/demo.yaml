@@ -1,10 +1,31 @@
 # ==========================================================
-# LIVE ENVIRONMENT (EKS) — console.jetscale.ai
+# LIVE ENVIRONMENT (EKS) — demo.jetscale.ai
 # ==========================================================
 global:
-  # Align with Jetscale-IaC `clients/variables/jetscale.tfvars`
-  env: "prod"
   client_name: "jetscale"
+  project_name: "demo"
+  env: "prod"
+
+# ----------------------------------------------------------
+# EXTERNAL SECRETS (Shared Cluster Architecture)
+# ----------------------------------------------------------
+# IaC creates cluster: jetscale-prod
+# Secrets path: jetscale-prod/...
+externalSecret:
+  enabled: true
+  awsRegion: "us-east-1"
+  # Cluster-level secrets path (matches IaC cluster name)
+  awsSecretPrefix: "jetscale-prod"
+  # IRSA role ARN from IaC output
+  irsaRoleArn: "arn:aws:iam::134051052096:role/jetscale-prod-external-secrets-role"
+  db:
+    enabled: true
+  redis:
+    enabled: false # ElastiCache not enabled for demo
+  common:
+    enabled: true
+  app:
+    enabled: false # No dynamic app config secret yet
 
 # 1. INFRA (Managed by Terraform in AWS)
 postgres:
@@ -16,7 +37,7 @@ redis:
 # 2a. BACKEND-API
 backend-api:
   enabled: true
-  replicaCount: 3
+  replicaCount: 1
   image:
     repository: ghcr.io/jetscale-ai/backend
     tag: "4.1.2"
@@ -44,7 +65,7 @@ backend-api:
 # 2b. BACKEND-WS
 backend-ws:
   enabled: true
-  replicaCount: 3
+  replicaCount: 1
   image:
     repository: ghcr.io/jetscale-ai/backend
     tag: "4.1.2"
@@ -53,7 +74,7 @@ backend-ws:
 # 3. FRONTEND
 frontend:
   enabled: true
-  replicaCount: 3
+  replicaCount: 1
   image:
     repository: ghcr.io/jetscale-ai/frontend
     tag: "2.4.0"
@@ -61,7 +82,7 @@ frontend:
     - name: ghcr-registry-secret #Created from GH pipeline
   env:
     # This should point at the same host the Ingress serves for /api
-    VITE_API_BASE_URL: "https://console.jetscale.ai"
+    VITE_API_BASE_URL: "https://demo.jetscale.ai"
 
 # 4. ROUTING
 ingress:
@@ -70,8 +91,8 @@ ingress:
   annotations:
     alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:134051052096:certificate/6e3e7f72-af8e-457d-a397-8f13728dd06c"
     # ExternalDNS (explicit intent)
-    external-dns.alpha.kubernetes.io/hostname: "console.jetscale.ai"
+    external-dns.alpha.kubernetes.io/hostname: "demo.jetscale.ai"
   hosts:
     # Explicit empty list: use `envs/aws.yaml` `ingressHostDefaultPaths`
     # (avoids YAML null edge-cases across Helm/YAML versions).
-    console.jetscale.ai: []
+    demo.jetscale.ai: []

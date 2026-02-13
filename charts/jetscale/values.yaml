@@ -2,24 +2,74 @@
 # JETSCALE STACK - DEFAULT INTERFACE
 # ==========================================================
 global:
-  env: "production"
+  env: "prod"
   # Used for parity with Jetscale-IaC naming conventions and external entrypoints.
   # Example: "jetscale" (live), "pr-123" (ephemeral)
   client_name: ""
-  # tenant_id: ""
+  project_name: ""
 
 appConfigMap:
   enabled: true
   environment: RELEASE #DEBUG, RELEASE or DEBUG_RELEASE
 
+# ----------------------------------------------------------
+# EXTERNAL SECRETS (AWS Secrets Manager Integration)
+# ----------------------------------------------------------
+# Contract with IaC (Shared Cluster Architecture):
+# - IaC creates cluster: ${client}-${env} (e.g., jetscale-prod)
+# - IaC creates admin DB secret at: ${client}-${env}/database/admin
+# - IaC creates IRSA role with wildcard namespace trust + Secrets Manager write
+# - Stack bootstrap creates per-project DB secret at: ${client}-${env}/database/${project}
+# - Stack creates namespace, ServiceAccount, SecretStore, ExternalSecrets
+#
 externalSecret:
-  # Override constructed AWS Secret prefix
-  # awsSecretPrefix: 
+  # Master switch for all external secrets functionality
+  enabled: true
+
+  # AWS region for Secrets Manager
+  awsRegion: "us-east-1"
+
+  # AWS Secrets Manager path prefix (matches IaC cluster naming)
+  # Default: ${client_name}-${env} (e.g., jetscale-prod)
+  # Override for custom paths
+  awsSecretPrefix: ""
+
+  # IRSA role ARN for External Secrets ServiceAccount
+  # This role is created by IaC with wildcard namespace trust
+  # Example: arn:aws:iam::134051052096:role/jetscale-prod-external-secrets-role
+  irsaRoleArn: ""
+
+  # Refresh interval for secrets
+  refreshInterval: "1h"
+
+  # Database credentials
+  db:
+    enabled: true
+    # Bootstrap job creates per-project database and credentials
+    # Runs as Helm pre-install hook before main deployment
+    bootstrap:
+      enabled: true
+      # Container image for bootstrap job (needs aws-cli, psql, jq)
+      image: "amazon/aws-cli:2.15.0"
+      # Override database name (default: project_name with - replaced by _)
+      # dbName: ""
+      # Override database user (default: ${project_name}_user)
+      # dbUser: ""
+
+  # Redis credentials (from IaC-managed ElastiCache)
+  redis:
+    enabled: false
+
+  # Common application secrets (encryption keys, etc.)
+  common:
+    enabled: true
+
+  # Legacy app config secret (for backward compatibility)
   app:
     enabled: true
     # Override constructed secret store name
     # secretStoreName:
-    
+
 # ----------------------------------------------------------
 # 1. CORE SERVICES
 # ----------------------------------------------------------

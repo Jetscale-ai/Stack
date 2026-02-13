@@ -5,7 +5,8 @@ Ephemeral Cleanup (Stack)
 Justified Action
 Goal: Provide a single, reusable cleanup entrypoint for GitHub Actions
       and humans to purge orphaned ephemeral PR environments based on
-      `jetscale.env_id` tags, with dependency-aware ordering.
+      `jetscale.cluster_id` tags (with fallback to `jetscale.env_id`),
+      with dependency-aware ordering.
 Justification: Prudence (assume failures), Clarity (single tool),
                Vigor (delete root causes), Justice (clear blockers).
 
