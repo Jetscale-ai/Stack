@@ -87,7 +87,7 @@ def main(argv: List[str]) -> int:
         prog="ephemeral_cleanup.py",
         add_help=True,
         description=(
-            "Ephemeral cleanup via tag discovery (jetscale.env_id) "
+            "Ephemeral cleanup via tag discovery (jetscale.cluster_id) "
             "and dependency-aware deletes."
         ),
     )
@@ -114,7 +114,7 @@ def main(argv: List[str]) -> int:
 
     identity_guard(ctx, aws)
 
-    print(f"--- discover tagged resources (jetscale.env_id={ctx.env_id})")
+    print(f"--- discover tagged resources (jetscale.cluster_id={ctx.env_id})")
     summary.initial_tagged = list_tagged_arns(ctx, aws)
     if summary.initial_tagged:
         print("\n".join(summary.initial_tagged))
@@ -141,7 +141,7 @@ def main(argv: List[str]) -> int:
 
     vpc_id = discover_vpc_id(ctx, aws)
     if not vpc_id:
-        print("--- VPC: not found (tag jetscale.env_id)")
+        print("--- VPC: not found (tag jetscale.cluster_id or jetscale.env_id)")
     else:
         print(f"--- VPC_ID={vpc_id}")
         ec2_terminate_instances_in_vpc(doer, vpc_id)

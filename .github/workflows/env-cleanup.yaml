@@ -82,7 +82,8 @@ jobs:
             "enable_nat_gateway": true,
             "create_nat_dns_record": false,
             "tags": {
-              "jetscale.env_id": "${{ env.ENV_ID }}"
+              "jetscale.cluster_id": "${{ env.ENV_ID }}",
+              "jetscale.github_env_id": "${{ env.ENV_ID }}"
             }
           }
           EOF
