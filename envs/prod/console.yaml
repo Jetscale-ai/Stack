@@ -53,6 +53,9 @@ backend-api:
     tag: "4.1.2"
   imagePullSecrets:
     - name: ghcr-registry-secret #Created from GH pipeline
+  serviceAccount:
+    create: true
+    name: jetscale-console-backend
   # Production schedule
   cronJobs:
     # NOTE: keys must match `charts/jetscale/values.yaml` to override schedules
@@ -81,6 +84,9 @@ backend-ws:
     tag: "4.1.2"
   imagePullSecrets:
     - name: ghcr-registry-secret #Created from GH pipeline
+  serviceAccount:
+    create: true
+    name: jetscale-console-backend-ws
 # 3. FRONTEND
 frontend:
   enabled: true
