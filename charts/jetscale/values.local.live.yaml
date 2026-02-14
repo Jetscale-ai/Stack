@@ -6,6 +6,9 @@
 global:
   env: "local-live"
 
+externalSecret:
+  enabled: false # Master switch - disables SecretStore + all ExternalSecrets for local
+
 # 1. DATABASE
 postgres:
   enabled: true

@@ -33,7 +33,7 @@ We define **6 distinct phases** to ensure code flows safely from laptop to produ
 
 | Phase | Goal | Env | Command | Config |
 | :--- | :--- | :--- | :--- | :--- |
-| **1. Dev Loop** | **Speed** | Local | `tilt up` | `values.local.dev.yaml` |
+| **1. Dev Loop** | **Speed** | Local | `mage dev:up` | `values.local.dev.yaml` |
 | **2. Verify** | **Accuracy** | Local | `mage test:local` | `values.test.local.yaml` |
 | **3. CI Loop** | **Gating** | CI Runner | `mage test:ci` | `values.test.ci.yaml` |
 | **4. Debug** | **Reproduction** | Local | *(Manual Helm)* | `values.local.live.yaml` |
@@ -44,9 +44,9 @@ We define **6 distinct phases** to ensure code flows safely from laptop to produ
 <summary>**1. The Dev Loop (Inner Loop)**</summary>
 
 - **Context:** Daily coding. Hot reload, fat images, rapid iteration.
-- **Command:** `tilt up`
+- **Command:** `mage dev:up`
 - **Behavior:** Builds images locally, mounts source code into running containers for live updates.
-- **Prereqs:** Kind cluster (`ctlptl apply -f kind/ctlptl-registry.yaml`), Docker.
+- **Prereqs:** Kind cluster (`mage dev:setup`), Docker.
 
 </details>
 
@@ -144,13 +144,19 @@ For historical reference:
 ### 1.5. Cluster Setup (Required for local dev)
 
 Local development uses a Kind cluster wired to a local registry via `ctlptl`. This is required for
-both `tilt up` and `mage test:local`.
+both `mage dev:up` and `mage test:local`.
 
 ```bash
-ctlptl apply -f kind/ctlptl-registry.yaml
+mage dev:setup
 ```
 
 This creates a local registry at `localhost:5000` that caches Docker images and keeps image pulls fast.
+
+To tear down the cluster when you're done:
+
+```bash
+mage dev:delete
+```
 
 ### 2. Boot the Local Dev Platform (Inner Loop)
 
@@ -187,7 +193,7 @@ kind create cluster --config kind/kind-config.yaml --name kind
 mage validate:envs aws
 
 # 4. Start Dev Loop (Fat images + Hot Reload)
-tilt up
+mage dev:up
 ```
 
 ## 📂 Repository Layout
@@ -200,7 +206,16 @@ tilt up
 ## 🧙‍♂️ Mage Tasks
 
 ```bash
+# Local Development (Inner Loop)
+mage dev:setup            # Create Kind cluster with local registry
+mage dev:up               # Start Tilt (TILT_PORT=10450, context=kind-kind)
+mage dev:down             # Stop Tilt gracefully
+mage dev:delete           # Tear down Kind cluster entirely
+
+# Validation
 mage validate:envs aws    # Validate all envs/ configs against chart schema
+
+# Testing
 mage test:local           # Phase 2: Verify Loop (builds local images)
 mage test:ci              # Phase 3: CI Loop (pulls GHCR images)
 mage test:dev             # Quick smoke test against running Tilt

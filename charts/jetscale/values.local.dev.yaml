@@ -23,6 +23,7 @@ redis:
   image: "redis:7-bullseye"
 
 externalSecret:
+  enabled: false # Master switch - disables SecretStore + all ExternalSecrets for local dev
   app:
     enabled: false
 

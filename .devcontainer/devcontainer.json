@@ -42,11 +42,11 @@
     }
   },
   // Port Forwarding Map:
-  // 10350: Tilt HUD
+  // 10450: Tilt HUD
   // 8000: Backend API (NodePort)
   // 3000-5000: Frontend & Vite ranges
   // 5433/6379: Local DBs (mapped via Tiltfile)
-  "forwardPorts": [10350, 8000, 3000, 5433, 6379],
+  "forwardPorts": [10450, 8000, 3000, 5433, 6379],
 
   // Run as root to ensure seamless access to the mounted docker socket
   "remoteUser": "root",

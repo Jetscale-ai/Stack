@@ -19,7 +19,7 @@ import (
 	"github.com/magefile/mage/mg"
 )
 
-var Default = Dev
+var Default = Dev.Up
 
 // -----------------------------------------------------------------------------
 // AUTH (Local Dev QoL)
@@ -246,14 +246,61 @@ func ensureK8sGhcrPullSecret(ctxName, namespace, secretName string) error {
 // LOCAL DEVELOPMENT (The Inner Loop)
 // -----------------------------------------------------------------------------
 
-func Dev() error {
+type Dev mg.Namespace
+
+// Setup creates the local Kind cluster with registry via ctlptl.
+// Equivalent to: ctlptl apply -f kind/ctlptl-registry.yaml
+func (Dev) Setup() error {
+	fmt.Println("🏗️  Setting up local Kind cluster with registry...")
+	cmd := exec.Command("ctlptl", "apply", "-f", "kind/ctlptl-registry.yaml")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+	fmt.Println("✅ Kind cluster ready, start Tilt with:\n\n   mage dev:up")
+	return nil
+}
+
+// Up starts Tilt for local development (Inner Loop).
+// Equivalent to: TILT_PORT=10450 tilt up --context kind-kind
+func (Dev) Up() error {
 	fmt.Println("🚀 Starting Tilt (Inner Loop)...")
-	cmd := exec.Command("tilt", "up")
+	cmd := exec.Command("tilt", "up", "--context", "kind-kind")
+	cmd.Env = mergeEnv(os.Environ(), map[string]string{
+		"TILT_PORT": "10450",
+	})
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
+}
+
+// Down stops Tilt gracefully.
+// Equivalent to: tilt down
+func (Dev) Down() error {
+	fmt.Println("🛑 Stopping Tilt...")
+	cmd := exec.Command("tilt", "down")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
+// Delete tears down the local Kind cluster entirely.
+// Equivalent to: ctlptl delete -f kind/ctlptl-registry.yaml
+func (Dev) Delete() error {
+	fmt.Println("🗑️  Deleting local Kind cluster...")
+	cmd := exec.Command("ctlptl", "delete", "-f", "kind/ctlptl-registry.yaml")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to delete Kind cluster: %w", err)
+	}
+	fmt.Println("✅ Kind cluster deleted.")
+	return nil
+}
+
+// Clean stops Tilt and cleans up test namespaces.
 func Clean() error {
 	fmt.Println("🧹 Cleaning up...")
 	// ✅ VIGOR: Target the kind-kind context explicitly to avoid deleting namespaces in prod.
