@@ -31,7 +31,7 @@ externalSecret:
       # Disabled: console uses legacy IaC-managed database credentials
       enabled: false
   redis:
-    enabled: false # ElastiCache not enabled for console
+    enabled: true # ElastiCache is provisioned by IaC
   common:
     enabled: true
   app:
@@ -62,20 +62,55 @@ backend-api:
     config: configMapRef
     db-secret: secretRef
     common-secrets: secretRef
+    redis-secret: secretRef
     # Disable secrets that don't exist
     app-secrets: false
     aws-client-secret: false
-    redis-secret: false
   # Production schedule
   cronJobs:
     # NOTE: keys must match `charts/jetscale/values.yaml` to override schedules
     # (otherwise Helm deep-merge creates duplicate CronJobs).
+    # Each CronJob needs explicit envFrom to avoid inheriting false values
+    # (backend chart's cronjob template doesn't filter false values)
     discover-aws:
       schedule: "0 */4 * * *"
+      envFrom:
+        config: configMapRef
+        db-secret: secretRef
+        common-secrets: secretRef
+        redis-secret: secretRef
     pull-coh:
       schedule: "30 */6 * * *"
+      envFrom:
+        config: configMapRef
+        db-secret: secretRef
+        common-secrets: secretRef
+        redis-secret: secretRef
     pull-co:
       schedule: "45 */12 * * *"
+      envFrom:
+        config: configMapRef
+        db-secret: secretRef
+        common-secrets: secretRef
+        redis-secret: secretRef
+    pull-ce:
+      envFrom:
+        config: configMapRef
+        db-secret: secretRef
+        common-secrets: secretRef
+        redis-secret: secretRef
+    generate-from-coh:
+      envFrom:
+        config: configMapRef
+        db-secret: secretRef
+        common-secrets: secretRef
+        redis-secret: secretRef
+    generate-from-discovery:
+      envFrom:
+        config: configMapRef
+        db-secret: secretRef
+        common-secrets: secretRef
+        redis-secret: secretRef
 
   resources:
     requests:
@@ -102,9 +137,9 @@ backend-ws:
     config: configMapRef
     db-secret: secretRef
     common-secrets: secretRef
+    redis-secret: secretRef
     app-secrets: false
     aws-client-secret: false
-    redis-secret: false
 # 3. FRONTEND
 frontend:
   enabled: true
