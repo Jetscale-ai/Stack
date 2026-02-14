@@ -56,6 +56,16 @@ backend-api:
   serviceAccount:
     create: true
     name: jetscale-console-backend
+  # Override envFrom to disable secrets that don't exist
+  # Setting to false/null removes them from the template
+  envFrom:
+    config: configMapRef
+    db-secret: secretRef
+    common-secrets: secretRef
+    # Disable secrets that don't exist
+    app-secrets: false
+    aws-client-secret: false
+    redis-secret: false
   # Production schedule
   cronJobs:
     # NOTE: keys must match `charts/jetscale/values.yaml` to override schedules
@@ -87,6 +97,14 @@ backend-ws:
   serviceAccount:
     create: true
     name: jetscale-console-backend-ws
+  # Override envFrom to disable secrets that don't exist
+  envFrom:
+    config: configMapRef
+    db-secret: secretRef
+    common-secrets: secretRef
+    app-secrets: false
+    aws-client-secret: false
+    redis-secret: false
 # 3. FRONTEND
 frontend:
   enabled: true
