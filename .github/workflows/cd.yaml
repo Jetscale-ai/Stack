@@ -269,6 +269,10 @@ jobs:
           VERSION: ${{ steps.version.outputs.target }}
           NAMESPACE: ${{ steps.target.outputs.namespace }}
           RELEASE_NAME: ${{ steps.target.outputs.tenant }}-${{ steps.target.outputs.project }}
+          # Admin credentials for bootstrap (per-deployment)
+          ADMIN_EMAIL: ${{ secrets.JETSCALE_DEFAULT_ADMIN_EMAIL }}
+          ADMIN_USERNAME: ${{ secrets.JETSCALE_DEFAULT_ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ secrets.JETSCALE_DEFAULT_ADMIN_PASSWORD }}
         run: |
           echo "🔥 Promoting Version $VERSION to Live..."
           # Match Jetscale-IaC namespace convention: {client}-{project}
@@ -281,6 +285,13 @@ jobs:
             fi
             VALUES_ARGS+=(--values "$file")
           done
+
+          # Inject admin credentials if provided (for bootstrap)
+          if [ -n "${ADMIN_EMAIL:-}" ]; then
+            VALUES_ARGS+=(--set "backend-api.env.JETSCALE_DEFAULT_ADMIN_EMAIL=${ADMIN_EMAIL}")
+            VALUES_ARGS+=(--set "backend-api.env.JETSCALE_DEFAULT_ADMIN_USERNAME=${ADMIN_USERNAME}")
+            VALUES_ARGS+=(--set "backend-api.env.JETSCALE_DEFAULT_ADMIN_PASSWORD=${ADMIN_PASSWORD}")
+          fi
 
           echo "Values files (in order): ${FILES[*]}"
           echo "Release: ${RELEASE_NAME} -> Namespace: ${NAMESPACE}"
@@ -361,3 +372,4 @@ jobs:
     needs: [deploy-live]
     if: always() && needs.deploy-live.result == 'success'
     uses: ./.github/workflows/ops-verify.yaml
+    secrets: inherit
