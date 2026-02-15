@@ -91,6 +91,14 @@ docker_build(
         '.env.*',
     ],
     live_update=[
+        # Force full rebuild for files that affect init containers or require image rebuild
+        fall_back_on([
+            backend_dir + '/alembic/versions/',  # Database migrations (run in init container)
+            backend_dir + '/setup_db.py',        # Database setup script
+            backend_dir + '/load_fixtures.py',   # Fixture loading script
+            backend_dir + '/requirements.txt',   # Dependencies
+            backend_dir + '/pyproject.toml',     # Dependencies
+        ]),
         sync(backend_dir, '/app'),
     ],
 )

@@ -227,11 +227,11 @@ frontend:
     port: 3000
   resources:
     requests:
-      memory: "512Mi"
-      cpu: "200m"
+      memory: "2Gi"
+      cpu: "5000m"
     limits:
-      memory: "1Gi"
-      cpu: "500m"
+      memory: "5Gi"
+      cpu: "5000m" # 2 full cores for faster compilation
   env:
     NODE_ENV: "development"
     HOST: "0.0.0.0"
@@ -239,8 +239,30 @@ frontend:
     VITE_API_BASE_URL: "http://jetscale-local-backend-api:8000"
   command: ["pnpm"]
   args: ["start"]
-  livenessProbe: null
-  readinessProbe: null
+  # Probes for local development - React/Webpack dev server is slow to compile
+  # Use startupProbe to handle slow initial compilation, then liveness/readiness take over
+  startupProbe:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30 # 30 * 10s = 5 minutes max startup time
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 3000
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 3000
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
 
 ingress:
   enabled: false
