@@ -74,6 +74,13 @@ externalSecret:
     # Override constructed secret store name
     # secretStoreName:
 
+  # AWS Client credentials for cross-account resource discovery
+  # Used by discover-aws CronJob to assume roles in client AWS accounts
+  awsClient:
+    enabled: false
+    # Override the full secret path (default: ${project_name}/application/aws/client)
+    # secretPath: ""
+
 # ----------------------------------------------------------
 # 1. CORE SERVICES
 # ----------------------------------------------------------
