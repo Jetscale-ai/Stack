@@ -38,7 +38,7 @@ externalSecret:
     enabled: false # No dynamic app config secret yet
   awsClient:
     enabled: true
-    secretPath: "jetscale-console/application/aws/client"
+    secretPath: "jetscale-prod/application/aws/client"
 
 # 1. INFRA (Managed by Terraform in AWS)
 postgres:
