@@ -10,38 +10,60 @@ Upgrade backend/frontend charts to the latest versions.
 - **CI Role:** The pipeline calculates the SemVer, updates `Chart.yaml`, publishes the OCI artifact, and **commits the new version back to main**.
 - **Result:** `main` reflects the released artifact.
 
+## Quick Start (Automated)
+
+Use the helper script for one-command updates:
+
+```bash
+# Check for updates (dry-run)
+./scripts/check-chart-updates.sh
+
+# Apply updates (edits Chart.yaml, runs helm deps update)
+./scripts/check-chart-updates.sh --apply
+
+# Apply and validate
+./scripts/check-chart-updates.sh --validate
+```
+
+See `.agents/skills/chart-deps-update/SKILL.md` for the full skill definition.
+
 ## Prerequisites
 
-- `gh` CLI installed
+- `gh` CLI installed and authenticated
 - `helm` installed
 - `mage` installed
 
-## Protocol Steps
+## Manual Protocol Steps
 
 ### 1. Query Latest Versions
 
-Find the latest tags for the sub-services.
+Find the latest releases for the sub-services:
 
 ```bash
-# Backend
-gh api repos/Jetscale-ai/backend/packages/container/charts%2Fbackend/versions --jq '.[].metadata.container.tags[]' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1
+# Backend - get latest release tag (strip 'v' prefix)
+gh release list -R Jetscale-ai/backend --limit 1 --json tagName -q '.[0].tagName' | sed 's/^v//'
 
-
-# Frontend
-gh api repos/Jetscale-ai/frontend/packages/container/charts%2Ffrontend/versions --jq '.[].metadata.container.tags[]' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1
+# Frontend - get latest release tag (strip 'v' prefix)
+gh release list -R Jetscale-ai/frontend --limit 1 --json tagName -q '.[0].tagName' | sed 's/^v//'
 ```
 
 ### 2. Update Chart Dependencies
 
 Edit `charts/jetscale/Chart.yaml` with the versions found above.
 
+**Important:** Both `backend-api` and `backend-ws` aliases use the same backend
+chart version - update both together.
+
 ```yaml
 dependencies:
   - name: backend
-
-    version: "3.1.5" # <--- Update
+    alias: backend-api
+    version: "X.Y.Z" # <--- Update
+  - name: backend
+    alias: backend-ws
+    version: "X.Y.Z" # <--- Update (same version)
   - name: frontend
-    version: "2.1.3" # <--- Update
+    version: "X.Y.Z" # <--- Update
 ```
 
 ### 3. Regenerate Lockfile (CRITICAL)
@@ -68,9 +90,9 @@ The commit message triggers the release workflow.
 **Do not bump `version` manually.** CI will handle it.
 
 ```bash
-
 # Use "fix" (patch) or "feat" (minor) to trigger the appropriate bump.
-pnpm commit -- "fix(deps): bump backend to 3.1.5 and frontend to 2.1.3"
+git add charts/jetscale/Chart.yaml charts/jetscale/Chart.lock
+# Human commits with conventional message
 ```
 
 ## Files to Update
@@ -81,7 +103,7 @@ pnpm commit -- "fix(deps): bump backend to 3.1.5 and frontend to 2.1.3"
 ## Validation Checklist
 
 - [ ] Latest versions queried successfully
-- [ ] Chart dependencies updated
+- [ ] Chart dependencies updated (both backend aliases)
 - [ ] Chart.lock regenerated
 - [ ] `mage validate:envs aws` passes
 - [ ] Conventional commit message used

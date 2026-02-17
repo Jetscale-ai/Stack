@@ -1,0 +1,185 @@
+---
+name: chart-deps-update
+description: |
+  Reliably check for and update backend/frontend chart versions in the JetScale
+  umbrella chart. Handles version discovery, Chart.yaml updates, image tag updates
+  in envs/, helm deps update, and validation.
+license: Proprietary
+compatibility: gh CLI, helm, mage
+metadata:
+  authority: Supreme Constitution (../../../AGENTS.md)
+  invariants: [Supply Chain Integrity, Lockfile Primacy, Validation First]
+  risk_level: write
+  scope: repo
+triggers:
+  - update chart deps
+  - bump backend version
+  - bump frontend version
+  - update dependencies
+  - check for updates
+  - update image tags
+allowed-tools: Read Write StrReplace Shell
+---
+
+# Chart Dependencies Update
+
+Reliably check for and update backend/frontend chart versions in the JetScale
+umbrella chart.
+
+## Two-Layer Versioning
+
+This skill handles **two layers** of versioning:
+
+| Layer | Files | What it controls |
+|-------|-------|------------------|
+| **Chart version** | `charts/jetscale/Chart.yaml` | Which Helm sub-chart version (templates, defaults) |
+| **Image tags** | `envs/*/console.yaml`, `envs/*/demo.yaml`, etc. | Which container image to deploy |
+
+**Important:** Chart versions and image tags can drift independently. The chart
+version controls the Helm templates, while image tags control the actual
+container images deployed.
+
+## Workflow for SWE Agents
+
+### Step 1: Check Current Status
+
+Run the script in dry-run mode to see what needs updating:
+
+```bash
+./scripts/check-chart-updates.sh
+```
+
+Or get JSON output for programmatic parsing:
+
+```bash
+./scripts/check-chart-updates.sh --json
+```
+
+### Step 2: Evaluate Update Options
+
+The script will show:
+
+1. **Chart dependencies** - versions in `Chart.yaml`
+2. **Image tags** - versions in each `envs/*.yaml` file
+
+**Decision points to present to the user:**
+
+1. **Chart update** - Usually safe, updates Helm templates
+2. **Image tag updates** - Per-environment decision:
+   - `prod/console.yaml` - Production deployment
+   - `prod/demo.yaml` - Demo/sandbox environment
+   - `preview/preview.yaml` - PR preview environments
+
+### Step 3: Ask User Which Deployments to Update
+
+Present the options clearly:
+
+```text
+Updates available:
+- Chart: backend 4.5.1 → 4.6.2, frontend 2.7.0 → 2.7.1
+- Image tags needing update:
+  1. prod/console.yaml (production)
+  2. prod/demo.yaml (demo)
+  3. preview/preview.yaml (PR previews)
+
+Which would you like to update?
+- Chart only (recommended minimum)
+- Chart + specific envs (e.g., "prod/console.yaml")
+- Chart + all envs
+```
+
+### Step 4: Apply Selected Updates
+
+Based on user response, run the appropriate command:
+
+```bash
+# Chart only
+./scripts/check-chart-updates.sh --apply
+
+# Chart + specific files
+./scripts/check-chart-updates.sh --apply --images --files "prod/console.yaml"
+
+# Chart + all image tags
+./scripts/check-chart-updates.sh --apply --images --all
+
+# With validation
+./scripts/check-chart-updates.sh --apply --images --files "prod/console.yaml" --validate
+```
+
+### Step 5: Verify and Report
+
+After applying, show the user:
+
+1. Files modified
+2. Suggested commit message
+3. Any validation results
+
+## Script Reference
+
+```bash
+./scripts/check-chart-updates.sh [OPTIONS]
+
+Options:
+  --apply           Apply chart dependency updates
+  --images          Update image tags (requires --all or --files)
+  --all             Update ALL image tag files
+  --files "LIST"    Update specific files (space-separated relative paths)
+  --validate        Run mage validate:envs after applying
+  --json            Output status as JSON
+  --help            Show help
+```
+
+## Example Agent Conversation Flow
+
+**Agent:** Let me check for chart updates.
+
+```bash
+./scripts/check-chart-updates.sh
+```
+
+**Agent:** I found updates available:
+
+- Backend chart: 4.5.1 → 4.6.2
+- Frontend chart: 2.7.0 → 2.7.1
+- Image tags needing update:
+  - prod/console.yaml (backend: 4.5.1, frontend: 2.7.0)
+  - prod/demo.yaml (backend: 4.1.2, frontend: 2.4.0)
+  - preview/preview.yaml (backend: 4.1.2, frontend: 2.4.0)
+
+Which deployments would you like to update?
+
+1. Chart only (updates templates, not running deployments)
+2. Chart + production (prod/console.yaml)
+3. Chart + all environments
+
+**User:** Update chart and production only
+
+**Agent:** Applying updates...
+
+```bash
+./scripts/check-chart-updates.sh --apply --images --files "prod/console.yaml" --validate
+```
+
+## Validation Checklist
+
+- [ ] Latest versions queried successfully
+- [ ] User confirmed which deployments to update
+- [ ] Chart dependencies updated (both backend aliases)
+- [ ] `helm dependency update` succeeded
+- [ ] `Chart.lock` regenerated with new digest
+- [ ] Selected image tags updated
+- [ ] `mage validate:envs aws` passes
+- [ ] Conventional commit message prepared
+
+## Files Modified
+
+- `charts/jetscale/Chart.yaml` - Dependency versions
+- `charts/jetscale/Chart.lock` - Regenerated by helm
+- `envs/prod/console.yaml` - Image tags (if selected)
+- `envs/prod/demo.yaml` - Image tags (if selected)
+- `envs/preview/preview.yaml` - Image tags (if selected)
+
+## Related
+
+- `agents/upversion.md` - Original protocol documentation
+- `AGENTS.md` - Supply Chain Integrity invariant
