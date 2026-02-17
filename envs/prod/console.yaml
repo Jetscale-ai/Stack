@@ -37,8 +37,9 @@ externalSecret:
   app:
     enabled: false # No dynamic app config secret yet
   awsClient:
-    enabled: true
-    secretPath: "jetscale-prod/application/aws/client"
+    # Disabled: AWS client config is now managed via SystemSettings UI
+    # See SYSTEM_TODO.md for details on Day 0 vs Day 1 configuration
+    enabled: false
 
 # 1. INFRA (Managed by Terraform in AWS)
 postgres:
@@ -66,9 +67,9 @@ backend-api:
     db-secret: secretRef
     common-secrets: secretRef
     redis-secret: secretRef
-    # Disable secrets that don't exist
+    # Disabled: now configured via SystemSettings UI
     app-secrets: false
-    aws-client-secret: secretRef
+    aws-client-secret: false
   # Production schedule
   cronJobs:
     # NOTE: keys must match `charts/jetscale/values.yaml` to override schedules
@@ -82,7 +83,8 @@ backend-api:
         db-secret: secretRef
         common-secrets: secretRef
         redis-secret: secretRef
-        aws-client-secret: secretRef
+        # AWS client config from SystemSettings (DB > ENV > Default)
+        aws-client-secret: false
     pull-coh:
       schedule: "30 */6 * * *"
       envFrom:
@@ -142,8 +144,9 @@ backend-ws:
     db-secret: secretRef
     common-secrets: secretRef
     redis-secret: secretRef
+    # Disabled: now configured via SystemSettings UI
     app-secrets: false
-    aws-client-secret: secretRef
+    aws-client-secret: false
 # 3. FRONTEND
 frontend:
   enabled: true

@@ -27,8 +27,9 @@ externalSecret:
   app:
     enabled: false # No dynamic app config secret yet
   awsClient:
-    enabled: true
-    secretPath: "jetscale-prod/application/aws/client"
+    # Disabled: AWS client config is now managed via SystemSettings UI
+    # See SYSTEM_TODO.md for details on Day 0 vs Day 1 configuration
+    enabled: false
 
 # 1. INFRA (Managed by Terraform in AWS)
 postgres:
@@ -46,16 +47,42 @@ backend-api:
     tag: "4.1.2"
   imagePullSecrets:
     - name: ghcr-registry-secret #Created from GH pipeline
+  # Override envFrom to disable secrets not needed
+  # (backend chart defaults include aws-client-secret which we don't use)
+  envFrom:
+    config: configMapRef
+    db-secret: secretRef
+    common-secrets: secretRef
+    # Disabled: now configured via SystemSettings UI
+    app-secrets: false
+    aws-client-secret: false
+    redis-secret: false
   # Production schedule
   cronJobs:
     # NOTE: keys must match `charts/jetscale/values.yaml` to override schedules
     # (otherwise Helm deep-merge creates duplicate CronJobs).
     discover-aws:
       schedule: "0 */4 * * *"
+      envFrom:
+        config: configMapRef
+        db-secret: secretRef
+        common-secrets: secretRef
+        aws-client-secret: false
+        redis-secret: false
     pull-coh:
       schedule: "30 */6 * * *"
+      envFrom:
+        config: configMapRef
+        db-secret: secretRef
+        common-secrets: secretRef
+        redis-secret: false
     pull-co:
       schedule: "45 */12 * * *"
+      envFrom:
+        config: configMapRef
+        db-secret: secretRef
+        common-secrets: secretRef
+        redis-secret: false
 
   resources:
     requests:
@@ -74,6 +101,15 @@ backend-ws:
     tag: "4.1.2"
   imagePullSecrets:
     - name: ghcr-registry-secret #Created from GH pipeline
+  # Override envFrom to disable secrets not needed
+  envFrom:
+    config: configMapRef
+    db-secret: secretRef
+    common-secrets: secretRef
+    # Disabled: now configured via SystemSettings UI
+    app-secrets: false
+    aws-client-secret: false
+    redis-secret: false
 # 3. FRONTEND
 frontend:
   enabled: true
