@@ -44,7 +44,7 @@ backend-api:
   replicaCount: 1
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "4.1.2"
+    tag: "4.6.2"
   imagePullSecrets:
     - name: ghcr-registry-secret #Created from GH pipeline
   # Override envFrom to disable secrets not needed
@@ -98,7 +98,7 @@ backend-ws:
   replicaCount: 1
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "4.1.2"
+    tag: "4.6.2"
   imagePullSecrets:
     - name: ghcr-registry-secret #Created from GH pipeline
   # Override envFrom to disable secrets not needed
@@ -116,7 +116,7 @@ frontend:
   replicaCount: 1
   image:
     repository: ghcr.io/jetscale-ai/frontend
-    tag: "2.4.0"
+    tag: "2.7.1"
   imagePullSecrets:
     - name: ghcr-registry-secret #Created from GH pipeline
   env:
