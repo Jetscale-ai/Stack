@@ -61,7 +61,6 @@ backend-api:
     create: true
     name: jetscale-console-backend
   # Override envFrom to disable secrets that don't exist
-  # Setting to false/null removes them from the template
   envFrom:
     config: configMapRef
     db-secret: secretRef
@@ -69,54 +68,17 @@ backend-api:
     redis-secret: secretRef
     # Disabled: now configured via SystemSettings UI
     app-secrets: false
-    aws-client-secret: false
   # Production schedule
   cronJobs:
     # NOTE: keys must match `charts/jetscale/values.yaml` to override schedules
     # (otherwise Helm deep-merge creates duplicate CronJobs).
-    # Each CronJob needs explicit envFrom to avoid inheriting false values
-    # (backend chart's cronjob template doesn't filter false values)
     discover-aws:
       schedule: "0 */4 * * *"
-      envFrom:
-        config: configMapRef
-        db-secret: secretRef
-        common-secrets: secretRef
-        redis-secret: secretRef
-        # AWS client config from SystemSettings (DB > ENV > Default)
-        aws-client-secret: false
     pull-coh:
       schedule: "30 */6 * * *"
-      envFrom:
-        config: configMapRef
-        db-secret: secretRef
-        common-secrets: secretRef
-        redis-secret: secretRef
     pull-co:
       schedule: "45 */12 * * *"
-      envFrom:
-        config: configMapRef
-        db-secret: secretRef
-        common-secrets: secretRef
-        redis-secret: secretRef
-    pull-ce:
-      envFrom:
-        config: configMapRef
-        db-secret: secretRef
-        common-secrets: secretRef
-        redis-secret: secretRef
-    generate-from-coh:
-      envFrom:
-        config: configMapRef
-        db-secret: secretRef
-        common-secrets: secretRef
-        redis-secret: secretRef
-    generate-from-discovery:
-      envFrom:
-        config: configMapRef
-        db-secret: secretRef
-        common-secrets: secretRef
-        redis-secret: secretRef
+      # Remaining cronjobs use chart defaults (suspend: true)
 
   resources:
     requests:
@@ -146,7 +108,7 @@ backend-ws:
     redis-secret: secretRef
     # Disabled: now configured via SystemSettings UI
     app-secrets: false
-    aws-client-secret: false
+
 # 3. FRONTEND
 frontend:
   enabled: true

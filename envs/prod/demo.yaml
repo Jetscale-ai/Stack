@@ -48,14 +48,12 @@ backend-api:
   imagePullSecrets:
     - name: ghcr-registry-secret #Created from GH pipeline
   # Override envFrom to disable secrets not needed
-  # (backend chart defaults include aws-client-secret which we don't use)
   envFrom:
     config: configMapRef
     db-secret: secretRef
     common-secrets: secretRef
     # Disabled: now configured via SystemSettings UI
     app-secrets: false
-    aws-client-secret: false
     redis-secret: false
   # Production schedule
   cronJobs:
@@ -63,26 +61,10 @@ backend-api:
     # (otherwise Helm deep-merge creates duplicate CronJobs).
     discover-aws:
       schedule: "0 */4 * * *"
-      envFrom:
-        config: configMapRef
-        db-secret: secretRef
-        common-secrets: secretRef
-        aws-client-secret: false
-        redis-secret: false
     pull-coh:
       schedule: "30 */6 * * *"
-      envFrom:
-        config: configMapRef
-        db-secret: secretRef
-        common-secrets: secretRef
-        redis-secret: false
     pull-co:
       schedule: "45 */12 * * *"
-      envFrom:
-        config: configMapRef
-        db-secret: secretRef
-        common-secrets: secretRef
-        redis-secret: false
 
   resources:
     requests:
@@ -108,8 +90,8 @@ backend-ws:
     common-secrets: secretRef
     # Disabled: now configured via SystemSettings UI
     app-secrets: false
-    aws-client-secret: false
     redis-secret: false
+
 # 3. FRONTEND
 frontend:
   enabled: true
