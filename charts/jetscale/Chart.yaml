@@ -10,12 +10,12 @@ dependencies:
   - name: backend
     alias: backend-api
     repository: "oci://ghcr.io/jetscale-ai/charts"
-    version: "4.6.2"
+    version: "4.6.5"
     condition: backend-api.enabled
   - name: backend
     alias: backend-ws
     repository: "oci://ghcr.io/jetscale-ai/charts"
-    version: "4.6.2"
+    version: "4.6.5"
     condition: backend-ws.enabled
   # Frontend Service (Proprietary OCI)
   - name: frontend
