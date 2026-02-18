@@ -227,11 +227,11 @@ frontend:
     port: 3000
   resources:
     requests:
-      memory: "2Gi"
-      cpu: "5000m"
+      memory: "1Gi"
+      cpu: "1000m"
     limits:
-      memory: "5Gi"
-      cpu: "5000m" # 2 full cores for faster compilation
+      memory: "3Gi"
+      cpu: "2000m"
   env:
     NODE_ENV: "development"
     HOST: "0.0.0.0"
