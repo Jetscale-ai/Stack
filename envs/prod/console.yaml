@@ -59,7 +59,7 @@ backend-api:
     - name: ghcr-registry-secret #Created from GH pipeline
   serviceAccount:
     create: true
-    name: jetscale-console-backend
+    name: jetscale-console-service-account
     annotations:
       eks.amazonaws.com/role-arn: "arn:aws:iam::134051052096:role/jetscale-prod-app-role"
   # Override envFrom to disable secrets that don't exist
@@ -101,7 +101,7 @@ backend-ws:
     - name: ghcr-registry-secret #Created from GH pipeline
   serviceAccount:
     create: true
-    name: jetscale-console-backend-ws
+    name: jetscale-console-service-account
     annotations:
       eks.amazonaws.com/role-arn: "arn:aws:iam::134051052096:role/jetscale-prod-app-role"
   # Override envFrom to disable secrets that don't exist
