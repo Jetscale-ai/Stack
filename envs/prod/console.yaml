@@ -60,6 +60,8 @@ backend-api:
   serviceAccount:
     create: true
     name: jetscale-console-backend
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::134051052096:role/jetscale-prod-app-role"
   # Override envFrom to disable secrets that don't exist
   envFrom:
     config: configMapRef
@@ -100,6 +102,8 @@ backend-ws:
   serviceAccount:
     create: true
     name: jetscale-console-backend-ws
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::134051052096:role/jetscale-prod-app-role"
   # Override envFrom to disable secrets that don't exist
   envFrom:
     config: configMapRef
