@@ -74,22 +74,54 @@ jobs:
       token: ${{ secrets.JETSCALEBOT_GITHUB_TOKEN }}
 
   # ============================================================================
-  # STEP 2: DEPLOY TO LIVE (GATED)
+  # STEP 2a: COMPUTE DEPLOY MATRIX
   # ============================================================================
-  deploy-live:
-    name: "CD: Promote Live"
+  # On workflow_run (auto): deploy all registered projects in parallel.
+  # On workflow_dispatch (manual): deploy only the targeted project.
+  compute-targets:
+    name: "CD: Compute Deploy Targets"
     needs: [publish]
-    # Must use always() because publish uses always() in its condition.
-    # Without this, deploy-live is skipped when check-ci is skipped (even if publish succeeds).
     if: always() && needs.publish.result == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.result }}
+    steps:
+      - id: matrix
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TENANT: ${{ inputs.tenant }}
+          INPUT_PROJECT: ${{ inputs.project }}
+          INPUT_PUBLIC_HOST: ${{ inputs.public_host }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TENANT="${INPUT_TENANT}"
+            PROJECT="${INPUT_PROJECT}"
+            HOST="${INPUT_PUBLIC_HOST:-${PROJECT}.jetscale.ai}"
+            echo "result=[{\"tenant\":\"${TENANT}\",\"project\":\"${PROJECT}\",\"public_host\":\"${HOST}\"}]" >> "$GITHUB_OUTPUT"
+          else
+            # All production projects deployed on every merge to main.
+            # Add new rows here to onboard additional deployments.
+            echo 'result=[{"tenant":"jetscale","project":"console","public_host":"console.jetscale.ai"},{"tenant":"jetscale","project":"demo","public_host":"demo.jetscale.ai"}]' >> "$GITHUB_OUTPUT"
+          fi
 
-    # 🛑 THE PRODUCTION GATE
+  # ============================================================================
+  # STEP 2b: DEPLOY TO LIVE (GATED, per-project)
+  # ============================================================================
+  deploy-live:
+    name: "CD: Promote Live (${{ matrix.project }})"
+    needs: [publish, compute-targets]
+    if: always() && needs.publish.result == 'success' && needs.compute-targets.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.compute-targets.outputs.matrix) }}
+
+    # 🛑 THE PRODUCTION GATE (per-project environment)
     environment:
-      name: ${{ github.event_name == 'workflow_dispatch' && format('prod-{0}-{1}', inputs.tenant, inputs.project) || 'prod-jetscale-console'
-        }}
-      url: ${{ github.event_name == 'workflow_dispatch' && format('https://{0}', (inputs.public_host != '' && inputs.public_host)
-        || format('{0}.jetscale.ai', inputs.project)) || 'https://console.jetscale.ai' }}
+      name: prod-${{ matrix.tenant }}-${{ matrix.project }}
+      url: https://${{ matrix.public_host }}
 
     steps:
       - uses: actions/checkout@v4
@@ -119,41 +151,25 @@ jobs:
       - name: Compute deployment targets
         id: target
         env:
-          TENANT: ${{ github.event_name == 'workflow_dispatch' && inputs.tenant || 'jetscale' }}
-          PROJECT: ${{ github.event_name == 'workflow_dispatch' && inputs.project || 'console' }}
-          INPUT_PUBLIC_HOST: ${{ github.event_name == 'workflow_dispatch' && inputs.public_host || '' }}
+          TENANT: ${{ matrix.tenant }}
+          PROJECT: ${{ matrix.project }}
+          PUBLIC_HOST: ${{ matrix.public_host }}
           INPUT_NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.namespace || '' }}
           INPUT_VALUES_FILE: ${{ github.event_name == 'workflow_dispatch' && inputs.values_file || '' }}
         run: |
           set -euo pipefail
 
-          # Namespace convention (Shared Cluster Architecture):
-          # - Pattern: ${client}-${project} (e.g., jetscale-console, jetscale-demo)
-          # - See: iac/Locus.md "2026-02-13 — Shared Cluster Architecture"
+          # Namespace: manual override or convention ${tenant}-${project}
           if [ -n "${INPUT_NAMESPACE:-}" ]; then
             NS="${INPUT_NAMESPACE}"
           else
             NS="${TENANT}-${PROJECT}"
           fi
 
-          # Default host convention:
-          # - console -> console.jetscale.ai
-          # - demo    -> demo.jetscale.ai
-          # - others  -> <project>.jetscale.ai
-          if [ -n "${INPUT_PUBLIC_HOST:-}" ]; then
-            HOST="${INPUT_PUBLIC_HOST}"
-          else
-            HOST="${PROJECT}.jetscale.ai"
-          fi
-
-          # Values inheritance (recommended):
+          # Values inheritance:
           # - envs/aws.yaml (cloud)
           # - envs/prod/default.yaml (env defaults)
-          # - envs/prod/<project>.yaml (deployment-specific; e.g., console.yaml, demo.yaml)
-          #
-          # INPUT_VALUES_FILE behavior:
-          # - If comma-separated, treat as a full ordered list of values files.
-          # - If a single path, treat as the deployment-specific file (cloud + env defaults still apply).
+          # - envs/prod/<project>.yaml (deployment-specific)
           if [ -n "${INPUT_VALUES_FILE:-}" ]; then
             if echo "${INPUT_VALUES_FILE}" | grep -q ','; then
               VALUES_FILES="${INPUT_VALUES_FILE}"
@@ -167,7 +183,7 @@ jobs:
           echo "tenant=${TENANT}" >> "$GITHUB_OUTPUT"
           echo "project=${PROJECT}" >> "$GITHUB_OUTPUT"
           echo "namespace=${NS}" >> "$GITHUB_OUTPUT"
-          echo "public_host=${HOST}" >> "$GITHUB_OUTPUT"
+          echo "public_host=${PUBLIC_HOST}" >> "$GITHUB_OUTPUT"
           echo "values_files=${VALUES_FILES}" >> "$GITHUB_OUTPUT"
 
       - name: Update Kubeconfig
@@ -365,11 +381,30 @@ jobs:
           done
 
   # ============================================================================
-  # STEP 3: VERIFY LIVE (POST-DEPLOY)
+  # STEP 3: VERIFY LIVE (POST-DEPLOY, per-project)
   # ============================================================================
   verify-live:
-    name: "CD: Verify Live"
-    needs: [deploy-live]
+    name: "CD: Verify Live (${{ matrix.project }})"
+    needs: [compute-targets, deploy-live]
     if: always() && needs.deploy-live.result == 'success'
-    uses: ./.github/workflows/ops-verify.yaml
-    secrets: inherit
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.compute-targets.outputs.matrix) }}
+    container:
+      image: ghcr.io/jetscale-ai/booster-dev:latest
+      options: --user root
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trust Git Directory
+        run: git config --global --add safe.directory '*'
+
+      - name: Run Smoke Tests
+        env:
+          E2E_PUBLIC_HOST: ${{ matrix.public_host }}
+          E2E_ADMIN_EMAIL: ${{ secrets.JETSCALE_DEFAULT_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.JETSCALE_DEFAULT_ADMIN_PASSWORD }}
+        run: mage test:live

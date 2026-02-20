@@ -2,6 +2,12 @@ name: "Ops: Verify Live"
 
 on:
   workflow_call:
+    inputs:
+      public_host:
+        description: "Public hostname to verify (e.g. console.jetscale.ai, demo.jetscale.ai)."
+        required: false
+        type: string
+        default: "console.jetscale.ai"
 
 jobs:
   smoke-test:
@@ -19,8 +25,8 @@ jobs:
         run: git config --global --add safe.directory '*'
 
       - name: Run Smoke Tests
-        # Runs 'go test' against console.jetscale.ai
         env:
+          E2E_PUBLIC_HOST: ${{ inputs.public_host }}
           E2E_ADMIN_EMAIL: ${{ secrets.JETSCALE_DEFAULT_ADMIN_EMAIL }}
           E2E_ADMIN_PASSWORD: ${{ secrets.JETSCALE_DEFAULT_ADMIN_PASSWORD }}
         run: mage test:live
