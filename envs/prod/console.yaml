@@ -54,7 +54,7 @@ backend-api:
   replicaCount: 3
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "4.6.2"
+    tag: "4.6.9"
   imagePullSecrets:
     - name: ghcr-registry-secret #Created from GH pipeline
   serviceAccount:
@@ -96,7 +96,7 @@ backend-ws:
   replicaCount: 3
   image:
     repository: ghcr.io/jetscale-ai/backend
-    tag: "4.6.2"
+    tag: "4.6.9"
   imagePullSecrets:
     - name: ghcr-registry-secret #Created from GH pipeline
   serviceAccount:
