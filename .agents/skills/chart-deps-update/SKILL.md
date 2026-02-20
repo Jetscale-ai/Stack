@@ -76,7 +76,7 @@ Present the options clearly:
 
 ```text
 Updates available:
-- Chart: backend 4.5.1 → 4.6.2, frontend 2.7.0 → 2.7.1
+- Chart: backend X.Y.Z → X.Y.W, frontend A.B.C → A.B.D
 - Image tags needing update:
   1. prod/console.yaml (production)
   2. prod/demo.yaml (demo)
@@ -139,12 +139,12 @@ Options:
 
 **Agent:** I found updates available:
 
-- Backend chart: 4.5.1 → 4.6.2
-- Frontend chart: 2.7.0 → 2.7.1
+- Backend chart: X.Y.Z → X.Y.W
+- Frontend chart: A.B.C → A.B.D
 - Image tags needing update:
-  - prod/console.yaml (backend: 4.5.1, frontend: 2.7.0)
-  - prod/demo.yaml (backend: 4.1.2, frontend: 2.4.0)
-  - preview/preview.yaml (backend: 4.1.2, frontend: 2.4.0)
+  - prod/console.yaml (backend: X.Y.Z, frontend: A.B.C)
+  - prod/demo.yaml (backend: …, frontend: …)
+  - preview/preview.yaml (backend: …, frontend: …)
 
 Which deployments would you like to update?
 

@@ -112,6 +112,13 @@ backend-ws:
     redis-secret: secretRef
     # Disabled: now configured via SystemSettings UI
     app-secrets: false
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
 
 # 3. FRONTEND
 frontend:
