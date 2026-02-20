@@ -1,5 +1,24 @@
 global:
   client_name: "jetscale"
+  project_name: "staging"
+
+externalSecret:
+  enabled: true
+  awsRegion: "us-east-1"
+  awsSecretPrefix: "jetscale-staging"
+  # IRSA role ARN from IaC output
+  irsaRoleArn: "arn:aws:iam::081373342681:role/jetscale-staging-external-secrets-role"
+  db:
+    enabled: true
+    bootstrap:
+      # Disabled: jetscale-staging uses IaC-managed database credentials
+      enabled: false
+  redis:
+    enabled: true
+  common:
+    enabled: true
+  app:
+    enabled: true
 
 backend-api:
   image:
