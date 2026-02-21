@@ -64,7 +64,9 @@ externalSecret:
   redis:
     enabled: false
     # Redis database number for project isolation (0-15)
-    # Each project should use a unique DB number on the shared cluster
+    # NOTE: ElastiCache Serverless uses cluster mode which only supports db 0.
+    # For Serverless, all projects share db 0; keys are naturally namespaced by
+    # user/thread IDs from separate Postgres databases.
     db: 0
 
   # Common application secrets (encryption keys, etc.)

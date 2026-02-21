@@ -21,8 +21,8 @@ externalSecret:
   db:
     enabled: true
   redis:
-    enabled: true # Shared ElastiCache with console; isolated via Redis DB number
-    db: 1
+    enabled: true # Shared ElastiCache with console (Serverless = cluster mode, only db 0)
+    db: 0
   common:
     enabled: true
   app:
