@@ -21,7 +21,8 @@ externalSecret:
   db:
     enabled: true
   redis:
-    enabled: false # ElastiCache not enabled for demo
+    enabled: true # Shared ElastiCache with console; isolated via Redis DB number
+    db: 1
   common:
     enabled: true
   app:
@@ -57,9 +58,9 @@ backend-api:
     config: configMapRef
     db-secret: secretRef
     common-secrets: secretRef
+    redis-secret: secretRef
     # Disabled: now configured via SystemSettings UI
     app-secrets: false
-    redis-secret: false
   # Production schedule
   cronJobs:
     # NOTE: keys must match `charts/jetscale/values.yaml` to override schedules
@@ -98,9 +99,9 @@ backend-ws:
     config: configMapRef
     db-secret: secretRef
     common-secrets: secretRef
+    redis-secret: secretRef
     # Disabled: now configured via SystemSettings UI
     app-secrets: false
-    redis-secret: false
 
 # 3. FRONTEND
 frontend:

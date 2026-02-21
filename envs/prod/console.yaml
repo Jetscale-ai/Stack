@@ -23,6 +23,7 @@ externalSecret:
     # bootstrap uses chart default (enabled: true); DB name "console", secret at jetscale-prod/database/console
   redis:
     enabled: true # ElastiCache is provisioned by IaC
+    db: 0
   common:
     enabled: true
   app:

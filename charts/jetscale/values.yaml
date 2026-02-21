@@ -63,6 +63,9 @@ externalSecret:
   # Redis credentials (from IaC-managed ElastiCache)
   redis:
     enabled: false
+    # Redis database number for project isolation (0-15)
+    # Each project should use a unique DB number on the shared cluster
+    db: 0
 
   # Common application secrets (encryption keys, etc.)
   common:
