@@ -68,9 +68,9 @@ spec:
               echo "📍 Database name: ${DB_NAME}"
               echo "📍 Database user: ${DB_USER}"
 
-              # Install PostgreSQL client (psql)
-              echo "📦 Installing PostgreSQL client..."
-              yum install -y postgresql15 > /dev/null 2>&1 || yum install -y postgresql > /dev/null 2>&1
+              # Install PostgreSQL client (psql), jq, and openssl
+              echo "📦 Installing dependencies..."
+              yum install -y jq openssl postgresql > /dev/null 2>&1
 
               # Fetch admin credentials from Secrets Manager
               echo "🔑 Fetching admin credentials..."
