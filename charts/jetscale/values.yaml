@@ -47,7 +47,7 @@ externalSecret:
     enabled: true
     # Override the full secret path (default: ${awsSecretPrefix}/database/${project_name})
     # Use this for legacy deployments that use a different secret path
-    # Example: "jetscale-prod/database/postgres"
+    # Example: "jetscale-prod/database/console"
     # secretPath: ""
     # Bootstrap job creates per-project database and credentials
     # Runs as Helm pre-install hook before main deployment

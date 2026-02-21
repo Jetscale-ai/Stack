@@ -366,7 +366,12 @@ else
     aws secretsmanager delete-secret --secret-id "${PREFIX}/application/backend/redis" --force-delete-without-recovery >/dev/null 2>&1 || true
     aws secretsmanager delete-secret --secret-id "${PREFIX}/application/encryption_key" --force-delete-without-recovery >/dev/null 2>&1 || true
     aws secretsmanager delete-secret --secret-id "${PREFIX}/application/aws/client" --force-delete-without-recovery >/dev/null 2>&1 || true
-    aws secretsmanager delete-secret --secret-id "${PREFIX}/database/postgres" --force-delete-without-recovery >/dev/null 2>&1 || true
+    aws secretsmanager delete-secret --secret-id "${PREFIX}/database/admin" --force-delete-without-recovery >/dev/null 2>&1 || true
+    # Also clean up any per-project database secrets created by Stack bootstrap
+    for secret_id in $(aws secretsmanager list-secrets --filter Key=name,Values="${PREFIX}/database/" \
+      --query 'SecretList[].Name' --output text 2>/dev/null); do
+      aws secretsmanager delete-secret --secret-id "${secret_id}" --force-delete-without-recovery >/dev/null 2>&1 || true
+    done
 
     # ECR
     aws ecr delete-repository --repository-name "${PREFIX}-backend" --force >/dev/null 2>&1 || true
