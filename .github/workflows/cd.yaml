@@ -370,6 +370,15 @@ jobs:
             kubectl logs -n "${NAMESPACE}" "${pod}" --all-containers --previous --tail=200 2>/dev/null || true
           done
 
+          # Capture logs from all Running-but-not-Ready pods (app-level failures)
+          echo "=== Pods not Ready (Running but failing probes) ==="
+          for pod in $(kubectl get pods -n "${NAMESPACE}" -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.metadata.name}{"\t"}{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null | grep false | cut -f1); do
+            echo "--- Logs from ${pod} (tail 80) ---"
+            kubectl logs -n "${NAMESPACE}" "${pod}" --all-containers --tail=80 || true
+            echo "--- Previous logs from ${pod} ---"
+            kubectl logs -n "${NAMESPACE}" "${pod}" --all-containers --previous --tail=40 2>/dev/null || true
+          done
+
           # Also check for any pods with errors
           echo "=== Pods with non-Running status ==="
           kubectl get pods -n "${NAMESPACE}" --field-selector=status.phase!=Running -o wide || true
