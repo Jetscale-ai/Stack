@@ -10,26 +10,17 @@ global:
 # ----------------------------------------------------------
 # EXTERNAL SECRETS (Shared Cluster Architecture)
 # ----------------------------------------------------------
-# IaC creates cluster: jetscale-prod
-# Secrets path: jetscale-prod/...
-#
-# NOTE: Console uses the legacy IaC-managed database secret at
-# jetscale-prod/database/postgres. New projects should use the
-# per-project bootstrap pattern (db.bootstrap.enabled: true).
+# IaC creates cluster: jetscale-prod and admin secret at jetscale-prod/database/admin.
+# Per-project DB credentials: db-bootstrap Job creates DB + secret at
+# jetscale-prod/database/{project} (here: jetscale-prod/database/console).
 externalSecret:
   enabled: true
   awsRegion: "us-east-1"
-  # Cluster-level secrets path (matches IaC cluster name)
   awsSecretPrefix: "jetscale-prod"
-  # IRSA role ARN from IaC output
   irsaRoleArn: "arn:aws:iam::134051052096:role/jetscale-prod-external-secrets-role"
   db:
     enabled: true
-    # Use legacy IaC-managed secret (not per-project bootstrap)
-    secretPath: "jetscale-prod/database/postgres"
-    bootstrap:
-      # Disabled: console uses legacy IaC-managed database credentials
-      enabled: false
+    # bootstrap uses chart default (enabled: true); DB name "console", secret at jetscale-prod/database/console
   redis:
     enabled: true # ElastiCache is provisioned by IaC
   common:

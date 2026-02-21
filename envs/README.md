@@ -43,6 +43,7 @@ Helm merges multiple values files in order, with **later files taking precedence
      - Domain names and hostnames
      - Feature flags
      - Environment-specific secrets references
+   - In prod, each project gets its own database: the db-bootstrap Job creates the DB and credentials at `{cluster}/database/{project}` (e.g. `jetscale-prod/database/console`). No `secretPath` override is needed.
 
 ## Validation
 

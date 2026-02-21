@@ -24,14 +24,12 @@ This repo separates the **Artifact Lifecycle** (published chart versions) from t
 
 ### Preconditions (Terraform-owned "pipes")
 
-- **Namespace**: `jetscale-console` (convention: `{client_name}-{project}`)
+- **Namespace**: `jetscale-console` (convention: `{client_name}-{project}`); Helm `--create-namespace` can create it.
 - **External Secrets Operator** installed in the cluster (Terraform `clients/` stack).
-- **SecretStore** in namespace `jetscale-console` created by Terraform.
-- **ExternalSecret manifests** created by Terraform that materialize:
-  - `jetscale-db-secret`
-  - `jetscale-redis-secret`
-  - `jetscale-common-secrets`
-  - `jetscale-aws-client-secret`
+- **IaC** creates RDS and admin secret at `jetscale-prod/database/admin`. **Stack** (Helm) creates SecretStore, db-bootstrap Job (per-project DB + `jetscale-prod/database/console`), and ExternalSecrets that materialize:
+  - `jetscale-console-db-secret` (from `jetscale-prod/database/console`, created by db-bootstrap)
+  - `jetscale-console-redis-secret`
+  - `jetscale-console-common-secrets`
 
 ### Preconditions (out-of-band "vault values")
 
@@ -40,9 +38,9 @@ This repo uses **Option B (Container/Value Split)** for sensitive credentials:
 - **Terraform** creates the **secret container** and grants ESO access (IRSA policy).
 - **Humans/automation** inject the **secret value** out-of-band (rotation-safe; SOC2-friendly).
 
-The AWS Secrets Manager secret backing the AWS client ExternalSecret must exist **and** have a value:
+Database credentials are **not** out-of-band: the Stack db-bootstrap Job creates the per-project DB and writes credentials to `jetscale-prod/database/{project}`. Only the AWS client secret is out-of-band; it must exist **and** have a value:
 
-- Name: `jetscale-console/application/aws/client`
+- Name: `jetscale-prod/application/aws/client` (cluster prefix, not release name)
 - Keys required:
   - `JETSCALE_CLIENT_AWS_REGION`
   - `JETSCALE_CLIENT_AWS_ROLE_ARN`

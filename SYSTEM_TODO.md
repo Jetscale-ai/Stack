@@ -67,8 +67,8 @@ Resources created per EKS cluster by IaC.
 
 | Secret Path | Contents | Source | Change |
 |-------------|----------|--------|--------|
-| `jetscale-prod/database/admin` | `username`, `password`, `host`, `port`, `dbname` | Terraform `random_password` | None - auto-generated |
-| `jetscale-prod/database/postgres` | Same as admin (DEPRECATED) | Terraform | **Remove** after console migrates |
+| `jetscale-prod/database/admin` | `username`, `password`, `host`, `port`, `dbname` | Terraform `random_password` | Admin creds for Stack db-bootstrap |
+| `jetscale-prod/database/{project}` | Per-project DB creds | Stack db-bootstrap Job | Created on first deploy (e.g. console, demo) |
 | `jetscale-prod/application/backend/redis` | `redis-endpoint` | Terraform (ElastiCache output) | None - auto-populated |
 | `jetscale-prod/application/encryption_key` | `APP_ENCRYPTION_KEY` | `var.frontend_encryption_key` | None - set in tfvars |
 | `jetscale-prod/application/aws/client` | Container only (empty) | Terraform | **Remove** - now Day 1 via SystemSettings |
@@ -84,7 +84,7 @@ Resources created per EKS cluster by IaC.
 **Win Condition**:
 
 - [x] Cluster infrastructure provisioned
-- [ ] Remove deprecated `database/postgres` secret after console migration
+- [x] Per-project DB secrets (console, demo) created by Stack bootstrap; IaC only provides `database/admin`
 - [ ] Remove empty `application/aws/client` container (now Day 1)
 
 ---
@@ -104,7 +104,7 @@ Configuration set at Helm install/upgrade time.
 | `externalSecret.awsSecretPrefix` | `jetscale-prod` | `jetscale-prod` | Helm value | None |
 | `externalSecret.irsaRoleArn` | `...external-secrets-role` | Same | Helm value | None |
 | `externalSecret.db.enabled` | `true` | `true` | Helm value | None |
-| `externalSecret.db.secretPath` | `jetscale-prod/database/postgres` | (default) | Helm value | **Migrate** console to per-project |
+| `externalSecret.db.secretPath` | (default) | (default) | Helm value | Both use default: `jetscale-prod/database/{project}` |
 | `externalSecret.redis.enabled` | `true` | `false` | Helm value | None |
 | `externalSecret.common.enabled` | `true` | `true` | Helm value | None |
 | `externalSecret.awsClient.enabled` | `false` | `false` | Helm value | ✅ Done - now Day 1 |
@@ -195,7 +195,7 @@ data:
 
 - [x] ExternalSecrets bridging AWS SM → K8s secrets
 - [x] `aws-client-secret` removed from envFrom
-- [ ] Migrate console to per-project database secret
+- [x] Console and demo use per-project database secret (Stack db-bootstrap)
 - [ ] Fix `config.py` defaults to be production-safe
 - [ ] Remove redundant ConfigMap variables (~25)
 
@@ -299,7 +299,7 @@ These exist in SystemSettings but agents read from `config.py`. After fixing `co
 | Layer | Status | Win Condition | Action Items |
 |-------|--------|---------------|--------------|
 | **1. Shared Infra** | ✅ Complete | All shared resources stable | None |
-| **2. Cluster Infra** | ⚠️ Cleanup | Remove deprecated secrets | Remove `database/postgres`, `aws/client` |
+| **2. Cluster Infra** | ⚠️ Cleanup | Remove deprecated secrets | Remove empty `application/aws/client` container |
 | **3. Helm/ConfigMap** | ⚠️ Bloated | Minimal Day 0 ConfigMap | Remove ~25 redundant vars |
 | **4. Backend Defaults** | 🔴 Unsafe | Prod-safe defaults | Fix 11 defaults in `config.py` |
 | **5. SystemSettings** | ⚠️ Partial | All settings consumed at runtime | Migrate agent code |
@@ -360,8 +360,7 @@ After Phase 1, remove from `charts/jetscale/templates/cm-app.yaml`:
 ### Phase 3: IaC Cleanup
 
 - [ ] Remove `jetscale-prod/application/aws/client` secret container
-- [ ] Migrate console to per-project database secret
-- [ ] Remove deprecated `jetscale-prod/database/postgres` secret
+- [x] Per-project database: IaC provides `database/admin`; Stack db-bootstrap creates `database/{project}` (console, demo)
 
 ### Phase 4: Consumer Migration (Backend)
 
