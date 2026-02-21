@@ -29,7 +29,7 @@ metadata:
     "helm.sh/hook-weight": "-10"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
-  ttlSecondsAfterFinished: 300
+  ttlSecondsAfterFinished: 600
   backoffLimit: 3
   template:
     metadata:
@@ -37,7 +37,7 @@ spec:
         {{- include "jetscale.labels" . | nindent 8 }}
         app.kubernetes.io/component: db-bootstrap
     spec:
-      restartPolicy: OnFailure
+      restartPolicy: Never
       serviceAccountName: {{ .Release.Name }}-external-secrets
       containers:
         - name: db-bootstrap
@@ -46,6 +46,7 @@ spec:
             - /bin/bash
             - -c
             - |
+              echo "=== db-bootstrap script starting ==="
               set -euo pipefail
 
               echo "🔧 JetScale Database Bootstrap"
