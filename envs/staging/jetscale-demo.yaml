@@ -1,21 +1,25 @@
 global:
-  client_name: "jetscale"
+  client_name: "jetscale-demo"
   project_name: "demo"
 
 # ----------------------------------------------------------
-# EXTERNAL SECRETS (Shared Cluster Architecture)
+# EXTERNAL SECRETS (Independent Cluster Architecture)
 # ----------------------------------------------------------
-# IaC creates cluster: jetscale-staging
-# Secrets path: jetscale-staging/...
+# IaC creates cluster: jetscale-demo-staging
+# Secrets path: jetscale-demo-staging/...
 externalSecret:
   enabled: true
   awsRegion: "us-east-1"
   # Cluster-level secrets path (matches IaC cluster name)
-  awsSecretPrefix: "jetscale-staging"
+  awsSecretPrefix: "jetscale-demo-staging"
   # IRSA role ARN from IaC output
-  irsaRoleArn: "arn:aws:iam::081373342681:role/jetscale-staging-external-secrets-role"
+  irsaRoleArn: "arn:aws:iam::081373342681:role/jetscale-demo-staging-external-secrets-role"
   db:
     enabled: true
+    # Bootstrap creates app-level user/credentials for the IaC-created database
+    bootstrap:
+      enabled: true
+      dbName: "jetscale_demo"  # Use IaC-created database (rds_db_name in tfvars)
   redis:
     enabled: false
   common:
