@@ -221,9 +221,13 @@ update_chart_version() {
 }
 
 # Find all env files with hardcoded image tags for a component
+# Scans both envs/*/*.yaml AND charts/jetscale/values.*.yaml
 find_env_files_with_tags() {
     local component=$1
-    grep -l "repository: ghcr.io/jetscale-ai/$component" "$ENVS_DIR"/*/*.yaml 2>/dev/null || true
+    {
+        grep -l "repository: ghcr.io/jetscale-ai/$component" "$ENVS_DIR"/*/*.yaml 2>/dev/null || true
+        grep -l "repository: ghcr.io/jetscale-ai/$component" "$CHART_DIR"/values.*.yaml 2>/dev/null || true
+    }
 }
 
 # Get image tag from an env file for a component
@@ -252,7 +256,7 @@ update_env_image_tag() {
     local old_tag=$3
     local new_tag=$4
 
-    log_detail "  $(basename "$(dirname "$file")")/$(basename "$file"): $component $old_tag -> $new_tag"
+    log_detail "  $file: $component $old_tag -> $new_tag"
     sed -i "/repository: ghcr.io\/jetscale-ai\/$component/,/tag:/s/tag: \"$old_tag\"/tag: \"$new_tag\"/" "$file"
 }
 
@@ -268,7 +272,7 @@ build_status() {
         local tag
         tag=$(get_env_image_tag "$file" "backend")
         local rel_path
-        rel_path="$(basename "$(dirname "$file")")/$(basename "$file")"
+        rel_path="${file#"$REPO_ROOT/"}"
         if [[ -n "$tag" ]]; then
             ENV_FILE_STATUS["$rel_path:backend"]="$tag"
         fi
@@ -279,7 +283,7 @@ build_status() {
         local tag
         tag=$(get_env_image_tag "$file" "frontend")
         local rel_path
-        rel_path="$(basename "$(dirname "$file")")/$(basename "$file")"
+        rel_path="${file#"$REPO_ROOT/"}"
         if [[ -n "$tag" ]]; then
             ENV_FILE_STATUS["$rel_path:frontend"]="$tag"
         fi
@@ -496,7 +500,7 @@ main() {
 
         # Update each file
         for file in "${unique_files[@]}"; do
-            local full_path="$ENVS_DIR/$file"
+            local full_path="$REPO_ROOT/$file"
 
             if [[ ! -f "$full_path" ]]; then
                 log_warn "File not found: $file (skipping)"
@@ -544,7 +548,7 @@ main() {
     fi
     if $UPDATE_IMAGES; then
         for file in "${unique_files[@]}"; do
-            echo "  - envs/$file"
+            echo "  - $file"
         done
     fi
     echo
