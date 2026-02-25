@@ -111,6 +111,13 @@ backend-ws:
     create: false
     name: "jetscale-service-account"
   envFrom: {}
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "768Mi"
+    limits:
+      cpu: "1000m"
+      memory: "2.5Gi"
   env:
     JETSCALE_DEBUG: "true"
     JETSCALE_AWS_REGION: "us-east-1"

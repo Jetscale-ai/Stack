@@ -297,12 +297,12 @@ func authenticationFlow(t *testing.T) {
 
 	// Test login with configured admin credentials
 	loginPayload := map[string]string{
-		"email":    email,
+		"login":    email,
 		"password": password,
 	}
 
 	jsonData, _ := json.Marshal(loginPayload)
-	loginURL := baseURL + "/api/v2/auth/signin"
+	loginURL := baseURL + "/api/v2/auth/sign-in"
 	resp, err := httpClient.Post(loginURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		t.Fatalf("❌ Auth login endpoint not available: %v", err)
